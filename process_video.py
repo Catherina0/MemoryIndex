@@ -39,7 +39,8 @@ def extract_audio(video_path: Path, audio_path: Path):
 
 def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
     """
-    用 ffmpeg 抽帧：默认 1 fps，可以后面再调。
+    用 ffmpeg 抽帧：默认 1 fps（每秒一帧）。
+    帧编号从 1 开始，frame_00001.png 对应第 0-1 秒。
     """
     ensure_dir(frames_dir)
     out_pattern = frames_dir / "frame_%05d.png"
@@ -53,31 +54,103 @@ def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
     subprocess.run(cmd, check=True)
 
 
-# ========== Groq API 集成 ==========
-def transcribe_audio_with_groq(audio_path: Path) -> str:
+def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: int = 1) -> list:
     """
-    使用 Groq 的 Whisper 模型进行语音转文字。
+    音画匹配：将音频转写片段与视频帧关联。
+    
+    Args:
+        transcript_data: 包含 segments 的转写数据
+        frames_dir: 视频帧目录
+        fps: 抽帧频率（每秒帧数）
+    
+    Returns:
+        list: [{'second': 0, 'frame': 'frame_00001.png', 'text': '对应的文本'}, ...]
+    """
+    import glob
+    
+    # 获取所有帧文件
+    frame_files = sorted(glob.glob(str(frames_dir / "frame_*.png")))
+    frame_count = len(frame_files)
+    
+    # 为每一秒建立文本索引
+    timeline = []
+    
+    for i in range(frame_count):
+        second = i  # 帧编号从1开始，对应第 i 秒
+        frame_name = f"frame_{i+1:05d}.png"
+        
+        # 查找这一秒对应的文本
+        texts_in_second = []
+        if 'segments' in transcript_data:
+            for seg in transcript_data['segments']:
+                seg_start = int(seg['start'])
+                seg_end = int(seg['end'])
+                # 如果片段覆盖当前秒
+                if seg_start <= second < seg_end:
+                    texts_in_second.append(seg['text'].strip())
+        
+        timeline.append({
+            'second': second,
+            'frame': frame_name,
+            'text': ' '.join(texts_in_second) if texts_in_second else ''
+        })
+    
+    return timeline
+
+
+# ========== Groq API 集成 ==========
+def transcribe_audio_with_groq(audio_path: Path) -> dict:
+    """
+    使用 Groq 的 Whisper 模型进行语音转文字，返回带时间戳的数据。
+    
+    Returns:
+        dict: {
+            'text': '完整文本',
+            'segments': [{'start': 0.0, 'end': 2.5, 'text': '片段文本'}, ...]
+        }
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         print("  ⚠️  GROQ_API_KEY 未设置，使用占位符")
-        return f"[FAKE TRANSCRIPT for {audio_path.name}] 请在 .env 中设置 GROQ_API_KEY"
+        return {
+            'text': f"[FAKE TRANSCRIPT for {audio_path.name}] 请在 .env 中设置 GROQ_API_KEY",
+            'segments': []
+        }
     
     try:
         client = Groq(api_key=api_key)
         model = os.getenv("GROQ_ASR_MODEL", "whisper-large-v3-turbo")
         
         with open(audio_path, "rb") as audio_file:
+            # 使用 verbose_json 格式获取时间戳信息
             transcription = client.audio.transcriptions.create(
                 file=(audio_path.name, audio_file.read()),
                 model=model,
-                response_format="text",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"]
             )
         
-        return transcription
+        # 提取文本和时间戳片段
+        result = {
+            'text': transcription.text,
+            'segments': []
+        }
+        
+        if hasattr(transcription, 'segments') and transcription.segments:
+            for seg in transcription.segments:
+                result['segments'].append({
+                    'start': seg.get('start', 0),
+                    'end': seg.get('end', 0),
+                    'text': seg.get('text', '')
+                })
+        
+        return result
     except Exception as e:
         print(f"  ✗ Groq 转写失败: {e}")
-        return f"[转写失败: {str(e)}]"
+        return {
+            'text': f"[转写失败: {str(e)}]",
+            'segments': []
+        }
 
 
 def summarize_with_gpt_oss_120b(full_text: str) -> str:
@@ -96,49 +169,55 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
         max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "8192"))  # 从 4096 提升到 8192
         temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
         
-        prompt = f"""请对以下内容进行详细的总结分析：
+        prompt = f"""
 
-内容：
-{full_text[:40000]}  # 提升输入长度限制
+请将以下“带时间戳的音频转写 + OCR 文本”整理成一份**结构化 Markdown 知识档案**。
 
-要求：
-1. **使用完整的 Markdown 格式输出**（标题、列表、加粗、代码块等）
-2. 提取核心要点和关键信息
-3. 列出重要的数字、引用、时间点和事实
-4. 按逻辑结构组织内容（使用 ## 标题分节）
-5. 如果有 OCR 内容，重点分析屏幕文字和视觉信息
-6. 如果有多个主题，分别总结
-7. 输出要详细完整，不要过度精简
-8. 分析和推理一些OCR识别的文本可能存在的含义和背景
-9. 列出关键句子和段落便于回忆
+你需要：
+1. **使用 Markdown** 输出（标题、列表、引用、表格等）
+2. 按时间顺序梳理主要片段，并为关键内容标注对应时间戳
+3. 合并音频与 OCR 内容：  
+   - 如果 OCR 文字不完整，请根据上下文**推断合理含义**  
+   - 如果某些屏幕文字重要（如 PPT、界面按钮、参数、代码），请单独提取并解释
+4. 自动识别“主题/章节”并结构化总结：概念、步骤、场景、结论
+5. 提取重要数据：数字、阈值、规则、引用、命令、日期等
+6. 为未来检索生成若干关键词（tags）
+7. 稍微详细一些，但不要写废话（重点是**可回溯、可搜索、可理解**）
 
-输出格式示例：
-## 📋 内容概述
-[一句话概括主要内容]
+推荐结构：
+## 内容概览
+## 时间线（关键片段 + 时间戳）
+## 主题总结（自动生成主题名）
+## 详细说明（合并音频与 OCR）
+## OCR 信息与推断（列出重要屏幕文字并解释）
+## 关键信息（数字、规则、参数）
+## 关键句（含时间戳）
+## 标签（tags）
 
-## 🔑 核心要点
-- 要点1
-- 要点2
-- 要点3
+以下是内容：
+{full_text[:40000]}  
 
-## 📊 详细内容
-### 主题1
-[详细说明...]
 
-### 主题2
-[详细说明...]
 
-## 💡 关键信息
-- 重要数字、时间、引用等
-
-请用中文回答，充分利用 token 限制输出详细内容。"""
+"""
 
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {
                     "role": "system",
-                    "content": "你是一个专业的内容分析助手，擅长从视频转写和屏幕文字中提取关键信息并用结构化的 Markdown 格式呈现。你的总结应该详细、完整、易读。"
+                    "content": """你是一个多模态知识档案生成器。
+
+                    输入来自同一段视频，包括：
+                    - 带时间戳的音频转写
+                    - 带时间戳或帧序列的 OCR 文本
+
+                    你的职责是：
+                    - 融合音频与 OCR 内容
+                    - 利用时间戳重建结构与顺序
+                    - 根据内容自动识别主题与重点
+                    - 推断纠正 OCR 可能的错误
+                    - 生成清晰、可长期保存、适合检索的 Markdown 知识档案"""
                 },
                 {
                     "role": "user",
@@ -155,6 +234,43 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
         return f"[总结失败: {str(e)}]\n\n原始内容:\n{full_text}"
 
 
+def generate_timeline_report(timeline: list, output_path: Path):
+    """
+    生成音画时间轴对照报告
+    
+    Args:
+        timeline: 音画匹配的时间轴数据
+        output_path: 输出文件路径
+    """
+    report = []
+    report.append("# 🎬 音画时间轴对照\n")
+    report.append(f"**生成时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n")
+    report.append(f"**总时长**: {len(timeline)} 秒  \n")
+    report.append("\n---\n")
+    
+    report.append("## 📊 逐秒对照表\n")
+    
+    for item in timeline:
+        second = item['second']
+        frame = item['frame']
+        text = item['text']
+        
+        # 格式化时间
+        minutes = second // 60
+        seconds = second % 60
+        time_str = f"{minutes:02d}:{seconds:02d}"
+        
+        report.append(f"### [{time_str}] 第 {second} 秒\n")
+        report.append(f"**画面**: `{frame}`  \n")
+        if text:
+            report.append(f"**音频**: {text}\n")
+        else:
+            report.append(f"**音频**: *(无语音)*\n")
+        report.append("\n")
+    
+    output_path.write_text('\n'.join(report), encoding='utf-8')
+
+
 def generate_formatted_report(
     video_name: str,
     timestamp: str,
@@ -162,7 +278,8 @@ def generate_formatted_report(
     ocr_text: str,
     summary: str,
     with_frames: bool,
-    session_dir: Path
+    session_dir: Path,
+    timeline: list = None
 ) -> str:
     """
     生成格式化的报告，包含元信息、AI总结和原始数据
@@ -202,6 +319,8 @@ def generate_formatted_report(
     if with_frames:
         report.append(f"- 📄 [OCR识别原文](ocr_raw.md) ({ocr_chars} 字符)")
         report.append(f"- 📁 视频帧图片: `frames/` 目录")
+        if timeline:
+            report.append(f"- 🎬 [音画时间轴对照](timeline.md) (逐秒匹配)")
     report.append(f"- 🔊 音频文件: `{video_name}.wav`")
     report.append("\n> 💡 **提示**: 点击链接查看原始数据文件获取完整的识别内容\n")
     report.append("---\n")
@@ -300,21 +419,42 @@ def process_video(
     print(">> 提取音频中...")
     extract_audio(video_path, audio_path)
 
-    # 4. Groq 语音转文字（占位）
-    print(">> 调用 Groq 语音转写（占位）...")
-    transcript_text = transcribe_audio_with_groq(audio_path)
+    # 4. Groq 语音转文字（带时间戳）
+    print(">> 调用 Groq 语音转写（带时间戳）...")
+    transcript_data = transcribe_audio_with_groq(audio_path)
+    transcript_text = transcript_data.get('text', '')
     
-    # 保存语音识别原始结果（Markdown 格式）
+    # 保存语音识别原始结果（Markdown 格式，包含时间戳）
     if transcript_text.strip():
         print(f"   💾 保存语音识别原始结果: {transcript_raw_path.name}")
         transcript_markdown = f"# 🎤 语音识别原始数据\n\n"
         transcript_markdown += f"**识别时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n"
         transcript_markdown += f"**总字符数**: {len(transcript_text)}  \n"
-        transcript_markdown += f"**识别模型**: Groq Whisper  \n\n"
+        transcript_markdown += f"**识别模型**: Groq Whisper  \n"
+        transcript_markdown += f"**片段数量**: {len(transcript_data.get('segments', []))}  \n\n"
         transcript_markdown += "---\n\n"
-        transcript_markdown += "## 📝 转写内容\n\n"
-        transcript_markdown += transcript_text
+        transcript_markdown += "## 📝 完整转写\n\n"
+        transcript_markdown += transcript_text + "\n\n"
+        
+        # 添加带时间戳的片段
+        if transcript_data.get('segments'):
+            transcript_markdown += "---\n\n"
+            transcript_markdown += "## ⏱️ 时间戳片段\n\n"
+            for seg in transcript_data['segments']:
+                start_time = f"{int(seg['start']//60):02d}:{int(seg['start']%60):02d}"
+                end_time = f"{int(seg['end']//60):02d}:{int(seg['end']%60):02d}"
+                transcript_markdown += f"**[{start_time} - {end_time}]** {seg['text']}\n\n"
+        
         transcript_raw_path.write_text(transcript_markdown, encoding="utf-8")
+
+    # 4.5 生成音画匹配时间轴
+    timeline = None
+    if with_frames and transcript_data.get('segments'):
+        print(">> 生成音画时间轴匹配...")
+        timeline = match_audio_with_frames(transcript_data, frames_dir, fps=1)
+        timeline_path = session_dir / "timeline.md"
+        generate_timeline_report(timeline, timeline_path)
+        print(f"   💾 保存音画时间轴: {timeline_path.name}")
 
     # 5. 合并文本：音频文字 + OCR 结果
     combined_text_parts = [f"=== Audio Transcript ===\n{transcript_text}\n"]
@@ -335,7 +475,8 @@ def process_video(
         ocr_text=ocr_text,
         summary=summary,
         with_frames=with_frames,
-        session_dir=session_dir
+        session_dir=session_dir,
+        timeline=timeline
     )
     
     report_path.write_text(report_content, encoding="utf-8")
