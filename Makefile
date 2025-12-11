@@ -1,0 +1,245 @@
+# Makefile for Video Report Pipeline
+# 使用方法：make <target> VIDEO=/path/to/video.mp4
+
+.PHONY: help setup test clean run run-ocr install check ensure-venv
+
+# 虚拟环境路径
+VENV_DIR := .venv
+PYTHON := $(VENV_DIR)/bin/python
+PIP := $(VENV_DIR)/bin/pip
+
+# 确保虚拟环境存在（首次运行时自动创建）
+ensure-venv:
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "🔧 首次运行：创建虚拟环境..."; \
+		python3 -m venv $(VENV_DIR); \
+		echo "  ✅ 虚拟环境已创建: $(VENV_DIR)"; \
+		echo ""; \
+		echo "📦 安装依赖..."; \
+		$(PIP) install --upgrade pip setuptools wheel; \
+		$(PIP) install -r requirements.txt; \
+		echo "  ✅ 依赖安装完成"; \
+		echo ""; \
+		if [ ! -f ".env" ]; then \
+			echo "📝 创建配置文件..."; \
+			cp .env.example .env 2>/dev/null || touch .env; \
+			echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY"; \
+		fi; \
+		echo ""; \
+		echo "🧪 运行环境自检..."; \
+		$(PYTHON) test_env.py; \
+		echo ""; \
+		echo "✅ 环境初始化完成！"; \
+	fi
+
+# 默认目标：显示帮助
+help:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📹 Video Report Pipeline - 快速命令"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "🚀 快速开始："
+	@echo "  make run VIDEO=视频路径   首次运行自动创建虚拟环境 + 处理视频"
+	@echo "  make setup              手动初始化/重置环境"
+	@echo "  make test               运行环境自检"
+	@echo ""
+	@echo "📹 处理视频："
+	@echo "  make run VIDEO=视频路径   音频转文字 + AI总结（快速模式）"
+	@echo "  make ocr VIDEO=视频路径   音频 + OCR + AI总结（完整模式）"
+	@echo ""
+	@echo "🤖 OCR 模型选择（可选参数）："
+	@echo "  DET_MODEL=mobile|server   检测模型（默认 mobile=快速）"
+	@echo "  REC_MODEL=mobile|server   识别模型（默认 mobile=快速）"
+	@echo "  USE_GPU=1                 启用 GPU 加速"
+	@echo ""
+	@echo "🔧 维护命令："
+	@echo "  make install            安装/更新依赖"
+	@echo "  make check              检查环境配置"
+	@echo "  make clean              清理输出文件"
+	@echo "  make clean-all          清理所有（含虚拟环境）"
+	@echo ""
+	@echo "📝 示例："
+	@echo "  make run VIDEO=~/Downloads/meeting.mp4"
+	@echo "  make ocr VIDEO=~/Downloads/lecture.mp4"
+	@echo "  make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server  # 高精度"
+	@echo "  make ocr VIDEO=xxx DET_MODEL=mobile REC_MODEL=mobile  # 快速"
+	@echo ""
+	@echo "💡 提示："
+	@echo "  • 首次运行任何命令会自动创建虚拟环境"
+	@echo "  • 所有依赖会自动安装在项目的 .venv 目录"
+	@echo "  • mobile模型：速度快，内存占用小，适合普通设备"
+	@echo "  • server模型：精度高，资源消耗大，适合高性能设备"
+	@echo "  • 需要配置 .env 文件中的 GROQ_API_KEY"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# 初始化环境（手动运行）
+setup: ensure-venv
+	@echo "🔧 重新初始化环境..."
+	@echo "  → 更新 pip..."
+	@$(PIP) install --upgrade pip setuptools wheel
+	@echo "  → 安装/更新依赖..."
+	@$(PIP) install -r requirements.txt
+	@echo "  → 检查配置文件..."
+	@if [ ! -f ".env" ]; then \
+		echo "  ⚠️  .env 文件不存在，从模板创建..."; \
+		cp .env.example .env 2>/dev/null || touch .env; \
+		echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY"; \
+	fi
+	@echo "  → 运行环境测试..."
+	@$(PYTHON) test_env.py
+	@echo ""
+	@echo "✅ 环境初始化完成！"
+	@echo "📝 下一步：编辑 .env 文件填入 API Key"
+	@echo "   nano .env"
+
+# 安装/更新依赖
+install: ensure-venv
+	@echo "📦 安装依赖..."
+	@$(PIP) install -r requirements.txt
+	@echo "✅ 依赖安装完成"
+
+# 运行环境测试
+test: ensure-venv
+	@echo "🧪 运行环境测试..."
+	@$(PYTHON) test_env.py
+
+# 检查环境
+check: ensure-venv
+	@echo "🔍 检查环境配置..."
+	@echo ""
+	@echo "Python 虚拟环境："
+	@if [ -d "$(VENV_DIR)" ]; then \
+		echo "  ✅ $(VENV_DIR) 存在"; \
+		echo "  ℹ️  Python: $(PYTHON)"; \
+	else \
+		echo "  ❌ $(VENV_DIR) 不存在，请运行: make setup"; \
+	fi
+	@echo ""
+	@echo "配置文件："
+	@if [ -f ".env" ]; then \
+		echo "  ✅ .env 存在"; \
+		if grep -q "GROQ_API_KEY=$$" .env || grep -q "GROQ_API_KEY=your" .env; then \
+			echo "  ⚠️  GROQ_API_KEY 未设置"; \
+		else \
+			echo "  ✅ GROQ_API_KEY 已配置"; \
+		fi \
+	else \
+		echo "  ❌ .env 不存在"; \
+	fi
+	@echo ""
+	@echo "FFmpeg："
+	@if command -v ffmpeg >/dev/null 2>&1; then \
+		echo "  ✅ ffmpeg 已安装"; \
+	else \
+		echo "  ❌ ffmpeg 未安装，请运行: brew install ffmpeg"; \
+	fi
+
+# 处理视频：仅音频转文字 + AI总结（不含OCR）
+run: ensure-venv
+	@if [ -z "$(VIDEO)" ]; then \
+		echo "❌ 错误：请指定视频路径"; \
+		echo "用法：make run VIDEO=/path/to/video.mp4"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🎬 处理视频（音频模式）"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📹 视频: $(VIDEO)"
+	@echo "🔊 流程: 音频提取 → Groq转写 → AI总结"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@$(PYTHON) process_video.py "$(VIDEO)"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ 处理完成！"
+	@echo "� 输出目录: output/视频名_时间戳/"
+	@echo "   • report.txt - 格式化报告"
+	@echo "   • transcript_raw.txt - 语音识别原文"
+	@echo "   • ocr_raw.txt - OCR识别原文（如启用）"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# 处理视频：音频 + OCR + AI总结（完整流程）
+# 可选参数：
+#   DET_MODEL=mobile|server  - 检测模型（默认 mobile）
+#   REC_MODEL=mobile|server  - 识别模型（默认 mobile）
+#   USE_GPU=1                - 启用 GPU 加速
+ocr: ensure-venv
+	@if [ -z "$(VIDEO)" ]; then \
+		echo "❌ 错误：请指定视频路径"; \
+		echo "用法：make ocr VIDEO=/path/to/video.mp4"; \
+		echo "可选：make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server"; \
+		exit 1; \
+	fi
+	@DET=$${DET_MODEL:-mobile}; \
+	REC=$${REC_MODEL:-mobile}; \
+	GPU_FLAG=""; \
+	if [ "$(USE_GPU)" = "1" ]; then GPU_FLAG="--use-gpu"; fi; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "🎬 处理视频（完整模式：OCR + 音频）"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "📹 视频: $(VIDEO)"; \
+	echo "🔍 流程: 1️⃣  OCR识别 → 2️⃣  音频转写 → 3️⃣  AI总结"; \
+	echo "🤖 OCR模型: det=$$DET, rec=$$REC"; \
+	echo "⏱️  注意：OCR 处理较慢，带进度条显示"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo ""; \
+	$(PYTHON) process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "✅ 处理完成！"; \
+	echo "� 输出目录: output/视频名_时间戳/"; \
+	echo "   • ocr_raw.txt - OCR识别原文"; \
+	echo "   • frames/ - 视频抽帧图片"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# 清理输出文件
+clean:
+	@echo "🧹 清理输出文件..."
+	@if [ -d "output" ]; then \
+		rm -rf output/*; \
+		echo "✅ 已清理 output/ 目录"; \
+	else \
+		echo "ℹ️  output/ 目录不存在"; \
+	fi
+
+# 深度清理（包括虚拟环境）
+clean-all: clean
+	@echo "🧹 深度清理..."
+	@if [ -d "$(VENV_DIR)" ]; then \
+		rm -rf $(VENV_DIR); \
+		echo "✅ 已删除虚拟环境"; \
+	fi
+	@if [ -d "__pycache__" ]; then \
+		rm -rf __pycache__; \
+		echo "✅ 已删除缓存文件"; \
+	fi
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "✅ 深度清理完成"
+
+# 查看报告（显示最新的报告）
+show-report:
+	@if [ -d "output/reports" ]; then \
+		LATEST=$$(ls -t output/reports/*.txt 2>/dev/null | head -1); \
+		if [ -n "$$LATEST" ]; then \
+			echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+			echo "📄 最新报告: $$LATEST"; \
+			echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+			echo ""; \
+			cat "$$LATEST"; \
+		else \
+			echo "ℹ️  未找到报告文件"; \
+		fi \
+	else \
+		echo "ℹ️  output/reports/ 目录不存在"; \
+	fi
+
+# 查看所有报告列表
+list-reports:
+	@if [ -d "output/reports" ]; then \
+		echo "📋 报告列表:"; \
+		ls -lht output/reports/*.txt 2>/dev/null || echo "  (无报告)"; \
+	else \
+		echo "ℹ️  output/reports/ 目录不存在"; \
+	fi
