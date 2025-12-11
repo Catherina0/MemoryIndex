@@ -10,3 +10,12 @@ output/
 .env
 test/
 docs/
+
+# Downloaded videos
+videos/
+*.mp4
+*.mkv
+*.webm
+*.flv
+*.avi
+*.mov

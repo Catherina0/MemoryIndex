@@ -58,9 +58,16 @@ help:
 	@echo "  make clean              清理输出文件"
 	@echo "  make clean-all          清理所有（含虚拟环境）"
 	@echo ""
+	@echo "� 下载视频："
+	@echo "  make download URL=视频链接             下载视频到 videos/ 目录"
+	@echo "  make download-run URL=视频链接         下载后自动处理（音频模式）"
+	@echo "  make download-ocr URL=视频链接         下载后自动处理（完整模式）"
+	@echo ""
 	@echo "📝 示例："
 	@echo "  make run VIDEO=~/Downloads/meeting.mp4"
 	@echo "  make ocr VIDEO=~/Downloads/lecture.mp4"
+	@echo "  make download URL=https://www.youtube.com/watch?v=xxxxx"
+	@echo "  make download-run URL=https://www.bilibili.com/video/BVxxxxx"
 	@echo "  make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server  # 高精度"
 	@echo "  make ocr VIDEO=xxx DET_MODEL=mobile REC_MODEL=mobile  # 快速"
 	@echo ""
@@ -70,6 +77,7 @@ help:
 	@echo "  • mobile模型：速度快，内存占用小，适合普通设备"
 	@echo "  • server模型：精度高，资源消耗大，适合高性能设备"
 	@echo "  • 需要配置 .env 文件中的 GROQ_API_KEY"
+	@echo "  • 支持平台：YouTube, Bilibili, 小红书等（需安装对应工具）"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -234,6 +242,86 @@ show-report:
 	else \
 		echo "ℹ️  output/reports/ 目录不存在"; \
 	fi
+
+# 下载视频
+download: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定视频URL"; \
+		echo "用法：make download URL=https://example.com/video"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📥 下载视频"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "📁 存储位置: videos/"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@$(PYTHON) video_downloader.py "$(URL)"
+	@echo ""
+	@echo "✅ 下载完成！"
+
+# 下载视频后自动处理（音频模式）
+download-run: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定视频URL"; \
+		echo "用法：make download-run URL=https://example.com/video"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📥 下载并处理视频（音频模式）"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "🔊 流程: 下载 → 音频提取 → Groq转写 → AI总结"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@# 下载视频并获取文件路径
+	@$(PYTHON) video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
+	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
+		cat /tmp/download_output.txt | tail -20; \
+		echo "❌ 下载失败"; \
+		rm /tmp/download_output.txt; \
+		exit 1; \
+	fi; \
+	rm /tmp/download_output.txt; \
+	echo "✅ 下载完成: $$VIDEO_PATH"; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "📹 开始处理视频"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(PYTHON) process_video.py "$$VIDEO_PATH"
+
+# 下载视频后自动处理（完整OCR模式）
+download-ocr: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定视频URL"; \
+		echo "用法：make download-ocr URL=https://example.com/video"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📥 下载并处理视频（完整模式）"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "📺 流程: 下载 → 抽帧 → OCR → ASR → AI总结"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@# 下载视频并获取文件路径
+	@$(PYTHON) video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
+	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
+		cat /tmp/download_output.txt | tail -20; \
+		echo "❌ 下载失败"; \
+		rm /tmp/download_output.txt; \
+		exit 1; \
+	fi; \
+	rm /tmp/download_output.txt; \
+	echo "✅ 下载完成: $$VIDEO_PATH"; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "📹 开始处理视频"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
+	$(PYTHON) process_video.py "$$VIDEO_PATH" --with-frames
 
 # 查看所有报告列表
 list-reports:

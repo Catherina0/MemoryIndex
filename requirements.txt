@@ -4,3 +4,4 @@ opencv-python
 numpy
 groq
 python-dotenv
+yt-dlp

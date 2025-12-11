@@ -1,6 +1,6 @@
 ╔═══════════════════════════════════════════════════════════════╗
 ║          📹 Video Report Pipeline - 快速参考卡片               ║
-║                    🆕 支持自动环境配置 & OCR 模型选择          ║
+║         🆕 统一视频下载层 + 自动环境 + OCR 模型选择            ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 📍 项目位置
@@ -13,17 +13,20 @@
 • 🤖 支持选择不同性能级别的 OCR 模型
 • 🔧 修复 PaddleOCR 新版本兼容性问题
 • 📦 所有依赖自动隔离在项目的 .venv 目录
+• 🆕 统一视频下载层 - 支持 YouTube、Bilibili、小红书等
+• 🆕 智能降级策略 - yt-dlp → BBDown → XHS-Downloader
+• 🆕 从URL直接处理视频 - 下载+抽帧+OCR+ASR+总结一键完成
 
 🚀 核心命令（最常用）
 ───────────────────────────────────────────────────────────────
-┌─ 音频模式（快速）──────────────────────────────────────────┐
+┌─ 本地视频：音频模式（快速）──────────────────────────────────┐
 │ make run VIDEO=视频路径                                      │
 │ 流程：音频提取 → Groq转写 → AI总结                           │
 │ 适合：播客、会议、讲座                                       │
 │ 速度：⚡⚡⚡ 快                                              │
 └────────────────────────────────────────────────────────────┘
 
-┌─ OCR模式（完整）───────────────────────────────────────────┐
+┌─ 本地视频：OCR模式（完整）───────────────────────────────────┐
 │ make ocr VIDEO=视频路径                                      │
 │ 流程：1️⃣ OCR识别 → 2️⃣ 音频转写 → 3️⃣ AI总结                │
 │ 特点：先处理OCR确认无误，再处理音频                          │
@@ -31,7 +34,22 @@
 │ 速度：🐢 慢（带进度条实时显示）                              │
 └────────────────────────────────────────────────────────────┘
 
-┌─ OCR模式 + 模型选择 ────────────────────────────────────────┐
+┌─ 🆕 从URL下载并处理：仅音频 ─────────────────────────────────┐
+│ make download-run URL="https://www.youtube.com/watch?v=xxx" │
+│ 流程：下载 → 音频提取 → Groq转写 → AI总结                    │
+│ 支持：YouTube, Bilibili, 小红书, 抖音, Twitter等            │
+│ 特点：自动下载到 videos/ 目录，自动处理                     │
+│ 速度：⚡⚡ 中等（含下载时间）                                │
+└────────────────────────────────────────────────────────────┘
+
+┌─ 🆕 从URL下载并处理：完整OCR ────────────────────────────────┐
+│ make download-ocr URL="https://www.bilibili.com/video/BVxxx"│
+│ 流程：下载 → 抽帧 → OCR → 音频 → AI总结                      │
+│ 特点：所有平台视频统一处理，统一命名存储                     │
+│ 速度：🐢 慢（含下载+OCR）                                    │
+└────────────────────────────────────────────────────────────┘
+
+┌─ 本地视频：OCR模式 + 模型选择 ──────────────────────────────┐
 │ # 高精度模式（推荐重要内容）                                  │
 │ make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server        │
 │                                                              │
@@ -50,15 +68,23 @@
 
 📝 示例
 ───────────────────────────────────────────────────────────────
-make run VIDEO=~/Downloads/meeting.mp4
-make ocr VIDEO=~/Desktop/tutorial.mp4
+本地文件处理：
+  make run VIDEO=~/Downloads/meeting.mp4
+  make ocr VIDEO=~/Desktop/tutorial.mp4
+
+URL下载处理：
+  make download-run URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  make download-ocr URL="https://www.bilibili.com/video/BV1xx411c7mD"
+
+仅下载（不处理）：
+  make download URL="https://www.youtube.com/watch?v=xxxxx"
 
 🔧 环境配置
 ───────────────────────────────────────────────────────────────
 🆕 自动模式（推荐）：
   直接运行 make run 或 make ocr，首次会自动：
   • 创建虚拟环境 (.venv)
-  • 安装所有依赖
+  • 安装所有依赖（包括 yt-dlp 用于下载）
   • 运行环境自检
   • 创建配置文件模板
 
@@ -67,9 +93,30 @@ make ocr VIDEO=~/Desktop/tutorial.mp4
   nano .env           # 填入 GROQ_API_KEY
   make check          # 验证配置
 
+🌐 支持的视频平台
+───────────────────────────────────────────────────────────────
+✅ 完全支持：
+  • YouTube (youtube.com, youtu.be)
+  • Bilibili (bilibili.com, b23.tv)
+
+⚠️ 需配置：
+  • 小红书 (xiaohongshu.com) - 需安装 XHS-Downloader
+  • 抖音 (douyin.com) - 需测试
+  • Twitter/X (twitter.com, x.com) - 需测试
+
+🎨 下载文件命名规范
+───────────────────────────────────────────────────────────────
+格式：平台_视频ID_清洗后的标题.mp4
+
+示例：
+  youtube_dQw4w9WgXcQ_Rick_Astley_Never_Gonna_Give_You_Up.mp4
+  bilibili_BV1xx411c7mD_某个有趣的视频标题.mp4
+
+存储位置：videos/ 目录
+
 🛠️ 维护命令
 ───────────────────────────────────────────────────────────────
-make help           # 查看所有命令
+make help           # 查看所有命令（含下载命令）
 make test           # 运行环境测试
 make check          # 检查配置状态
 make clean          # 清理输出文件
@@ -113,12 +160,13 @@ output/
 
 ⚡ 性能对比
 ───────────────────────────────────────────────────────────────
-视频模式对比：
+处理模式对比：
 ┌──────────┬─────────────┬─────────────┬──────────────┐
 │ 模式     │ 处理时间    │ 输出内容    │ 适用场景     │
 ├──────────┼─────────────┼─────────────┼──────────────┤
 │ make run │ ⚡ 快        │ 音频文字    │ 音频为主     │
 │ make ocr │ 🐢 慢        │ 音频+画面   │ 画面有文字   │
+│下载模式  │ ⚡⚡ 中等    │ 同上+下载   │ 在线视频     │
 └──────────┴─────────────┴─────────────┴──────────────┘
 
 OCR模型对比（基于52帧视频测试）：
@@ -140,6 +188,9 @@ OCR模型对比（基于52帧视频测试）：
 问题：ffmpeg 未安装
 解决：brew install ffmpeg
 
+问题：下载失败（yt-dlp 错误）
+解决：pip install --upgrade yt-dlp
+
 问题：OCR 处理很慢
 解决：使用 mobile 模型（默认）或减少抽帧频率
 
@@ -153,54 +204,68 @@ OCR模型对比（基于52帧视频测试）：
 问题：内存不足
 解决：使用 mobile 模型，或减少同时处理的帧数
 
-🆕 问题：首次运行很慢
+问题：首次运行很慢
 说明：正在自动下载模型和依赖，后续会很快
+
+问题：B站下载失败
+解决：安装 BBDown: brew install bbdown
 
 📚 文档
 ───────────────────────────────────────────────────────────────
 docs/
-├── AUTO_VENV.md      # 🆕 自动虚拟环境功能说明
-├── OCR_MODELS.md     # 🆕 OCR 模型选择详细指南
-├── GROQ_SETUP.md     # Groq API 配置指南
-├── QUICKSTART.md     # 快速入门
-└── START.md          # 详细启动指南
+├── AUTO_VENV.md              # 自动虚拟环境功能说明
+├── OCR_MODELS.md             # OCR 模型选择详细指南
+├── DOWNLOAD_GUIDE.md         # 🆕 完整下载功能指南
+├── DOWNLOAD_README.md        # 🆕 下载快速参考
+├── DOWNLOAD_IMPLEMENTATION.md # 🆕 下载功能实现细节
+├── GROQ_SETUP.md             # Groq API 配置指南
+├── QUICKSTART.md             # 快速入门
+└── START.md                  # 详细启动指南
 
-README.md             # 完整项目文档
+README.md                      # 完整项目文档
 
 💡 Pro Tips
 ───────────────────────────────────────────────────────────────
 1. 🆕 首次使用直接开始，无需手动配置：
    make run VIDEO=video.mp4  # 自动完成所有环境配置
 
-2. 🆕 OCR模式带进度条，实时查看处理进度：
+2. 🆕 从URL一键下载并处理：
+   make download-run URL="https://www.youtube.com/watch?v=xxx"
+   make download-ocr URL="https://www.bilibili.com/video/BVxxx"
+
+3. 🆕 支持多个平台的视频，统一处理流程：
+   make download-ocr URL="https://example.com/video"
+   # 支持 YouTube, Bilibili, 小红书, 抖音, Twitter 等
+
+4. OCR模式带进度条，实时查看处理进度：
    make ocr VIDEO=xxx.mp4  # 显示"🔍 OCR进度: 52/52"
 
-3. 批量处理多个视频：
+5. 批量处理多个视频：
    for f in *.mp4; do make run VIDEO="$f"; done
 
-4. 使用绝对路径避免问题：
+6. 使用绝对路径避免问题：
    make run VIDEO="$(pwd)/video.mp4"
 
-5. 查看实时处理日志：
+7. 查看实时处理日志：
    make run VIDEO=xxx.mp4 2>&1 | tee process.log
 
-6. 自定义输出目录：
+8. 自定义输出目录：
    python process_video.py video.mp4 --out-dir /custom/path
 
-7. 🆕 根据设备性能选择 OCR 模型：
+9. 根据设备性能选择 OCR 模型：
    # 普通笔记本 → mobile（默认）
    # 高性能工作站 → server
    # 平衡模式 → mobile检测 + server识别
 
-8. 🆕 OCR流程优化 - 先OCR后音频：
-   # 如果OCR识别有问题，可以及早发现
-   # 不会浪费时间在音频转写上
+10. OCR流程优化 - 先OCR后音频：
+    # 如果OCR识别有问题，可以及早发现
+    # 不会浪费时间在音频转写上
 
-9. 🆕 清理并重置环境：
-   make clean-all  # 删除虚拟环境和输出文件
-   make test       # 重新创建环境并测试
+11. 清理并重置环境：
+    make clean-all  # 删除虚拟环境和输出文件
+    make test       # 重新创建环境并测试
 
-10. 查看环境状态：
+12. 查看环境状态：
     make check      # 显示虚拟环境、配置、依赖等状态
 
 🌐 相关链接
@@ -214,11 +279,13 @@ Groq API Docs: https://console.groq.com/docs
 1️⃣  确保安装 ffmpeg: brew install ffmpeg
 2️⃣  直接运行（首次自动配置）: make run VIDEO=test.mp4
 3️⃣  编辑 .env 填入 GROQ_API_KEY（如需AI总结）
-4️⃣  开始使用：make run 或 make ocr
+4️⃣  开始使用：
+    • 本地视频：make run 或 make ocr
+    • 网络视频：make download-run 或 make download-ocr
 
 就这么简单！🎉
 
 ═══════════════════════════════════════════════════════════════
 📌 最后更新：2025-12-11
-✨ 版本：v2.0 - 自动化环境 & 智能 OCR
+✨ 版本：v2.1 - 统一下载层 + 自动化环境 + 智能 OCR
 打印或保存这张卡片，随时查阅！🎯

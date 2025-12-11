@@ -9,6 +9,13 @@ from groq import Groq
 
 from ocr_utils import init_ocr, ocr_folder_to_text
 
+# 可选：支持从 URL 直接下载
+try:
+    from video_downloader import VideoDownloader
+    DOWNLOADER_AVAILABLE = True
+except ImportError:
+    DOWNLOADER_AVAILABLE = False
+
 # 加载环境变量
 load_dotenv()
 
@@ -486,8 +493,21 @@ def process_video(
 
 # ========== CLI ==========
 def main():
-    parser = argparse.ArgumentParser(description="Video → Text Report pipeline")
-    parser.add_argument("video", type=str, help="输入视频路径")
+    parser = argparse.ArgumentParser(
+        description="Video → Text Report pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例用法：
+  # 处理本地视频文件
+  python process_video.py video.mp4
+  python process_video.py video.mp4 --with-frames
+  
+  # 从URL下载并处理（如果安装了 video_downloader）
+  python process_video.py "https://www.youtube.com/watch?v=xxxxx"
+  python process_video.py "https://www.bilibili.com/video/BVxxxxx" --with-frames
+        """
+    )
+    parser.add_argument("video", type=str, help="输入视频路径或URL")
     parser.add_argument(
         "--with-frames",
         action="store_true",
@@ -524,10 +544,43 @@ def main():
         action="store_true",
         help="是否使用 GPU 加速",
     )
+    parser.add_argument(
+        "--download-dir",
+        type=str,
+        default="videos",
+        help="视频下载目录（默认: videos/）",
+    )
 
     args = parser.parse_args()
 
-    video_path = Path(args.video).resolve()
+    # 检测输入是URL还是文件路径
+    input_str = args.video
+    is_url = input_str.startswith("http://") or input_str.startswith("https://")
+    
+    if is_url:
+        # 如果是URL，尝试下载
+        if not DOWNLOADER_AVAILABLE:
+            print("❌ 错误：检测到URL但未安装 video_downloader 模块")
+            print("   请先安装依赖: pip install yt-dlp")
+            exit(1)
+        
+        print(f"📥 检测到URL，开始下载...")
+        downloader = VideoDownloader(download_dir=args.download_dir)
+        
+        try:
+            file_info = downloader.download_video(input_str)
+            video_path = file_info.file_path
+            print(f"✅ 下载完成: {video_path}")
+        except Exception as e:
+            print(f"❌ 下载失败: {e}")
+            exit(1)
+    else:
+        # 如果是本地文件路径
+        video_path = Path(input_str).resolve()
+        if not video_path.exists():
+            print(f"❌ 错误：视频文件不存在: {video_path}")
+            exit(1)
+
     output_dir = Path(args.out_dir).resolve()
 
     process_video(
