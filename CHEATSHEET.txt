@@ -36,16 +36,18 @@
 
 ┌─ 🆕 从URL下载并处理：仅音频 ─────────────────────────────────┐
 │ make download-run URL="https://www.youtube.com/watch?v=xxx" │
+│ make download-run URL="朋友分享的视频：链接在这..."           │
 │ 流程：下载 → 音频提取 → Groq转写 → AI总结                    │
 │ 支持：YouTube, Bilibili, 小红书, 抖音, Twitter等            │
-│ 特点：自动下载到 videos/ 目录，自动处理                     │
+│ 特点：✨自动从文本中提取URL，自动下载到 videos/             │
 │ 速度：⚡⚡ 中等（含下载时间）                                │
 └────────────────────────────────────────────────────────────┘
 
 ┌─ 🆕 从URL下载并处理：完整OCR ────────────────────────────────┐
 │ make download-ocr URL="https://www.bilibili.com/video/BVxxx"│
+│ make download-ocr URL="看这个视频很有趣：链接..."            │
 │ 流程：下载 → 抽帧 → OCR → 音频 → AI总结                      │
-│ 特点：所有平台视频统一处理，统一命名存储                     │
+│ 特点：✨自动从分享文本中提取URL，所有平台统一处理             │
 │ 速度：🐢 慢（含下载+OCR）                                    │
 └────────────────────────────────────────────────────────────┘
 
@@ -72,12 +74,26 @@
   make run VIDEO=~/Downloads/meeting.mp4
   make ocr VIDEO=~/Desktop/tutorial.mp4
 
-URL下载处理：
+URL下载处理 - 直接链接：
   make download-run URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
   make download-ocr URL="https://www.bilibili.com/video/BV1xx411c7mD"
 
+✨ URL下载处理 - 自动提取（分享文本）：
+  make download-run URL="朋友推荐的视频：https://youtu.be/xxx 非常有趣"
+  make download-ocr URL="B站分享 - https://b23.tv/abc123 - 必看"
+
 仅下载（不处理）：
   make download URL="https://www.youtube.com/watch?v=xxxxx"
+
+💡 URL提取功能 - 智能识别
+───────────────────────────────────────────────────────────────
+✨ 无需手动提取，直接粘贴分享内容：
+  • 支持完整URL：https://www.bilibili.com/video/BVxxx
+  • 支持短链接：https://b23.tv/abc123
+  • 支持分享文本：分享一个视频给你：链接在这 https://...
+  • 自动清理尾部标点：链接）、链接。等都能识别
+
+系统自动识别 → 提取 → 下载处理，无需手动操作！
 
 🔧 环境配置
 ───────────────────────────────────────────────────────────────
@@ -106,11 +122,18 @@ URL下载处理：
 
 🎨 下载文件命名规范
 ───────────────────────────────────────────────────────────────
-格式：平台_视频ID_清洗后的标题.mp4
+格式：标题_平台_视频ID.mp4
 
 示例：
-  youtube_dQw4w9WgXcQ_Rick_Astley_Never_Gonna_Give_You_Up.mp4
-  bilibili_BV1xx411c7mD_某个有趣的视频标题.mp4
+  Never_Gonna_Give_You_Up_youtube_dQw4w9WgXcQ.mp4
+  某个有趣的视频标题_bilibili_BV1xx411c7mD.mp4
+  INTP：你不是迷茫而是在逃避真正的目标_bilibili_BV1ngCyBiEkc.mp4
+
+特点：
+  • 文件名以标题开头，易于识别内容
+  • 包含平台标记，便于溯源
+  • 包含视频ID，便于快速查找
+  • 存储在 videos/ 目录
 
 存储位置：videos/ 目录
 

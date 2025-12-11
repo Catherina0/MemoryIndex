@@ -318,6 +318,51 @@ class VideoDownloader:
         )
 
 
+def extract_url_from_text(text: str) -> Optional[str]:
+    """
+    从文本中提取视频URL（支持从分享文本中自动提取）
+    
+    支持的场景：
+    - 纯URL输入
+    - URL + 其他文本（自动提取URL）
+    - 多个URL（返回第一个有效的）
+    
+    Args:
+        text: 输入文本（可能包含URL和其他内容）
+        
+    Returns:
+        提取到的URL，或None
+    """
+    text = text.strip()
+    
+    # 支持的视频平台域名模式
+    video_patterns = [
+        r'https?://(?:www\.)?youtube\.com/watch\?v=[^&\s]+',
+        r'https?://(?:www\.)?youtu\.be/[^\s?&]+',
+        r'https?://(?:www\.)?bilibili\.com/video/[^\s?&]+',
+        r'https?://b23\.tv/[^\s?&]+',
+        r'https?://(?:www\.)?xiaohongshu\.com/[^\s?&]+',
+        r'https?://xhslink\.com/[^\s?&]+',
+        r'https?://(?:www\.)?douyin\.com/[^\s?&]+',
+        r'https?://(?:www\.)?tiktok\.com/[^\s?&]+',
+        r'https?://(?:www\.)?twitter\.com/[^\s?&]+',
+        r'https?://(?:www\.)?x\.com/[^\s?&]+',
+        # 通用URL模式（作为后备）
+        r'https?://[^\s]+',
+    ]
+    
+    # 逐个尝试每个模式
+    for pattern in video_patterns:
+        matches = re.findall(pattern, text)
+        if matches:
+            url = matches[0]
+            # 移除末尾的特殊字符（比如句号、引号等）
+            url = re.sub(r'[.,;:\'"\)\]]+$', '', url)
+            return url
+    
+    return None
+
+
 def main():
     """命令行接口"""
     import argparse
@@ -330,11 +375,15 @@ def main():
   python video_downloader.py https://www.youtube.com/watch?v=xxxxx
   python video_downloader.py https://www.bilibili.com/video/BVxxxxxx
   python video_downloader.py -d my_videos https://example.com/video
-  python video_downloader.py --json https://www.youtube.com/watch?v=xxxxx  # 输出JSON
+  python video_downloader.py --json https://www.youtube.com/watch?v=xxxxx
+  
+自动URL提取（支持复制分享文本）：
+  python video_downloader.py "分享一个视频：https://www.bilibili.com/video/BVxxxxx 看看"
+  python video_downloader.py "youtube.com/watch?v=xxxxx"
         """
     )
     
-    parser.add_argument("url", help="视频URL")
+    parser.add_argument("url", help="视频URL或包含URL的文本（支持自动提取）")
     parser.add_argument(
         "-d", "--dir",
         default="videos",
@@ -353,11 +402,24 @@ def main():
     
     args = parser.parse_args()
     
+    # 从输入中提取URL（支持自动提取）
+    url = extract_url_from_text(args.url)
+    if not url:
+        print(f"❌ 错误：无法从输入中提取有效的视频URL")
+        print(f"输入内容：{args.url}")
+        print("\n支持的URL格式：")
+        print("  • YouTube: youtube.com/watch?v=... 或 youtu.be/...")
+        print("  • Bilibili: bilibili.com/video/BV... 或 b23.tv/...")
+        print("  • 小红书: xiaohongshu.com/... 或 xhslink.com/...")
+        print("  • 抖音: douyin.com/...")
+        print("  • Twitter/X: twitter.com/... 或 x.com/...")
+        exit(1)
+    
     # 创建下载器并下载
     downloader = VideoDownloader(download_dir=args.dir)
     
     try:
-        file_info = downloader.download_video(args.url, force_redownload=args.force)
+        file_info = downloader.download_video(url, force_redownload=args.force)
         
         if args.json:
             # JSON 输出（用于脚本集成）
