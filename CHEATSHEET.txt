@@ -40,6 +40,12 @@
 │                                                              │
 │ # 平衡模式（性价比最高）                                      │
 │ make ocr VIDEO=xxx DET_MODEL=mobile REC_MODEL=server        │
+│                                                              │
+│ 💡 OCR 已优化参数，可识别：                                  │
+│    ✓ 中文字幕  ✓ 英文文本  ✓ 数字  ✓ 混合文本               │
+│    • 检测阈值: 0.2 (更敏感)                                  │
+│    • 置信度过滤: 0.25 (保留更多结果)                         │
+│    • 文本框扩展: 1.8x (捕获边缘文本)                         │
 └────────────────────────────────────────────────────────────┘
 
 📝 示例
@@ -69,6 +75,16 @@ make check          # 检查配置状态
 make clean          # 清理输出文件
 make show-report    # 查看最新报告
 make list-reports   # 列出所有报告
+
+🔍 OCR 调试工具
+───────────────────────────────────────────────────────────────
+python test_ocr_debug.py --check-api              # 检查OCR状态
+python test_ocr_debug.py --image xxx.png          # 测试单张图片
+python test_ocr_debug.py --folder frames/         # 批量测试
+python test_ocr_debug.py --compare-thresholds     # 对比阈值
+python test_ocr_debug.py --help                   # 查看帮助
+
+📚 详细文档: docs/OCR_DEBUG_GUIDE.md
 
 📂 输出位置
 ───────────────────────────────────────────────────────────────

@@ -92,29 +92,53 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
     try:
         client = Groq(api_key=api_key)
         model = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
-        max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "4096"))
+        # 增加 token 限制以支持更长的输出
+        max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "8192"))  # 从 4096 提升到 8192
         temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
         
-        prompt = f"""请对以下内容进行总结分析：
+        prompt = f"""请对以下内容进行详细的总结分析：
 
 内容：
-{full_text[:30000]}  # 限制长度避免超出 token 限制
+{full_text[:40000]}  # 提升输入长度限制
 
 要求：
-1. 提取核心要点和关键信息
-2. 保留重要的数字、引用和事实
-3. 按逻辑结构组织内容
-4. 如果有 OCR 内容，重点关注屏幕上的文字信息
-5. 总结长度适中，便于快速理解
+1. **使用完整的 Markdown 格式输出**（标题、列表、加粗、代码块等）
+2. 提取核心要点和关键信息
+3. 列出重要的数字、引用、时间点和事实
+4. 按逻辑结构组织内容（使用 ## 标题分节）
+5. 如果有 OCR 内容，重点分析屏幕文字和视觉信息
+6. 如果有多个主题，分别总结
+7. 输出要详细完整，不要过度精简
+8. 分析和推理一些OCR识别的文本可能存在的含义和背景
+9. 列出关键句子和段落便于回忆
 
-请用中文回答。"""
+输出格式示例：
+## 📋 内容概述
+[一句话概括主要内容]
+
+## 🔑 核心要点
+- 要点1
+- 要点2
+- 要点3
+
+## 📊 详细内容
+### 主题1
+[详细说明...]
+
+### 主题2
+[详细说明...]
+
+## 💡 关键信息
+- 重要数字、时间、引用等
+
+请用中文回答，充分利用 token 限制输出详细内容。"""
 
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {
                     "role": "system",
-                    "content": "你是一个专业的内容分析助手，擅长从视频转写和屏幕文字中提取关键信息。"
+                    "content": "你是一个专业的内容分析助手，擅长从视频转写和屏幕文字中提取关键信息并用结构化的 Markdown 格式呈现。你的总结应该详细、完整、易读。"
                 },
                 {
                     "role": "user",
@@ -153,48 +177,35 @@ def generate_formatted_report(
     dt = datetime.strptime(timestamp, "%Y%m%d_%H%M%S")
     formatted_time = dt.strftime("%Y年%m月%d日 %H:%M:%S")
     
+    # 使用 Markdown 格式
     report = []
-    report.append("=" * 70)
-    report.append("📹 视频分析报告")
-    report.append("=" * 70)
-    report.append("")
-    report.append(f"📝 视频名称: {video_name}")
-    report.append(f"🕒 处理时间: {formatted_time}")
-    report.append(f"📁 输出目录: {session_dir.name}")
-    report.append(f"🔧 处理模式: {'完整模式 (OCR + 音频)' if with_frames else '音频模式'}")
-    report.append("")
-    report.append("📊 数据统计:")
-    report.append(f"   • 语音识别: {transcript_chars} 字符, {transcript_lines} 行")
+    report.append("# 📹 视频分析报告\n")
+    report.append(f"**📝 视频名称**: {video_name}  ")
+    report.append(f"**🕒 处理时间**: {formatted_time}  ")
+    report.append(f"**📁 输出目录**: `{session_dir.name}`  ")
+    report.append(f"**🔧 处理模式**: {'完整模式 (OCR + 音频)' if with_frames else '音频模式'}  ")
+    report.append("\n---\n")
+    report.append("## 📊 数据统计\n")
+    report.append(f"- **语音识别**: {transcript_chars} 字符, {transcript_lines} 行")
     if with_frames:
-        report.append(f"   • OCR识别:  {ocr_chars} 字符, {ocr_lines} 行")
-    report.append("")
-    report.append("=" * 70)
-    report.append("")
+        report.append(f"- **OCR识别**: {ocr_chars} 字符, {ocr_lines} 行")
+    report.append("\n---\n")
     
-    # AI 总结
-    report.append("🤖 AI 智能总结")
-    report.append("-" * 70)
-    report.append("")
+    # AI 总结（已经是 markdown 格式）
+    report.append("## 🤖 AI 智能总结\n")
     report.append(summary)
-    report.append("")
-    report.append("=" * 70)
-    report.append("")
+    report.append("\n---\n")
     
     # 原始数据引用
-    report.append("📂 原始数据文件")
-    report.append("-" * 70)
-    report.append("")
-    report.append(f"• 语音识别原文: transcript_raw.txt ({transcript_chars} 字符)")
+    report.append("## 📂 原始数据文件\n")
+    report.append(f"- 📄 [语音识别原文](transcript_raw.md) ({transcript_chars} 字符)")
     if with_frames:
-        report.append(f"• OCR识别原文:  ocr_raw.txt ({ocr_chars} 字符)")
-        report.append(f"• 视频帧图片:   frames/ 目录")
-    report.append(f"• 音频文件:     {video_name}.wav")
-    report.append("")
-    report.append("💡 提示: 查看原始数据文件获取完整的识别内容")
-    report.append("")
-    report.append("=" * 70)
-    report.append(f"📌 报告生成时间: {formatted_time}")
-    report.append("=" * 70)
+        report.append(f"- 📄 [OCR识别原文](ocr_raw.md) ({ocr_chars} 字符)")
+        report.append(f"- 📁 视频帧图片: `frames/` 目录")
+    report.append(f"- 🔊 音频文件: `{video_name}.wav`")
+    report.append("\n> 💡 **提示**: 点击链接查看原始数据文件获取完整的识别内容\n")
+    report.append("---\n")
+    report.append(f"*📌 报告生成时间: {formatted_time}*")
     
     return "\n".join(report)
 
@@ -220,9 +231,9 @@ def process_video(
     # 2. 各类文件路径
     audio_path = session_dir / f"{video_name}.wav"
     frames_dir = session_dir / "frames"
-    ocr_raw_path = session_dir / "ocr_raw.txt"
-    transcript_raw_path = session_dir / "transcript_raw.txt"
-    report_path = session_dir / "report.txt"
+    ocr_raw_path = session_dir / "ocr_raw.md"
+    transcript_raw_path = session_dir / "transcript_raw.md"
+    report_path = session_dir / "report.md"
     
     print(f"\n📁 输出目录: {session_dir}")
     print(f"   时间戳: {timestamp}\n")
@@ -247,8 +258,17 @@ def process_video(
             rec_model=ocr_rec_model
         )
 
-        print("\n>> 对所有帧做 OCR（带进度显示）...")
-        ocr_text = ocr_folder_to_text(ocr, str(frames_dir))
+        print("\n>> 对所有帧做 OCR（PP-OCRv4 Server + 预处理 + 混合模式）...")
+        # 使用混合模式：同时识别底部字幕和画面其他文字
+        ocr_text = ocr_folder_to_text(
+            ocr, 
+            str(frames_dir), 
+            min_score=0.3,  # 识别阶段严格：只保留高置信度结果
+            debug=False,
+            use_preprocessing=True,  # 启用图像预处理（对比度+锐化）
+            roi_bottom_only=True,    # 在单一模式下生效
+            hybrid_mode=True,        # 【混合模式】同时识别字幕区和全画面
+        )
         
         print()  # 空行
         if ocr_text.strip():
@@ -256,9 +276,19 @@ def process_video(
             line_count = ocr_text.count('\n')
             print(f"✅ OCR 完成！识别到 {char_count} 个字符，{line_count} 行文本")
             
-            # 保存OCR原始结果
+            # 保存OCR原始结果（Markdown 格式）
             print(f"   💾 保存OCR原始结果: {ocr_raw_path.name}")
-            ocr_raw_path.write_text(ocr_text, encoding="utf-8")
+            ocr_markdown = f"# 🔍 OCR 识别原始数据\n\n"
+            ocr_markdown += f"**识别时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n"
+            ocr_markdown += f"**总字符数**: {char_count}  \n"
+            ocr_markdown += f"**总行数**: {line_count}  \n"
+            ocr_markdown += f"**处理模式**: 混合模式（字幕区 + 全画面）\n\n"
+            ocr_markdown += "---\n\n"
+            ocr_markdown += "## 📝 识别内容\n\n"
+            ocr_markdown += "```\n"
+            ocr_markdown += ocr_text
+            ocr_markdown += "\n```\n"
+            ocr_raw_path.write_text(ocr_markdown, encoding="utf-8")
         else:
             print("⚠️  警告：OCR 未识别到任何文字（可能视频中没有文字内容）")
         
@@ -274,10 +304,17 @@ def process_video(
     print(">> 调用 Groq 语音转写（占位）...")
     transcript_text = transcribe_audio_with_groq(audio_path)
     
-    # 保存语音识别原始结果
+    # 保存语音识别原始结果（Markdown 格式）
     if transcript_text.strip():
         print(f"   💾 保存语音识别原始结果: {transcript_raw_path.name}")
-        transcript_raw_path.write_text(transcript_text, encoding="utf-8")
+        transcript_markdown = f"# 🎤 语音识别原始数据\n\n"
+        transcript_markdown += f"**识别时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n"
+        transcript_markdown += f"**总字符数**: {len(transcript_text)}  \n"
+        transcript_markdown += f"**识别模型**: Groq Whisper  \n\n"
+        transcript_markdown += "---\n\n"
+        transcript_markdown += "## 📝 转写内容\n\n"
+        transcript_markdown += transcript_text
+        transcript_raw_path.write_text(transcript_markdown, encoding="utf-8")
 
     # 5. 合并文本：音频文字 + OCR 结果
     combined_text_parts = [f"=== Audio Transcript ===\n{transcript_text}\n"]
@@ -330,16 +367,16 @@ def main():
     parser.add_argument(
         "--ocr-det-model",
         type=str,
-        default="mobile",
+        default="server",  # 改为 server 以获得更好的效果
         choices=["server", "mobile"],
-        help="OCR 检测模型类型（默认: mobile）",
+        help="OCR 检测模型类型（默认: server，复杂背景建议使用）",
     )
     parser.add_argument(
         "--ocr-rec-model",
         type=str,
-        default="mobile",
+        default="server",  # 改为 server 以获得更好的效果
         choices=["server", "mobile"],
-        help="OCR 识别模型类型（默认: mobile）",
+        help="OCR 识别模型类型（默认: server，提升准确度）",
     )
     parser.add_argument(
         "--use-gpu",
