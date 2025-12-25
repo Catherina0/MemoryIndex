@@ -111,7 +111,7 @@ class SearchRepository:
                     fts.source_field,
                     fts.content as full_content,
                     fts.rank,
-                    GROUP_CONCAT(DISTINCT t.name, ', ') as tags
+                    GROUP_CONCAT(t.name, ', ') as tags
                 FROM fts_content fts
                 JOIN videos v ON fts.video_id = v.id
                 LEFT JOIN video_tags vt ON v.id = vt.video_id
@@ -119,7 +119,7 @@ class SearchRepository:
                 WHERE fts.content MATCH ?
                 {field_filter}
                 {tag_filter}
-                GROUP BY v.id, fts.source_field, fts.content
+                GROUP BY v.id, fts.source_field, fts.content, fts.rank
                 {order_clause}
                 LIMIT ? OFFSET ?
             """
@@ -227,8 +227,8 @@ class SearchRepository:
                 query = f"""
                     SELECT 
                         v.*,
-                        GROUP_CONCAT(DISTINCT t.name, ', ') as tags,
-                        COUNT(DISTINCT vt.tag_id) as matched_tag_count
+                        GROUP_CONCAT(t.name, ', ') as tags,
+                        COUNT(vt.tag_id) as matched_tag_count
                     FROM videos v
                     JOIN video_tags vt ON v.id = vt.video_id
                     JOIN tags t ON vt.tag_id = t.id

@@ -4,7 +4,8 @@
 """
 
 from .schema import init_database
-from .repository import VideoRepository, SearchRepository
+from .repository import VideoRepository
+from .search import SearchRepository
 from .models import Video, Artifact, Tag, Topic
 
 __all__ = [

@@ -6,8 +6,14 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
+import re
+import json
 
 from ocr_utils import init_ocr, ocr_folder_to_text
+
+# 导入数据库模块
+from db import VideoRepository
+from db.models import Video, Artifact, Topic, TimelineEntry, SourceType, ArtifactType, ProcessingStatus
 
 # 可选：支持从 URL 直接下载
 try:
@@ -26,6 +32,29 @@ def ensure_dir(path: Path):
 
 
 # ========== ffmpeg: 音频 & 抽帧 ==========
+def get_video_duration(video_path: Path) -> float:
+    """
+    使用 ffprobe 获取视频时长（秒）。
+    
+    Returns:
+        float: 视频时长（秒），如果获取失败返回 0
+    """
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        duration = float(result.stdout.strip())
+        return duration
+    except (subprocess.CalledProcessError, ValueError) as e:
+        print(f"⚠️  警告：无法获取视频时长: {e}")
+        return 0
+
+
 def extract_audio(video_path: Path, audio_path: Path):
     """
     用 ffmpeg 从视频里分离音频，输出为 wav。
@@ -188,10 +217,15 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
    - 如果某些屏幕文字重要（如 PPT、界面按钮、参数、代码），请单独提取并解释
 4. 自动识别“主题/章节”并结构化总结：概念、步骤、场景、结论
 5. 提取重要数据：数字、阈值、规则、引用、命令、日期等
-6. 为未来检索生成若干关键词（tags）
+6. 生成标签和摘要：
+   - **标签（tags）**：3-6个高度概括的主题标签，如"情感"、"告白"、"人生意义"、"科技"、"教育"等。避免使用"语音转写"、"OCR推断"等技术性描述词。标签应简短（1-4个字），概括性强，便于数据库搜索。
+   - **摘要**：不超过50个字的系统性内容概括，提炼核心主题和要点。
 7. 稍微详细一些，但不要写废话（重点是**可回溯、可搜索、可理解**）
 
 推荐结构：
+## 摘要
+（不超过50字的核心内容概括）
+
 ## 详细的主要内容概括
 ## 主题总结（自动生成主题名）
 ## 详细说明（合并音频与 OCR）
@@ -199,7 +233,8 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
 ## OCR 信息与推断（列出重要屏幕文字并解释）
 ## 时间线（关键片段 + 时间戳）
 ## 关键句（含时间戳）
-## 标签（tags）
+## 标签
+格式：标签: 标签1, 标签2, 标签3
 
 以下是内容：
 {full_text[:40000]}  
@@ -336,6 +371,298 @@ def generate_formatted_report(
     return "\n".join(report)
 
 
+def extract_summary_from_report(summary: str) -> str:
+    """从AI报告中提取摘要（不超过50字）"""
+    # 查找摘要部分
+    summary_patterns = [
+        r'##\s*摘要\s*\n+(.+?)(?:\n\n|\n##)',  # ## 摘要 后的内容
+        r'摘要[：:]\s*(.+?)(?:\n\n|\n##)',     # 摘要: 后的内容
+    ]
+    
+    for pattern in summary_patterns:
+        matches = re.findall(pattern, summary, re.DOTALL | re.MULTILINE)
+        if matches:
+            extracted = matches[0].strip()
+            # 移除Markdown格式
+            extracted = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', extracted)
+            # 限制长度为50字
+            if len(extracted) > 50:
+                extracted = extracted[:50]
+            return extracted
+    
+    # 如果没找到摘要章节，尝试提取第一段非标题内容
+    lines = summary.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#') and not line.startswith('*') and len(line) > 10:
+            # 移除Markdown格式
+            line = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', line)
+            if len(line) > 50:
+                return line[:50]
+            return line
+    
+    return "暂无摘要"
+
+
+def extract_tags_from_summary(summary: str) -> list:
+    """从AI总结中提取标签"""
+    tags = []
+    
+    # 查找标签行（支持多种格式）
+    tag_patterns = [
+        r'##\s*标签\s*\n+(.+?)(?:\n\n|\n##)',  # ## 标签 后的内容
+        r'标签[：:]\s*(.+)',
+        r'Tags[：:]\s*(.+)',
+        r'关键词[：:]\s*(.+)',
+        r'Keywords[：:]\s*(.+)',
+    ]
+    
+    for pattern in tag_patterns:
+        matches = re.findall(pattern, summary, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        for match in matches:
+            # 移除Markdown格式（粗体、斜体等）
+            clean_match = re.sub(r'\*\*|\*|`|#', '', match)
+            # 移除引号
+            clean_match = re.sub(r'["""\'\'"]', '', clean_match)
+            # 移除换行
+            clean_match = clean_match.replace('\n', ' ')
+            # 分割标签（支持逗号、顿号、空格、分号等分隔符）
+            tag_list = re.split(r'[,，、\s;；]+', clean_match.strip())
+            tags.extend([t.strip() for t in tag_list if t.strip()])
+    
+    # 去重并过滤
+    seen = set()
+    unique_tags = []
+    for tag in tags:
+        # 清理每个标签
+        tag = re.sub(r'[^\w\u4e00-\u9fa5\-]', '', tag)  # 只保留字母、数字、中文、连字符
+        tag_lower = tag.lower()
+        if tag_lower not in seen and len(tag) > 1 and len(tag) < 20:
+            seen.add(tag_lower)
+            unique_tags.append(tag)
+    
+    return unique_tags[:10]  # 最多返回10个标签
+
+
+def extract_topics_from_summary(summary: str, video_duration: float = 0) -> list:
+    """从AI总结中提取主题章节"""
+    topics = []
+    
+    # 查找章节标题（## 开头）
+    lines = summary.split('\n')
+    current_topic = None
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        
+        # 检测章节标题
+        if line.startswith('##') and not line.startswith('###'):
+            title = line.lstrip('#').strip()
+            
+            # 过滤掉一些非章节的标题
+            skip_titles = ['AI 智能总结', '数据统计', '原始数据', '总结', '标签', 'Tags', '关键词']
+            if any(skip in title for skip in skip_titles):
+                continue
+            
+            # 提取时间范围（如果有）
+            time_match = re.search(r'\[?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\]?', line)
+            
+            if time_match:
+                start_min, start_sec, end_min, end_sec = map(int, time_match.groups())
+                start_time = start_min * 60 + start_sec
+                end_time = end_min * 60 + end_sec
+            else:
+                # 如果没有明确时间，按顺序分配
+                start_time = (len(topics) * video_duration / 5) if video_duration > 0 else 0
+                end_time = min(start_time + video_duration / 5, video_duration) if video_duration > 0 else 0
+            
+            # 收集描述（下面几行非标题内容）
+            description_lines = []
+            for j in range(i + 1, min(i + 5, len(lines))):
+                desc_line = lines[j].strip()
+                if desc_line and not desc_line.startswith('#'):
+                    description_lines.append(desc_line)
+                elif desc_line.startswith('##'):
+                    break
+            
+            description = ' '.join(description_lines)[:200]
+            
+            topics.append({
+                'title': title[:100],
+                'start_time': start_time,
+                'end_time': end_time,
+                'description': description,
+                'keywords': []  # 可以后续从描述中提取
+            })
+    
+    return topics[:20]  # 最多返回20个主题
+
+
+def save_to_database(
+    video_path: Path,
+    video_name: str,
+    session_dir: Path,
+    transcript_text: str,
+    ocr_text: str,
+    summary: str,
+    transcript_data: dict,
+    timeline: list = None,
+    with_frames: bool = False,
+    video_duration: float = 0,
+    source_url: str = None,
+    platform_title: str = None,
+) -> int:
+    """
+    将处理结果保存到数据库
+    
+    Returns:
+        int: 视频ID
+    """
+    try:
+        repo = VideoRepository()
+        
+        # 1. 创建视频记录
+        print("\n💾 保存到数据库...")
+        
+        # 计算文件哈希
+        content_hash = repo.calculate_content_hash(str(video_path))
+        
+        # 检查是否已存在
+        existing = repo.get_video_by_hash(content_hash)
+        if existing:
+            print(f"   ⚠️  视频已存在 (ID: {existing.id})，更新产物...")
+            video_id = existing.id
+        else:
+            # 判断来源类型
+            if source_url:
+                if 'bilibili.com' in source_url:
+                    source_type = SourceType.BILIBILI
+                elif 'youtube.com' in source_url or 'youtu.be' in source_url:
+                    source_type = SourceType.YOUTUBE
+                else:
+                    source_type = SourceType.URL
+            else:
+                source_type = SourceType.LOCAL
+            
+            video = Video(
+                content_hash=content_hash,
+                video_id=None,
+                source_type=source_type,
+                source_url=source_url,
+                platform_title=platform_title or video_name,
+                title=platform_title or video_name,
+                duration_seconds=video_duration,
+                file_path=str(video_path),
+                file_size_bytes=video_path.stat().st_size,
+                processing_config={
+                    'with_frames': with_frames,
+                    'output_dir': str(session_dir)
+                },
+                status=ProcessingStatus.COMPLETED
+            )
+            
+            video_id = repo.create_video(video)
+            print(f"   ✅ 创建视频记录 (ID: {video_id})")
+        
+        # 2. 保存产物
+        # 2.1 语音转写
+        if transcript_text.strip():
+            transcript_artifact = Artifact(
+                video_id=video_id,
+                artifact_type=ArtifactType.TRANSCRIPT,
+                content_text=transcript_text,
+                content_json=transcript_data,
+                file_path=str(session_dir / "transcript_raw.md"),
+                model_name="groq-whisper-large-v3",
+                char_count=len(transcript_text)
+            )
+            repo.save_artifact(transcript_artifact)
+            print(f"   ✅ 保存语音转写 ({len(transcript_text)} 字符)")
+        
+        # 2.2 OCR识别
+        if with_frames and ocr_text.strip():
+            ocr_artifact = Artifact(
+                video_id=video_id,
+                artifact_type=ArtifactType.OCR,
+                content_text=ocr_text,
+                file_path=str(session_dir / "ocr_raw.md"),
+                model_name="paddleocr-v4",
+                char_count=len(ocr_text)
+            )
+            repo.save_artifact(ocr_artifact)
+            print(f"   ✅ 保存OCR识别 ({len(ocr_text)} 字符)")
+        
+        # 2.3 AI报告
+        if summary.strip():
+            report_artifact = Artifact(
+                video_id=video_id,
+                artifact_type=ArtifactType.REPORT,
+                content_text=summary,
+                file_path=str(session_dir / "report.md"),
+                model_name="groq-llama3-120b",
+                char_count=len(summary)
+            )
+            repo.save_artifact(report_artifact)
+            print(f"   ✅ 保存AI报告 ({len(summary)} 字符)")
+        
+        # 3. 提取并保存标签
+        tags = extract_tags_from_summary(summary)
+        if tags:
+            repo.save_tags(video_id, tags, source='auto', confidence=0.8)
+            print(f"   ✅ 保存标签: {', '.join(tags)}")
+        
+        # 4. 提取并保存主题
+        topics = extract_topics_from_summary(summary, video_duration)
+        if topics:
+            topic_objects = []
+            for t in topics:
+                topic = Topic(
+                    video_id=video_id,
+                    title=t['title'],
+                    start_time=t['start_time'],
+                    end_time=t['end_time'],
+                    summary=t['description'],
+                    keywords=t['keywords']
+                )
+                topic_objects.append(topic)
+            
+            repo.save_topics(video_id, topic_objects)
+            print(f"   ✅ 保存主题: {len(topics)} 个章节")
+        
+        # 5. 保存时间线
+        if timeline and len(timeline) > 0:
+            timeline_entries = []
+            for entry in timeline[:100]:  # 限制数量
+                if entry.get('text'):
+                    tl = TimelineEntry(
+                        video_id=video_id,
+                        timestamp=entry['second'],
+                        content_type='transcript',
+                        content_text=entry['text'][:500],
+                        metadata={'frame': entry.get('frame')}
+                    )
+                    timeline_entries.append(tl)
+            
+            if timeline_entries:
+                repo.save_timeline(video_id, timeline_entries)
+                print(f"   ✅ 保存时间线: {len(timeline_entries)} 个条目")
+        
+        # 6. 更新全文搜索索引
+        print("   🔍 更新全文搜索索引...")
+        repo.update_fts_index(video_id)
+        
+        print(f"   ✅ 数据库保存完成！(视频ID: {video_id})")
+        print(f"   💡 可以使用 `make search Q=\"关键词\"` 来搜索")
+        
+        return video_id
+        
+    except Exception as e:
+        print(f"   ❌ 数据库保存失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 # ========== 主控制流程 ==========
 def process_video(
     video_path: Path,
@@ -345,6 +672,8 @@ def process_video(
     ocr_det_model: str = "mobile",
     ocr_rec_model: str = "mobile",
     use_gpu: bool = False,
+    source_url: str = None,
+    platform_title: str = None,
 ):
     ensure_dir(output_dir)
 
@@ -363,6 +692,11 @@ def process_video(
     
     print(f"\n📁 输出目录: {session_dir}")
     print(f"   时间戳: {timestamp}\n")
+
+    # 获取视频时长
+    print(">> 获取视频时长...")
+    video_duration = get_video_duration(video_path)
+    print(f"   ⏱️  视频时长: {video_duration:.2f} 秒 ({int(video_duration // 60)}:{int(video_duration % 60):02d})")
 
     ocr_text = ""
     transcript_text = ""
@@ -489,6 +823,23 @@ def process_video(
     report_path.write_text(report_content, encoding="utf-8")
     print(f"\n📄 报告已保存到: {report_path}")
     print(f"📁 完整输出目录: {session_dir}")
+    
+    # 8. 保存到数据库
+    save_to_database(
+        video_path=video_path,
+        video_name=video_name,
+        session_dir=session_dir,
+        transcript_text=transcript_text,
+        ocr_text=ocr_text,
+        summary=summary,
+        transcript_data=transcript_data,
+        timeline=timeline,
+        with_frames=with_frames,
+        video_duration=video_duration,
+        source_url=source_url,
+        platform_title=platform_title,
+    )
+
 
 
 # ========== CLI ==========
@@ -557,6 +908,9 @@ def main():
     input_str = args.video
     is_url = input_str.startswith("http://") or input_str.startswith("https://")
     
+    source_url = None
+    platform_title = None
+    
     if is_url:
         # 如果是URL，尝试下载
         if not DOWNLOADER_AVAILABLE:
@@ -570,6 +924,8 @@ def main():
         try:
             file_info = downloader.download_video(input_str)
             video_path = file_info.file_path
+            source_url = input_str
+            platform_title = getattr(file_info, 'title', None)
             print(f"✅ 下载完成: {video_path}")
         except Exception as e:
             print(f"❌ 下载失败: {e}")
@@ -591,6 +947,8 @@ def main():
         ocr_det_model=args.ocr_det_model,
         ocr_rec_model=args.ocr_rec_model,
         use_gpu=args.use_gpu,
+        source_url=source_url,
+        platform_title=platform_title,
     )
 
 

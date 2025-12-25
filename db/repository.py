@@ -4,6 +4,7 @@
 """
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -14,6 +15,45 @@ from .models import (
     Video, Artifact, Tag, Topic, TimelineEntry,
     SourceType, ProcessingStatus, ArtifactType
 )
+
+
+def extract_summary_from_report(report_text: str) -> str:
+    """从AI报告中提取摘要（不超过50字）"""
+    if not report_text:
+        return "暂无摘要"
+    
+    # 查找摘要部分
+    summary_patterns = [
+        r'##\s*摘要\s*\n+(.+?)(?:\n\n|\n##)',  # ## 摘要 后的内容
+        r'摘要[：:]\s*(.+?)(?:\n\n|\n##)',     # 摘要: 后的内容
+    ]
+    
+    for pattern in summary_patterns:
+        matches = re.findall(pattern, report_text, re.DOTALL | re.MULTILINE)
+        if matches:
+            extracted = matches[0].strip()
+            # 移除Markdown格式
+            extracted = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', extracted)
+            # 移除多余空白
+            extracted = ' '.join(extracted.split())
+            # 限制长度为50字
+            if len(extracted) > 50:
+                extracted = extracted[:50] + '...'
+            return extracted
+    
+    # 如果没找到摘要章节，尝试提取第一段非标题内容
+    lines = report_text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#') and not line.startswith('*') and not line.startswith('-') and len(line) > 10:
+            # 移除Markdown格式
+            line = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', line)
+            line = ' '.join(line.split())
+            if len(line) > 50:
+                return line[:50] + '...'
+            return line
+    
+    return "暂无摘要"
 
 
 class VideoRepository:
@@ -245,6 +285,62 @@ class VideoRepository:
             
             return [row['name'] for row in cursor.fetchall()]
     
+    def list_videos(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出所有视频及其摘要信息
+        
+        Args:
+            limit: 返回视频数量
+            offset: 分页偏移量
+            
+        Returns:
+            包含视频信息的字典列表，每个字典包含：
+            - id: 视频ID
+            - title: 标题
+            - source_type: 来源类型
+            - duration: 时长（秒）
+            - tags: 标签列表
+            - summary: 内容摘要（来自report）
+            - created_at: 创建时间
+        """
+        with self._get_conn() as conn:
+            # 使用子查询避免 JOIN 导致的重复
+            cursor = conn.execute("""
+                SELECT 
+                    v.id, v.title, v.source_type, v.duration_seconds, v.created_at,
+                    (
+                        SELECT GROUP_CONCAT(t.name, ', ')
+                        FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE vt.video_id = v.id
+                    ) as tags,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type = 'report'
+                        LIMIT 1
+                    ) as report_content
+                FROM videos v
+                ORDER BY v.created_at DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
+            
+            results = []
+            for row in cursor.fetchall():
+                # 提取摘要（使用AI生成的摘要章节）
+                summary = extract_summary_from_report(row['report_content']) if row['report_content'] else '暂无摘要'
+                
+                results.append({
+                    'id': row['id'],
+                    'title': row['title'] or '未命名',
+                    'source_type': row['source_type'],
+                    'duration': row['duration_seconds'] or 0,
+                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'summary': summary,
+                    'created_at': row['created_at']
+                })
+            
+            return results
+    
     def save_topics(self, video_id: int, topics: List[Topic]) -> List[int]:
         """批量保存主题"""
         topic_ids = []
@@ -366,12 +462,12 @@ class VideoRepository:
             duration_seconds=row['duration_seconds'],
             file_path=row['file_path'],
             file_size_bytes=row['file_size_bytes'],
-            processing_config=json.loads(row['processing_config']) if row['processing_config'] else None,
+            processing_config=row['processing_config'] if row['processing_config'] else None,
             status=ProcessingStatus(row['status']),
             error_message=row['error_message'],
-            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else None,
-            processed_at=datetime.fromisoformat(row['processed_at']) if row['processed_at'] else None,
-            updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else None,
+            created_at=row['created_at'] if isinstance(row['created_at'], datetime) else (datetime.fromisoformat(row['created_at']) if row['created_at'] else None),
+            processed_at=row['processed_at'] if isinstance(row['processed_at'], datetime) else (datetime.fromisoformat(row['processed_at']) if row['processed_at'] else None),
+            updated_at=row['updated_at'] if isinstance(row['updated_at'], datetime) else (datetime.fromisoformat(row['updated_at']) if row['updated_at'] else None),
         )
         
         # 加载标签
@@ -386,13 +482,13 @@ class VideoRepository:
             video_id=row['video_id'],
             artifact_type=ArtifactType(row['artifact_type']),
             content_text=row['content_text'],
-            content_json=json.loads(row['content_json']) if row['content_json'] else None,
+            content_json=row['content_json'] if row['content_json'] else None,
             file_path=row['file_path'],
             model_name=row['model_name'],
-            model_params=json.loads(row['model_params']) if row['model_params'] else None,
+            model_params=row['model_params'] if row['model_params'] else None,
             char_count=row['char_count'],
             word_count=row['word_count'],
-            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else None,
+            created_at=row['created_at'] if isinstance(row['created_at'], datetime) else (datetime.fromisoformat(row['created_at']) if row['created_at'] else None),
         )
     
     def _row_to_topic(self, row: dict) -> Topic:
@@ -404,8 +500,8 @@ class VideoRepository:
             summary=row['summary'],
             start_time=row['start_time'],
             end_time=row['end_time'],
-            keywords=json.loads(row['keywords']) if row['keywords'] else [],
-            key_points=json.loads(row['key_points']) if row['key_points'] else [],
+            keywords=row['keywords'] if row['keywords'] else [],
+            key_points=row['key_points'] if row['key_points'] else [],
             sequence=row['sequence'],
-            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else None,
+            created_at=row['created_at'] if isinstance(row['created_at'], datetime) else (datetime.fromisoformat(row['created_at']) if row['created_at'] else None),
         )

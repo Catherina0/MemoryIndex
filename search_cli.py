@@ -213,6 +213,41 @@ def suggest_tags_command(args):
         print(f"  • {tag}")
 
 
+def list_command(args):
+    """列出所有视频"""
+    from db import VideoRepository
+    repo = VideoRepository()
+    
+    videos = repo.list_videos(limit=args.limit, offset=args.offset)
+    
+    if not videos:
+        print("\n❌ 数据库中没有视频")
+        return
+    
+    # JSON 输出
+    if args.json:
+        print(json.dumps(videos, ensure_ascii=False, indent=2))
+        return
+    
+    # 表格输出
+    print(f"\n📹 视频列表 (共 {len(videos)} 条):\n")
+    
+    table_data = []
+    for i, video in enumerate(videos, 1):
+        table_data.append([
+            i,
+            video['id'],
+            truncate_text(video['title'], 30),
+            video['source_type'],
+            format_duration(video['duration']),
+            truncate_text(', '.join(video['tags']), 30) if video['tags'] else '无',
+            truncate_text(video['summary'], 50)
+        ])
+    
+    headers = ['#', 'ID', '标题', '来源', '时长', '标签', '摘要']
+    print(tabulate(table_data, headers=headers, tablefmt='grid'))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='知识库搜索工具',
@@ -284,6 +319,13 @@ def main():
     suggest_parser.add_argument('prefix', help='标签前缀')
     suggest_parser.add_argument('--limit', type=int, default=10, help='返回结果数')
     suggest_parser.set_defaults(func=suggest_tags_command)
+    
+    # 列出视频
+    list_parser = subparsers.add_parser('list', help='列出所有视频')
+    list_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
+    list_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
+    list_parser.add_argument('--json', action='store_true', help='JSON格式输出')
+    list_parser.set_defaults(func=list_command)
     
     args = parser.parse_args()
     
