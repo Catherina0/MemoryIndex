@@ -1,9 +1,34 @@
 # ocr_utils.py
 import os
 import tempfile
+import warnings
+import logging
+
+# 抑制 PaddleOCR/PaddleX 模型加载日志（必须在 import 前设置）
+os.environ['PADDLEX_DISABLE_PRINT'] = '1'
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+warnings.filterwarnings('ignore')
+logging.getLogger('ppocr').setLevel(logging.ERROR)
+logging.getLogger('paddle').setLevel(logging.ERROR)
+logging.getLogger('paddlex').setLevel(logging.ERROR)
+
 from paddleocr import PaddleOCR
 from PIL import Image, ImageEnhance
 from tqdm import tqdm
+
+
+def check_gpu_available():
+    """
+    检测GPU是否可用
+    
+    Returns:
+        bool: True表示GPU可用，False表示不可用
+    """
+    try:
+        import paddle
+        return paddle.is_compiled_with_cuda()
+    except Exception:
+        return False
 
 
 def preprocess_image(image_path, enhance_contrast=True, roi_bottom_only=False, bottom_ratio=0.25):
@@ -41,13 +66,13 @@ def preprocess_image(image_path, enhance_contrast=True, roi_bottom_only=False, b
     return img
 
 
-def init_ocr(lang="ch", use_gpu=False, det_model="server", rec_model="server"):
+def init_ocr(lang="ch", use_gpu=None, det_model="server", rec_model="server"):
     """
     初始化 OCR 模型 - 升级到 PP-OCRv4 server 版本
     
     参数:
         lang: 语言，'ch'(中文+英文混合)，不要用纯英文模型
-        use_gpu: 是否使用 GPU，默认 False
+        use_gpu: 是否使用 GPU。None表示自动检测，True强制使用GPU，False强制使用CPU
         det_model: 检测模型 - 'server'(精度优先，复杂背景强)/'mobile'(速度优先)
         rec_model: 识别模型 - 'server'(精度优先)/'mobile'(速度优先)
     
@@ -61,22 +86,40 @@ def init_ocr(lang="ch", use_gpu=False, det_model="server", rec_model="server"):
         2. 识别阶段：提高置信度要求，严格筛选 ("宁缺毋滥")
         3. 方向分类：必须开启，应对旋转/倾斜文本
         4. 分辨率提升：识别输入放大，利于小字幕
+    
+    GPU加速:
+        - 自动检测GPU可用性，如果可用则启用加速
+        - GPU加速可显著提升处理速度（约3-5倍）
     """
+    # 自动检测或使用指定的GPU设置
+    if use_gpu is None:
+        use_gpu = check_gpu_available()
+    
+    # 设置 Paddle 设备（GPU 或 CPU）
+    import paddle
+    if use_gpu and paddle.is_compiled_with_cuda():
+        paddle.device.set_device('gpu:0')
+        print("✅ 使用 GPU 加速")
+    else:
+        paddle.device.set_device('cpu')
+        if use_gpu:
+            print("⚠️ GPU 不可用，使用 CPU 模式")
+    
     # PP-OCRv4 server 模型 + 优化参数配置
     ocr = PaddleOCR(
         lang=lang,  # 'ch' 模型支持中英文混合，不要用纯英文
+        # 注意：PaddleOCR 3.x 不再接受 use_gpu 参数，通过 paddle.device.set_device 控制
         
         # 【必须开启】方向分类：处理旋转、倾斜、竖排文本
-        use_angle_cls=True,
+        use_textline_orientation=True,
         
         # 【检测阶段：宽松策略】多抓候选框
-        det_db_thresh=0.2,          # 检测二值化阈值 (0.2 = 较宽松)
-        det_db_box_thresh=0.4,      # 检测框置信度 (降低以保留更多候选)
-        det_db_unclip_ratio=2.2,    # 文本框扩展比例 (稍大，避免截断)
+        text_det_thresh=0.2,          # 检测二值化阈值 (0.2 = 较宽松)
+        text_det_box_thresh=0.4,      # 检测框置信度 (降低以保留更多候选)
+        text_det_unclip_ratio=2.2,    # 文本框扩展比例 (稍大，避免截断)
         
         # 【识别阶段：严格策略】提高输入质量
-        rec_batch_num=6,            # 批处理大小
-        # rec_image_shape 在新版中已不适用，由模型自动处理
+        text_recognition_batch_size=6,  # 批处理大小
     )
     return ocr
 

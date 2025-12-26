@@ -51,6 +51,7 @@ help:
 	@echo "  DET_MODEL=mobile|server   检测模型（默认 mobile=快速）"
 	@echo "  REC_MODEL=mobile|server   识别模型（默认 mobile=快速）"
 	@echo "  USE_GPU=1                 启用 GPU 加速"
+	@echo "  OCR_WORKERS=N             并行进程数（1-10，默认=auto，即CPU核心/2）"
 	@echo ""
 	@echo "🔧 维护命令："
 	@echo "  make install            安装/更新依赖"
@@ -73,6 +74,9 @@ help:
 	@echo "  make download-run URL=https://www.bilibili.com/video/BVxxxxx"
 	@echo "  make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server  # 高精度"
 	@echo "  make ocr VIDEO=xxx DET_MODEL=mobile REC_MODEL=mobile  # 快速"
+	@echo "  make ocr VIDEO=xxx OCR_WORKERS=3    # 使用3个进程"
+	@echo "  make ocr VIDEO=xxx OCR_WORKERS=8    # 使用8个进程"
+	@echo "  make ocr VIDEO=xxx OCR_WORKERS=auto # 自动（默认）"
 	@echo ""
 	@echo "💡 提示："
 	@echo "  • 首次运行任何命令会自动创建虚拟环境"
@@ -189,15 +193,22 @@ run: ensure-venv
 #   DET_MODEL=mobile|server  - 检测模型（默认 mobile）
 #   REC_MODEL=mobile|server  - 识别模型（默认 mobile）
 #   USE_GPU=1                - 启用 GPU 加速
+#   OCR_WORKERS=N            - 并行进程数（默认=CPU核心数/2）
 ocr: ensure-venv
 	@if [ -z "$(VIDEO)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
 		echo "用法：make ocr VIDEO=/path/to/video.mp4"; \
 		echo "可选：make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server"; \
+		echo "可选：make ocr VIDEO=xxx OCR_WORKERS=3  # 使用3个进程"; \
 		exit 1; \
 	fi
 	@DET=$${DET_MODEL:-mobile}; \
 	REC=$${REC_MODEL:-mobile}; \
+	if [ -n "$(OCR_WORKERS)" ]; then \
+		WORKERS=$(OCR_WORKERS); \
+	else \
+		WORKERS=auto; \
+	fi; \
 	GPU_FLAG=""; \
 	if [ "$(USE_GPU)" = "1" ]; then GPU_FLAG="--use-gpu"; fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
@@ -206,10 +217,15 @@ ocr: ensure-venv
 	echo "📹 视频: $(VIDEO)"; \
 	echo "🔍 流程: 1️⃣  OCR识别 → 2️⃣  音频转写 → 3️⃣  AI总结"; \
 	echo "🤖 OCR模型: det=$$DET, rec=$$REC"; \
+	if [ "$$WORKERS" != "auto" ]; then \
+		echo "⚡ 并行进程: $$WORKERS (用户指定)"; \
+	else \
+		echo "⚡ 并行进程: 自动 (CPU核心数/2 ≈ 5)"; \
+	fi; \
 	echo "⏱️  注意：OCR 处理较慢，带进度条显示"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo ""; \
-	$(PYTHON) process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
+	OCR_WORKERS=$$WORKERS $(PYTHON) process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "✅ 处理完成！"; \
@@ -487,3 +503,14 @@ ds: db-status
 
 # 快捷命令：列出视频
 ls: db-list
+
+# 测试 OCR_WORKERS 参数传递
+test-workers:
+	@if [ -n "$(OCR_WORKERS)" ]; then \
+		WORKERS=$(OCR_WORKERS); \
+	else \
+		WORKERS=auto; \
+	fi; \
+	echo "Make 变量: OCR_WORKERS=$(OCR_WORKERS)"; \
+	echo "Shell 变量: WORKERS=$$WORKERS"; \
+	OCR_WORKERS=$$WORKERS $(PYTHON) test_make_workers.py

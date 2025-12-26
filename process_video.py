@@ -8,8 +8,26 @@ from dotenv import load_dotenv
 from groq import Groq
 import re
 import json
+import warnings
+import logging
+
+# 抑制 PaddleOCR/PaddleX 模型加载日志（必须在 import 前设置）
+os.environ['PADDLEX_DISABLE_PRINT'] = '1'
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+warnings.filterwarnings('ignore')
+logging.getLogger('ppocr').setLevel(logging.ERROR)
+logging.getLogger('paddle').setLevel(logging.ERROR)
+logging.getLogger('paddlex').setLevel(logging.ERROR)
 
 from ocr_utils import init_ocr, ocr_folder_to_text
+
+# 导入多进程OCR（用于提升CPU利用率）
+try:
+    from ocr_parallel import ocr_folder_parallel
+    PARALLEL_OCR_AVAILABLE = True
+except ImportError:
+    PARALLEL_OCR_AVAILABLE = False
+    print("⚠️  多进程OCR模块不可用，将使用单进程模式")
 
 # 导入数据库模块
 from db import VideoRepository
@@ -83,6 +101,7 @@ def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
     cmd = [
         "ffmpeg",
         "-y",
+        "-loglevel", "error",  # 只显示错误
         "-i", str(video_path),
         "-vf", f"fps={fps}",
         str(out_pattern),
@@ -710,31 +729,51 @@ def process_video(
         print(">> 抽帧中...")
         extract_frames(video_path, frames_dir, fps=1)
 
-        print(f"\n>> 初始化本地 OCR (det={ocr_det_model}, rec={ocr_rec_model})...")
-        ocr = init_ocr(
-            lang=ocr_lang,
-            use_gpu=use_gpu,
-            det_model=ocr_det_model,
-            rec_model=ocr_rec_model
-        )
-
-        print("\n>> 对所有帧做 OCR（PP-OCRv4 Server + 预处理 + 混合模式）...")
-        # 使用混合模式：同时识别底部字幕和画面其他文字
-        ocr_text = ocr_folder_to_text(
-            ocr, 
-            str(frames_dir), 
-            min_score=0.3,  # 识别阶段严格：只保留高置信度结果
-            debug=False,
-            use_preprocessing=True,  # 启用图像预处理（对比度+锐化）
-            roi_bottom_only=True,    # 在单一模式下生效
-            hybrid_mode=True,        # 【混合模式】同时识别字幕区和全画面
-        )
+        print("\n>> OCR 处理中...")
         
-        print()  # 空行
+        # 使用多进程并行处理以提升CPU利用率
+        if PARALLEL_OCR_AVAILABLE:
+            import os
+            # 从环境变量读取工作进程数，如果未设置则使用CPU核心数/2
+            ocr_workers_env = os.environ.get('OCR_WORKERS', '').strip()
+            if ocr_workers_env and ocr_workers_env.lower() != 'auto':
+                try:
+                    num_workers = max(1, int(ocr_workers_env))
+                except ValueError:
+                    num_workers = max(1, os.cpu_count() // 2)
+            else:
+                num_workers = max(1, os.cpu_count() // 2)
+            
+            ocr_text = ocr_folder_parallel(
+                str(frames_dir),
+                min_score=0.3,
+                num_workers=num_workers,
+                use_preprocessing=True,
+                hybrid_mode=True,
+            )
+        else:
+            # 降级到单进程模式
+            print(f">> 初始化 OCR (det={ocr_det_model}, rec={ocr_rec_model})...")
+            ocr = init_ocr(
+                lang=ocr_lang,
+                use_gpu=use_gpu,
+                det_model=ocr_det_model,
+                rec_model=ocr_rec_model
+            )
+            ocr_text = ocr_folder_to_text(
+                ocr, 
+                str(frames_dir), 
+                min_score=0.3,
+                debug=False,
+                use_preprocessing=True,
+                roi_bottom_only=True,
+                hybrid_mode=True,
+            )
+        
         if ocr_text.strip():
             char_count = len(ocr_text)
             line_count = ocr_text.count('\n')
-            print(f"✅ OCR 完成！识别到 {char_count} 个字符，{line_count} 行文本")
+            print(f"\n✅ OCR 完成！识别 {char_count} 字符，{line_count} 行")
             
             # 保存OCR原始结果（Markdown 格式）
             print(f"   💾 保存OCR原始结果: {ocr_raw_path.name}")
