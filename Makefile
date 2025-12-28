@@ -56,6 +56,7 @@ help:
 	@echo "🔧 维护命令："
 	@echo "  make install            安装/更新依赖"
 	@echo "  make check              检查环境配置"
+	@echo "  make selftest           🆕 全功能自检和测试"
 	@echo "  make clean              清理输出文件"
 	@echo "  make clean-all          清理所有（含虚拟环境）"
 	@echo ""
@@ -126,6 +127,29 @@ setup: ensure-venv
 		cp .env.example .env 2>/dev/null || touch .env; \
 		echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY"; \
 	fi
+	@echo "  → 检查外部工具..."
+	@if ! command -v ffmpeg >/dev/null 2>&1; then \
+		echo "  ⚠️  ffmpeg 未安装，尝试安装..."; \
+		brew install ffmpeg 2>/dev/null || echo "  ❌ 请手动安装: brew install ffmpeg"; \
+	else \
+		echo "  ✅ ffmpeg 已安装"; \
+	fi
+	@if ! command -v BBDown >/dev/null 2>&1; then \
+		echo "  ⚠️  BBDown 未安装，尝试安装（B站视频下载）..."; \
+		curl -sL -o /tmp/BBDown_osx-x64.zip "https://github.com/nilaoda/BBDown/releases/download/1.6.3/BBDown_1.6.3_20240814_osx-x64.zip" && \
+		unzip -o -q /tmp/BBDown_osx-x64.zip -d /tmp && \
+		chmod +x /tmp/BBDown && \
+		cp /tmp/BBDown /usr/local/bin/ 2>/dev/null && \
+		rm -f /tmp/BBDown /tmp/BBDown_osx-x64.zip && \
+		echo "  ✅ BBDown 安装成功" || \
+		echo "  ⚠️  BBDown 自动安装失败，请手动下载: https://github.com/nilaoda/BBDown/releases"; \
+	else \
+		echo "  ✅ BBDown 已安装"; \
+	fi
+	@echo "  → 初始化数据库..."
+	@$(PYTHON) -m db.schema 2>/dev/null || true
+	@echo "  → 初始化 Whoosh 搜索索引..."
+	@$(PYTHON) -m db.whoosh_search init 2>/dev/null || true
 	@echo "  → 运行环境测试..."
 	@$(PYTHON) test_env.py
 	@echo ""
@@ -143,6 +167,10 @@ install: ensure-venv
 test: ensure-venv
 	@echo "🧪 运行环境测试..."
 	@$(PYTHON) test_env.py
+
+# 全功能自检和测试
+selftest: ensure-venv
+	@$(PYTHON) selftest.py
 
 # 检查环境
 check: ensure-venv

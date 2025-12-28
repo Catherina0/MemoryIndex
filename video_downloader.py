@@ -135,6 +135,8 @@ class VideoDownloader:
             return "xiaohongshu"
         elif "douyin.com" in url_lower:
             return "douyin"
+        elif "tiktok.com" in url_lower:
+            return "tiktok"
         elif "twitter.com" in url_lower or "x.com" in url_lower:
             return "twitter"
         else:
@@ -208,12 +210,12 @@ class VideoDownloader:
                 metadata=info
             )
         
-        # 下载视频
-        print(f"⬇️  开始下载...")
+        # 下载视频（限制1080p，节省空间和带宽）
+        print(f"⬇️  开始下载（1080p）...")
         download_cmd = [
             self.ytdlp_path,
             "--no-playlist",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "--merge-output-format", "mp4",
             "-o", str(output_path),
             url
@@ -267,8 +269,14 @@ class VideoDownloader:
         temp_dir = self.download_dir / "temp"
         temp_dir.mkdir(exist_ok=True)
         
-        # 执行 BBDown
-        cmd = [self.bbdown_path, url, "--work-dir", str(temp_dir)]
+        # 执行 BBDown（限制1080p）
+        cmd = [
+            self.bbdown_path, 
+            url, 
+            "--work-dir", str(temp_dir),
+            "-q", "1080P 高码率",  # 限制画质为1080P
+            "--download-danmaku", "false"  # 不下载弹幕
+        ]
         subprocess.run(cmd, check=True)
         
         # 查找下载的文件（BBDown会自动命名）

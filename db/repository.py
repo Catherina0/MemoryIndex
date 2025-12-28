@@ -5,6 +5,7 @@
 import hashlib
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -293,8 +294,8 @@ class VideoRepository:
                         INSERT INTO video_tags (video_id, tag_id, source, confidence)
                         VALUES (?, ?, ?, ?)
                     """, (video_id, tag_id, source, confidence))
-                except:
-                    # 已存在，跳过
+                except sqlite3.IntegrityError:
+                    # 已存在，跳过（唯一约束冲突）
                     pass
     
     def get_video_tags(self, video_id: int) -> List[str]:

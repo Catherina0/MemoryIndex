@@ -50,6 +50,11 @@ def ensure_dir(path: Path):
 
 
 # ========== ffmpeg: 音频 & 抽帧 ==========
+
+# Groq Whisper API 限制
+MAX_AUDIO_SIZE_MB = 20
+MAX_AUDIO_SIZE_BYTES = MAX_AUDIO_SIZE_MB * 1024 * 1024
+
 def get_video_duration(video_path: Path) -> float:
     """
     使用 ffprobe 获取视频时长（秒）。
@@ -75,20 +80,98 @@ def get_video_duration(video_path: Path) -> float:
 
 def extract_audio(video_path: Path, audio_path: Path):
     """
-    用 ffmpeg 从视频里分离音频，输出为 wav。
+    用 ffmpeg 从视频里分离音频，输出为压缩的 wav。
+    使用以下参数压缩音频：
+      - ac 1: 单声道
+      - ar 16000: 采样率 16kHz
+      - sample_fmt s16: 16-bit PCM
     """
     ensure_dir(audio_path.parent)
     cmd = [
         "ffmpeg",
         "-y",
         "-i", str(video_path),
-        "-vn",          # no video
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
+        "-vn",                    # no video
+        "-acodec", "pcm_s16le",   # 16-bit PCM
+        "-ar", "16000",           # 采样率 16kHz
+        "-ac", "1",               # 单声道
         str(audio_path),
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def get_audio_duration(audio_path: Path) -> float:
+    """
+    使用 ffprobe 获取音频时长（秒）。
+    """
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError):
+        return 0
+
+
+def split_audio(audio_path: Path, max_size_mb: float = MAX_AUDIO_SIZE_MB) -> list:
+    """
+    如果音频文件超过指定大小，拆分成多个片段。
+    
+    Args:
+        audio_path: 音频文件路径
+        max_size_mb: 最大文件大小（MB）
+    
+    Returns:
+        list: [(chunk_path, start_time), ...] 每个片段的路径和起始时间（秒）
+    """
+    file_size = audio_path.stat().st_size
+    max_size_bytes = max_size_mb * 1024 * 1024
+    
+    if file_size <= max_size_bytes:
+        return [(audio_path, 0.0)]
+    
+    # 计算需要拆分的段数
+    num_chunks = int(file_size / max_size_bytes) + 1
+    duration = get_audio_duration(audio_path)
+    
+    if duration <= 0:
+        print(f"   ⚠️  无法获取音频时长，尝试直接上传")
+        return [(audio_path, 0.0)]
+    
+    chunk_duration = duration / num_chunks
+    
+    print(f"   📊 音频文件: {file_size / 1024 / 1024:.1f}MB > {max_size_mb}MB")
+    print(f"   ✂️  拆分为 {num_chunks} 段 (每段约 {chunk_duration:.0f}秒)")
+    
+    chunks = []
+    chunk_dir = audio_path.parent / "audio_chunks"
+    ensure_dir(chunk_dir)
+    
+    for i in range(num_chunks):
+        start_time = i * chunk_duration
+        chunk_path = chunk_dir / f"chunk_{i:03d}.wav"
+        
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", str(audio_path),
+            "-ss", str(start_time),
+            "-t", str(chunk_duration),
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            str(chunk_path),
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        chunks.append((chunk_path, start_time))
+        print(f"   ✅ 片段 {i+1}/{num_chunks}: {chunk_path.name}")
+    
+    return chunks
 
 
 def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
@@ -154,9 +237,38 @@ def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: int = 
 
 
 # ========== Groq API 集成 ==========
+def _transcribe_single_audio(client, model: str, audio_path: Path) -> dict:
+    """
+    转写单个音频文件（内部函数）。
+    """
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            file=(audio_path.name, audio_file.read()),
+            model=model,
+            response_format="verbose_json",
+            timestamp_granularities=["segment"]
+        )
+    
+    result = {
+        'text': transcription.text,
+        'segments': []
+    }
+    
+    if hasattr(transcription, 'segments') and transcription.segments:
+        for seg in transcription.segments:
+            result['segments'].append({
+                'start': seg.get('start', 0),
+                'end': seg.get('end', 0),
+                'text': seg.get('text', '')
+            })
+    
+    return result
+
+
 def transcribe_audio_with_groq(audio_path: Path) -> dict:
     """
     使用 Groq 的 Whisper 模型进行语音转文字，返回带时间戳的数据。
+    如果音频文件超过 20MB，自动拆分成多段分别识别，然后拼接结果。
     
     Returns:
         dict: {
@@ -176,30 +288,58 @@ def transcribe_audio_with_groq(audio_path: Path) -> dict:
         client = Groq(api_key=api_key)
         model = os.getenv("GROQ_ASR_MODEL", "whisper-large-v3-turbo")
         
-        with open(audio_path, "rb") as audio_file:
-            # 使用 verbose_json 格式获取时间戳信息
-            transcription = client.audio.transcriptions.create(
-                file=(audio_path.name, audio_file.read()),
-                model=model,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"]
-            )
+        # 检查文件大小，决定是否需要拆分
+        file_size = audio_path.stat().st_size
         
-        # 提取文本和时间戳片段
-        result = {
-            'text': transcription.text,
-            'segments': []
+        if file_size <= MAX_AUDIO_SIZE_BYTES:
+            # 文件足够小，直接转写
+            return _transcribe_single_audio(client, model, audio_path)
+        
+        # 文件过大，需要拆分
+        chunks = split_audio(audio_path)
+        
+        if len(chunks) == 1:
+            # 拆分失败或不需要拆分，尝试直接上传
+            return _transcribe_single_audio(client, model, audio_path)
+        
+        # 分段转写并合并结果
+        all_text = []
+        all_segments = []
+        
+        for i, (chunk_path, time_offset) in enumerate(chunks):
+            print(f"   🎤 转写片段 {i+1}/{len(chunks)}...")
+            try:
+                chunk_result = _transcribe_single_audio(client, model, chunk_path)
+                
+                # 添加文本
+                if chunk_result.get('text'):
+                    all_text.append(chunk_result['text'])
+                
+                # 添加片段（调整时间偏移）
+                for seg in chunk_result.get('segments', []):
+                    all_segments.append({
+                        'start': seg['start'] + time_offset,
+                        'end': seg['end'] + time_offset,
+                        'text': seg['text']
+                    })
+                    
+            except Exception as chunk_err:
+                print(f"   ⚠️  片段 {i+1} 转写失败: {chunk_err}")
+                all_text.append(f"[片段{i+1}转写失败]")
+        
+        # 清理临时文件
+        chunk_dir = audio_path.parent / "audio_chunks"
+        if chunk_dir.exists():
+            import shutil
+            shutil.rmtree(chunk_dir)
+        
+        print(f"   ✅ 合并 {len(chunks)} 个片段的转写结果")
+        
+        return {
+            'text': ' '.join(all_text),
+            'segments': all_segments
         }
         
-        if hasattr(transcription, 'segments') and transcription.segments:
-            for seg in transcription.segments:
-                result['segments'].append({
-                    'start': seg.get('start', 0),
-                    'end': seg.get('end', 0),
-                    'text': seg.get('text', '')
-                })
-        
-        return result
     except Exception as e:
         print(f"  ✗ Groq 转写失败: {e}")
         return {
@@ -676,6 +816,7 @@ def save_to_database(
         repo.update_fts_index(video_id)
         
         print(f"   ✅ 数据库保存完成！(视频ID: {video_id})")
+        print(f"   💡 可以使用 `make db-show ID={video_id}` 查看详情")
         print(f"   💡 可以使用 `make search Q=\"关键词\"` 来搜索")
         
         return video_id

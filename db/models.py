@@ -15,6 +15,8 @@ class SourceType(str, Enum):
     TWITTER = 'twitter'
     XIAOHONGSHU = 'xiaohongshu'
     DOUYIN = 'douyin'
+    TIKTOK = 'tiktok'
+    UNKNOWN = 'unknown'
 
 
 class ProcessingStatus(str, Enum):

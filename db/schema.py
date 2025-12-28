@@ -135,7 +135,8 @@ def check_database_health(db_path: Optional[str] = None) -> dict:
         try:
             cursor = conn.execute("SELECT COUNT(*) as count FROM fts_content")
             stats['fts_content'] = cursor.fetchone()['count']
-        except:
+        except Exception:
+            # FTS 表可能不存在
             stats['fts_content'] = 0
         
         # 数据库文件大小

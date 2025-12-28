@@ -4,7 +4,6 @@
 支持 FTS5（英文）和 Whoosh+jieba（中文）混合搜索
 """
 from typing import Optional, List, Dict, Any
-from dataclasses import dataclass
 from enum import Enum
 
 from .schema import get_connection
@@ -414,12 +413,7 @@ class SearchRepository:
                         GROUP_CONCAT(t.name, ', ') as tags
                     FROM fts_content fts
                     JOIN videos v ON fts.video_id = v.id
-            has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
-            use_like = (len(query) < 20 and has_chinese) or fuzzy
-            
-            # 模糊搜索处理（对于非聚合查询）
-            if not group_by_video and fuzzy and not has_chinese:
-                query = self._escape_fts_query(query) + '*'
+                    LEFT JOIN video_tags vt ON v.id = vt.video_id
                     LEFT JOIN tags t ON vt.tag_id = t.id
                     WHERE fts.content MATCH ?
                     {field_filter}
