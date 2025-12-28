@@ -98,6 +98,7 @@ help:
 	@echo "💡 搜索示例："
 	@echo "  make search Q=\"机器学习\""
 	@echo "  make search Q=\"深度学习\" FLAGS=\"--field transcript\""
+	@echo "  make search Q=\"美国\" FLAGS=\"--show-all-matches\"  # 显示所有匹配片段"
 	@echo "  make search-tags TAGS=\"教育 科技\""
 	@echo "  make search-topics Q=\"神经网络\""
 	@echo "  make db-show ID=1           # 查看视频详情"

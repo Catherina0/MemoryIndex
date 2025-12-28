@@ -165,7 +165,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
     title,                                  -- 视频标题（高权重）
     content,                                -- 主要内容
     tags,                                   -- 标签（空格分隔）
-    tokenize = 'porter unicode61'           -- 支持中英文分词
+    tokenize = 'unicode61 remove_diacritics 0'  -- Unicode分词（对中文支持较好）
 );
 
 -- FTS5 辅助表：存储文档长度等统计信息（自动生成）

@@ -55,7 +55,8 @@ def search_command(args):
         limit=args.limit,
         offset=args.offset,
         sort_by=sort_by,
-        min_relevance=args.min_relevance
+        min_relevance=args.min_relevance,
+        group_by_video=not args.show_all_matches  # 默认聚合，除非指定显示所有
     )
     
     if not results:
@@ -78,6 +79,7 @@ def search_command(args):
         for i, result in enumerate(results, 1):
             table_data.append([
                 i,
+                result.video_id,
                 truncate_text(result.video_title, 30),
                 result.source_field,
                 truncate_text(result.matched_snippet, 50),
@@ -86,7 +88,7 @@ def search_command(args):
                 ', '.join(result.tags[:3]) if result.tags else '-'
             ])
         
-        headers = ['#', '视频标题', '来源', '匹配片段', '时间点', '相关性', '标签']
+        headers = ['#', 'ID', '视频标题', '来源', '匹配片段', '时间点', '相关性', '标签']
         print(tabulate(table_data, headers=headers, tablefmt='grid'))
         
         # 详细信息
@@ -431,6 +433,7 @@ def main():
     search_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
     search_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
     search_parser.add_argument('--min-relevance', type=float, default=0.0, help='最小相关性')
+    search_parser.add_argument('--show-all-matches', action='store_true', help='显示所有匹配片段（默认每个视频只显示一次）')
     search_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     search_parser.add_argument('-v', '--verbose', action='store_true', help='详细输出')
     search_parser.set_defaults(func=search_command)

@@ -41,7 +41,8 @@ class SearchRepository:
         limit: int = 20,
         offset: int = 0,
         sort_by: SortBy = SortBy.RELEVANCE,
-        min_relevance: float = 0.0
+        min_relevance: float = 0.0,
+        group_by_video: bool = True
     ) -> List[SearchResult]:
         """
         全文搜索
@@ -54,6 +55,7 @@ class SearchRepository:
             offset: 分页偏移
             sort_by: 排序方式
             min_relevance: 最小相关性分数（0-1）
+            group_by_video: 是否按视频聚合（默认True，每个视频只显示最佳匹配）
         
         Returns:
             List[SearchResult]: 搜索结果列表
@@ -100,32 +102,148 @@ class SearchRepository:
                 order_clause = "ORDER BY fts.rank"
             
             # 主查询
-            query_sql = f"""
-                SELECT 
-                    v.id as video_id,
-                    v.title as video_title,
-                    v.source_type,
-                    v.duration_seconds,
-                    v.file_path,
-                    v.created_at,
-                    fts.source_field,
-                    fts.content as full_content,
-                    fts.rank,
-                    GROUP_CONCAT(t.name, ', ') as tags
-                FROM fts_content fts
-                JOIN videos v ON fts.video_id = v.id
-                LEFT JOIN video_tags vt ON v.id = vt.video_id
-                LEFT JOIN tags t ON vt.tag_id = t.id
-                WHERE fts.content MATCH ?
-                {field_filter}
-                {tag_filter}
-                GROUP BY v.id, fts.source_field, fts.content, fts.rank
-                {order_clause}
-                LIMIT ? OFFSET ?
-            """
+            if group_by_video:
+                # 按视频聚合：只返回每个视频的最佳匹配
+                # 对于中文查询使用LIKE后备搜索（解决FTS5中文分词问题）
+                use_like = len(query) < 20 and any('\u4e00' <= c <= '\u9fff' for c in query)
+                
+                if use_like:
+                    # 使用LIKE搜索（中文）
+                    query_sql = f"""
+                        SELECT 
+                            v.id as video_id,
+                            v.title as video_title,
+                            v.source_type,
+                            v.duration_seconds,
+                            v.file_path,
+                            v.created_at,
+                            (
+                                SELECT fts_inner.source_field
+                                FROM fts_content fts_inner
+                                WHERE fts_inner.video_id = v.id
+                                AND fts_inner.content LIKE ?
+                                {field_filter.replace('fts.', 'fts_inner.')}
+                                LIMIT 1
+                            ) as source_field,
+                            (
+                                SELECT fts_inner.content
+                                FROM fts_content fts_inner
+                                WHERE fts_inner.video_id = v.id
+                                AND fts_inner.content LIKE ?
+                                {field_filter.replace('fts.', 'fts_inner.')}
+                                LIMIT 1
+                            ) as full_content,
+                            0 as rank,
+                            (
+                                SELECT GROUP_CONCAT(t2.name, ', ')
+                                FROM video_tags vt2
+                                JOIN tags t2 ON vt2.tag_id = t2.id
+                                WHERE vt2.video_id = v.id
+                            ) as tags
+                        FROM videos v
+                        WHERE v.id IN (
+                            SELECT DISTINCT fts_filter.video_id
+                            FROM fts_content fts_filter
+                            WHERE fts_filter.content LIKE ?
+                            {field_filter.replace('fts.', 'fts_filter.')}
+                        )
+                        {tag_filter}
+                        {order_clause.replace('fts.rank', 'rank').replace('ORDER BY rank', 'ORDER BY v.created_at DESC')}
+                        LIMIT ? OFFSET ?
+                    """
+                else:
+                    # 使用FTS搜索（英文/数字）
+                    query_sql = f"""
+                        SELECT 
+                            v.id as video_id,
+                            v.title as video_title,
+                            v.source_type,
+                            v.duration_seconds,
+                            v.file_path,
+                            v.created_at,
+                            (
+                                SELECT fts_inner.source_field
+                                FROM fts_content fts_inner
+                                WHERE fts_inner.video_id = v.id
+                                AND fts_inner.content MATCH ?
+                                {field_filter.replace('fts.', 'fts_inner.')}
+                                ORDER BY fts_inner.rank
+                                LIMIT 1
+                            ) as source_field,
+                            (
+                                SELECT fts_inner.content
+                                FROM fts_content fts_inner
+                                WHERE fts_inner.video_id = v.id
+                                AND fts_inner.content MATCH ?
+                                {field_filter.replace('fts.', 'fts_inner.')}
+                                ORDER BY fts_inner.rank
+                                LIMIT 1
+                            ) as full_content,
+                            (
+                                SELECT MIN(fts_inner.rank)
+                                FROM fts_content fts_inner
+                                WHERE fts_inner.video_id = v.id
+                                AND fts_inner.content MATCH ?
+                                {field_filter.replace('fts.', 'fts_inner.')}
+                            ) as rank,
+                            (
+                                SELECT GROUP_CONCAT(t2.name, ', ')
+                                FROM video_tags vt2
+                                JOIN tags t2 ON vt2.tag_id = t2.id
+                                WHERE vt2.video_id = v.id
+                            ) as tags
+                        FROM videos v
+                        WHERE v.id IN (
+                            SELECT DISTINCT fts_filter.video_id
+                            FROM fts_content fts_filter
+                            WHERE fts_filter.content MATCH ?
+                            {field_filter.replace('fts.', 'fts_filter.')}
+                        )
+                        {tag_filter}
+                        {order_clause.replace('fts.rank', 'rank')}
+                        LIMIT ? OFFSET ?
+                    """
+            else:
+                # 默认：显示所有匹配的内容片段
+                query_sql = f"""
+                    SELECT 
+                        v.id as video_id,
+                        v.title as video_title,
+                        v.source_type,
+                        v.duration_seconds,
+                        v.file_path,
+                        v.created_at,
+                        fts.source_field,
+                        fts.content as full_content,
+                        fts.rank,
+                        GROUP_CONCAT(t.name, ', ') as tags
+                    FROM fts_content fts
+                    JOIN videos v ON fts.video_id = v.id
+                    LEFT JOIN video_tags vt ON v.id = vt.video_id
+                    LEFT JOIN tags t ON vt.tag_id = t.id
+                    WHERE fts.content MATCH ?
+                    {field_filter}
+                    {tag_filter}
+                    GROUP BY v.id, fts.source_field, fts.content, fts.rank
+                    {order_clause}
+                    LIMIT ? OFFSET ?
+                """
             
             # 执行查询
-            params = [query]
+            # 检测是否包含中文
+            use_like = len(query) < 20 and any('\u4e00' <= c <= '\u9fff' for c in query)
+            
+            if group_by_video:
+                if use_like:
+                    # LIKE模式：需要3个参数（source_field, content, WHERE过滤）
+                    like_pattern = f'%{query}%'
+                    params = [like_pattern, like_pattern, like_pattern]
+                else:
+                    # FTS模式：需要4个参数
+                    params = [query, query, query, query]
+            else:
+                params = [query]
+                
             if tags:
                 params.extend(tags)
             params.extend([limit, offset])
