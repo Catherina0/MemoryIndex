@@ -551,6 +551,13 @@ def save_to_database(
         if existing:
             print(f"   ⚠️  视频已存在 (ID: {existing.id})，更新产物...")
             video_id = existing.id
+            # 更新视频元数据（时长、标题等）
+            repo.update_video_metadata(
+                video_id=video_id,
+                duration_seconds=video_duration,
+                title=platform_title or video_name,
+                platform_title=platform_title
+            )
         else:
             # 判断来源类型
             if source_url:
@@ -655,10 +662,8 @@ def save_to_database(
                 if entry.get('text'):
                     tl = TimelineEntry(
                         video_id=video_id,
-                        timestamp=entry['second'],
-                        content_type='transcript',
-                        content_text=entry['text'][:500],
-                        metadata={'frame': entry.get('frame')}
+                        timestamp_seconds=entry['second'],
+                        transcript_text=entry['text'][:500]
                     )
                     timeline_entries.append(tl)
             

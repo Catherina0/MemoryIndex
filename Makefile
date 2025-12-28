@@ -89,6 +89,7 @@ help:
 	@echo "🗄️  数据库与搜索："
 	@echo "  make db-init                初始化数据库"
 	@echo "  make db-status              查看数据库状态"
+	@echo "  make db-show ID=1           查看特定视频详情"
 	@echo "  make search Q=\"关键词\"      搜索视频内容"
 	@echo "  make search-tags TAGS=\"标签1 标签2\"  按标签搜索"
 	@echo "  make db-tags                查看热门标签"
@@ -99,6 +100,8 @@ help:
 	@echo "  make search Q=\"深度学习\" FLAGS=\"--field transcript\""
 	@echo "  make search-tags TAGS=\"教育 科技\""
 	@echo "  make search-topics Q=\"神经网络\""
+	@echo "  make db-show ID=1           # 查看视频详情"
+	@echo "  make db-show ID=1 FLAGS=\"--full\"  # 查看完整内容"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -465,6 +468,15 @@ db-list: ensure-venv
 	echo "📹 视频列表 (前 $$LIMIT 条)"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	$(PYTHON) search_cli.py list --limit $$LIMIT
+
+# 展示特定ID的视频详情
+db-show: ensure-venv
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ 错误：请指定视频ID"; \
+		echo "用法：make db-show ID=1"; \
+		exit 1; \
+	fi
+	@$(PYTHON) search_cli.py show $(ID) $(FLAGS)
 
 # 数据库备份
 db-backup: ensure-venv

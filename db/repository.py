@@ -164,6 +164,30 @@ class VideoRepository:
                     WHERE id = ?
                 """, (status.value, error_message, video_id))
     
+    def update_video_metadata(self, video_id: int, duration_seconds: Optional[float] = None,
+                             title: Optional[str] = None, platform_title: Optional[str] = None):
+        """更新视频元数据（时长、标题等）"""
+        with self._get_conn() as conn:
+            updates = []
+            params = []
+            
+            if duration_seconds is not None:
+                updates.append("duration_seconds = ?")
+                params.append(duration_seconds)
+            
+            if title is not None:
+                updates.append("title = ?")
+                params.append(title)
+            
+            if platform_title is not None:
+                updates.append("platform_title = ?")
+                params.append(platform_title)
+            
+            if updates:
+                params.append(video_id)
+                sql = f"UPDATE videos SET {', '.join(updates)} WHERE id = ?"
+                conn.execute(sql, params)
+    
     def list_videos(self, status: Optional[ProcessingStatus] = None, 
                    source_type: Optional[SourceType] = None,
                    limit: int = 100, offset: int = 0) -> List[Video]:
@@ -303,7 +327,7 @@ class VideoRepository:
             - created_at: 创建时间
         """
         with self._get_conn() as conn:
-            # 使用子查询避免 JOIN 导致的重复
+            # 使用子查询避免 JOIN 导致的重复，获取最新的 report
             cursor = conn.execute("""
                 SELECT 
                     v.id, v.title, v.source_type, v.duration_seconds, v.created_at,
@@ -317,6 +341,7 @@ class VideoRepository:
                         SELECT a.content_text
                         FROM artifacts a
                         WHERE a.video_id = v.id AND a.artifact_type = 'report'
+                        ORDER BY a.created_at DESC
                         LIMIT 1
                     ) as report_content
                 FROM videos v

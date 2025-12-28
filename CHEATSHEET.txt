@@ -382,6 +382,11 @@ Groq API Docs: https://console.groq.com/docs
   make db-list LIMIT=50     # 列出前 50 条
   make ls                   # 快捷命令
 
+查看特定视频详情：
+  make db-show ID=1         # 查看视频基本信息
+  make db-show ID=1 FLAGS="--full"   # 查看完整内容（转写+OCR）
+  make db-show ID=1 FLAGS="--json"   # JSON格式输出
+
 标签自动补全（命令行工具）：
   python search_cli.py suggest "机器"
 

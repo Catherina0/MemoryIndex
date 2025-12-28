@@ -213,6 +213,146 @@ def suggest_tags_command(args):
         print(f"  • {tag}")
 
 
+def show_command(args):
+    """展示特定ID的视频详情"""
+    from db import VideoRepository
+    repo = VideoRepository()
+    
+    video = repo.get_video_by_id(args.id)
+    
+    if not video:
+        print(f"\n❌ 未找到 ID 为 {args.id} 的视频")
+        return
+    
+    # 获取标签
+    tags = repo.get_video_tags(args.id)
+    
+    # 获取主题
+    topics = repo.get_topics(args.id)
+    
+    # 获取文件（报告、转写、OCR）
+    artifacts = repo.get_artifacts(args.id)
+    
+    # JSON 输出
+    if args.json:
+        result = {
+            'id': video.id,
+            'title': video.title,
+            'source_type': video.source_type.value if video.source_type else None,
+            'source_url': video.source_url,
+            'file_path': video.file_path,
+            'duration_seconds': video.duration_seconds,
+            'status': video.status.value if video.status else None,
+            'created_at': str(video.created_at) if video.created_at else None,
+            'processed_at': str(video.processed_at) if video.processed_at else None,
+            'tags': tags,
+            'topics': [
+                {
+                    'title': t.title,
+                    'start_time': t.start_time,
+                    'end_time': t.end_time,
+                    'summary': t.summary
+                } for t in topics
+            ],
+            'artifacts': [
+                {
+                    'type': a.artifact_type.value if a.artifact_type else None,
+                    'file_path': a.file_path,
+                    'content_preview': a.content_text[:500] + '...' if a.content_text and len(a.content_text) > 500 else a.content_text
+                } for a in artifacts
+            ] if not args.full else [
+                {
+                    'type': a.artifact_type.value if a.artifact_type else None,
+                    'file_path': a.file_path,
+                    'content': a.content_text
+                } for a in artifacts
+            ]
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    
+    # 格式化输出
+    print(f"\n{'='*60}")
+    print(f"📹 视频详情 (ID: {video.id})")
+    print(f"{'='*60}")
+    
+    print(f"\n📌 基本信息")
+    print(f"  标题: {video.title}")
+    print(f"  来源: {video.source_type.value if video.source_type else 'N/A'}")
+    if video.source_url:
+        print(f"  URL: {video.source_url}")
+    print(f"  文件: {video.file_path}")
+    print(f"  时长: {format_duration(video.duration_seconds)}")
+    print(f"  状态: {video.status.value if video.status else 'N/A'}")
+    print(f"  创建: {video.created_at}")
+    if video.processed_at:
+        print(f"  处理: {video.processed_at}")
+    
+    if tags:
+        print(f"\n🏷️  标签")
+        print(f"  {', '.join(tags)}")
+    
+    # 从 artifacts 中获取报告内容，提取摘要和主要内容概括
+    report_artifact = next((a for a in artifacts if a.artifact_type and a.artifact_type.value == 'report'), None)
+    if report_artifact and report_artifact.content_text:
+        content = report_artifact.content_text
+        lines = content.split('\n')
+        
+        # 提取摘要部分
+        summary_lines = []
+        in_summary = False
+        for line in lines:
+            # 检测摘要标题
+            if '摘要' in line and ('#' in line or line.strip().startswith('摘要')):
+                in_summary = True
+                continue
+            # 检测下一个章节标题（结束摘要）
+            if in_summary and line.strip().startswith('#'):
+                break
+            if in_summary and line.strip():
+                summary_lines.append(line)
+        
+        if summary_lines:
+            print(f"\n📝 摘要")
+            for line in summary_lines:
+                print(f"  {line}")
+        
+        # 提取详细的主要内容概括
+        detail_lines = []
+        in_detail = False
+        for line in lines:
+            # 检测主要内容概括标题
+            if ('详细' in line and '主要内容' in line) or ('主要内容概括' in line):
+                in_detail = True
+                continue
+            # 检测下一个章节标题（结束）
+            if in_detail and line.strip().startswith('#') and '详细' not in line:
+                break
+            if in_detail and line.strip():
+                detail_lines.append(line)
+        
+        if detail_lines:
+            print(f"\n📋 主要内容概括")
+            for line in detail_lines[:30]:  # 最多显示30行
+                print(f"  {line}")
+            if len(detail_lines) > 30:
+                print(f"  ... (共 {len(detail_lines)} 行)")
+    
+    if artifacts:
+        print(f"\n📄 相关文件 ({len(artifacts)} 个)")
+        for a in artifacts:
+            type_name = a.artifact_type.value if a.artifact_type else 'unknown'
+            print(f"  • {type_name}: {a.file_path or '(内嵌)'}")
+            if args.full and a.content_text:
+                print(f"\n--- {type_name} 内容 ---")
+                print(a.content_text[:2000] if len(a.content_text) > 2000 else a.content_text)
+                if len(a.content_text) > 2000:
+                    print(f"\n... (共 {len(a.content_text)} 字符，已截断)")
+                print(f"--- {type_name} 结束 ---\n")
+    
+    print(f"\n{'='*60}")
+
+
 def list_command(args):
     """列出所有视频"""
     from db import VideoRepository
@@ -226,6 +366,10 @@ def list_command(args):
     
     # JSON 输出
     if args.json:
+        # 转换 datetime 为字符串
+        for v in videos:
+            if 'created_at' in v and v['created_at']:
+                v['created_at'] = str(v['created_at'])
         print(json.dumps(videos, ensure_ascii=False, indent=2))
         return
     
@@ -326,6 +470,13 @@ def main():
     list_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
     list_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     list_parser.set_defaults(func=list_command)
+    
+    # 展示视频详情
+    show_parser = subparsers.add_parser('show', help='展示特定ID的视频详情')
+    show_parser.add_argument('id', type=int, help='视频ID')
+    show_parser.add_argument('--json', action='store_true', help='JSON格式输出')
+    show_parser.add_argument('--full', action='store_true', help='显示完整内容（包含转写、OCR等）')
+    show_parser.set_defaults(func=show_command)
     
     args = parser.parse_args()
     
