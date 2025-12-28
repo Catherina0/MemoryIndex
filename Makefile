@@ -60,14 +60,17 @@ help:
 	@echo "  make clean              清理输出文件"
 	@echo "  make clean-all          清理所有（含虚拟环境）"
 	@echo ""
-	@echo "� 下载视频："
+	@echo "📥 下载视频："
 	@echo "  make download URL=视频链接             下载视频到 videos/ 目录"
 	@echo "  make download-run URL=视频链接         下载后自动处理（音频模式）"
-	@echo "  make download-ocr URL=视频链接         下载后自动处理（完整模式）"	@echo ""
+	@echo "  make download-ocr URL=视频链接         下载后自动处理（完整模式）"
+	@echo "  💡 自动检测已下载视频，使用 FORCE=1 强制重新下载"
+	@echo ""
 	@echo "💡 URL 输入支持："
 	@echo "  • 纯 URL: make download URL=https://www.youtube.com/watch?v=xxx"
 	@echo "  • 分享文本: make download URL=\"分享一个视频给你：https://www.bilibili.com/video/BVxxx 看看\""
-	@echo "  • 自动提取: 会自动从文本中识别视频链接"	@echo ""
+	@echo "  • 自动提取: 会自动从文本中识别视频链接"
+	@echo ""
 	@echo "📝 示例："
 	@echo "  make run VIDEO=~/Downloads/meeting.mp4"
 	@echo "  make ocr VIDEO=~/Downloads/lecture.mp4"
@@ -320,6 +323,7 @@ download: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误：请指定视频URL"; \
 		echo "用法：make download URL=https://example.com/video"; \
+		echo "强制重新下载：make download URL=... FORCE=1"; \
 		exit 1; \
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -327,10 +331,17 @@ download: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
 	@echo "📁 存储位置: videos/"
+	@if [ "$(FORCE)" = "1" ]; then \
+		echo "⚠️  强制重新下载模式"; \
+	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) video_downloader.py "$(URL)"
+	@if [ "$(FORCE)" = "1" ]; then \
+		$(PYTHON) video_downloader.py "$(URL)" --force; \
+	else \
+		$(PYTHON) video_downloader.py "$(URL)"; \
+	fi
 	@echo ""
-	@echo "✅ 下载完成！"
+	@echo "✅ 完成！"
 
 # 下载视频后自动处理（音频模式）
 download-run: ensure-venv

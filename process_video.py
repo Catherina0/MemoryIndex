@@ -385,7 +385,7 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
 ## 摘要
 （不超过50字的核心内容概括）
 
-## 详细的主要内容概括
+## 主要内容概括
 ## 主题总结（自动生成主题名）
 ## 详细说明（合并音频与 OCR）
 ## 关键信息（数字、规则、参数）
@@ -433,6 +433,99 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
     except Exception as e:
         print(f"  ✗ Groq 总结失败: {e}")
         return f"[总结失败: {str(e)}]\n\n原始内容:\n{full_text}"
+
+
+def generate_detailed_content(full_text: str) -> str:
+    """
+    生成详细的内容概括，包含更多细节。
+    使用更大的token限制（12000）以产出更完整的内容。
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print("  ⚠️  GROQ_API_KEY 未设置，跳过详细内容生成")
+        return ""
+    
+    try:
+        client = Groq(api_key=api_key)
+        model = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
+        # 详细内容使用更大的token限制
+        max_tokens = int(os.getenv("GROQ_DETAIL_MAX_TOKENS", "12000"))
+        temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
+        
+        prompt = f"""
+请基于以下视频的音频转写和OCR文本，生成一份**详细的内容概括**。
+
+要求：
+1. **逐段详细展开**：按视频的时间顺序，详细描述每个主要部分的内容
+2. **保留关键细节**：
+   - 具体的数字、数据、参数
+   - 人名、地名、专业术语
+   - 具体的操作步骤、流程
+   - 引用的原话、关键句子
+   - 代码片段、命令、公式
+3. **时间戳标注**：为重要内容标注对应的时间点（如果有的话）
+4. **完整性优先**：宁可内容多一些，也不要遗漏重要信息
+5. **结构清晰**：使用层级标题和列表组织内容
+
+输出格式：
+## 详细内容概括
+
+### 第一部分：[主题名称]
+（详细描述这部分的内容...）
+
+### 第二部分：[主题名称]
+（详细描述这部分的内容...）
+
+### 关键信息汇总
+- 重要数据：...
+- 关键术语：...
+- 操作步骤：...
+
+### 原文关键句摘录
+> "原句1..." —— [时间戳]
+> "原句2..." —— [时间戳]
+
+以下是原始内容：
+{full_text[:50000]}
+"""
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """你是一个专业的内容整理助手。你的任务是：
+                    - 从视频转写和OCR文本中提取所有重要信息
+                    - 生成详尽、完整的内容概括
+                    - 保留原始内容中的关键细节和数据
+                    - 使用清晰的结构组织信息
+                    - 确保内容可以作为视频内容的完整参考"""
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"  ⚠️  详细内容生成失败: {e}")
+        return ""
+
+
+def merge_summary_with_details(summary: str, detailed_content: str) -> str:
+    """
+    将详细内容概括追加到报告末尾。
+    保持原有报告内容不变。
+    """
+    if not detailed_content:
+        return summary
+    
+    # 直接追加到末尾
+    return summary + f"\n\n---\n\n## 📖 详细内容概括（完整版）\n\n{detailed_content}\n"
 
 
 def generate_timeline_report(timeline: list, output_path: Path):
@@ -989,11 +1082,35 @@ def process_video(
 
     combined_text = "\n".join(combined_text_parts)
 
-    # 6. 调 GPT-OSS 120B 做总结（占位）
-    print("\n>> 调用 GPT-OSS 120B 做总结（占位）...")
+    # 6. 第一次AI调用：生成结构化摘要报告
+    print("\n>> 第一次AI调用：生成结构化摘要...")
     summary = summarize_with_gpt_oss_120b(combined_text)
+    
+    # 7. 第二次AI调用：生成详细内容概括（使用带时间戳的完整文本）
+    print(">> 第二次AI调用：生成详细内容概括...")
+    # 构建带时间戳的转写文本
+    timestamped_text_parts = ["=== Audio Transcript with Timestamps ===\n"]
+    if transcript_data.get('segments'):
+        for seg in transcript_data['segments']:
+            start_time = f"{int(seg['start']//60):02d}:{int(seg['start']%60):02d}"
+            end_time = f"{int(seg['end']//60):02d}:{int(seg['end']%60):02d}"
+            timestamped_text_parts.append(f"[{start_time} - {end_time}] {seg['text']}")
+    else:
+        timestamped_text_parts.append(transcript_text)
+    
+    if with_frames:
+        timestamped_text_parts.append(f"\n\n=== OCR from Frames ===\n{ocr_text}\n")
+    
+    timestamped_combined_text = "\n".join(timestamped_text_parts)
+    detailed_content = generate_detailed_content(timestamped_combined_text)
+    
+    # 8. 合并摘要和详细内容
+    if detailed_content:
+        print(">> 合并摘要与详细内容...")
+        summary = merge_summary_with_details(summary, detailed_content)
+        print(f"   ✅ 详细内容已添加 ({len(detailed_content)} 字符)")
 
-    # 7. 生成格式化报告
+    # 9. 生成格式化报告
     report_content = generate_formatted_report(
         video_name=video_name,
         timestamp=timestamp,
@@ -1009,7 +1126,7 @@ def process_video(
     print(f"\n📄 报告已保存到: {report_path}")
     print(f"📁 完整输出目录: {session_dir}")
     
-    # 8. 保存到数据库
+    # 10. 保存到数据库
     save_to_database(
         video_path=video_path,
         video_name=video_name,

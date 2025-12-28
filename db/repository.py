@@ -148,6 +148,42 @@ class VideoRepository:
             
             return self._row_to_video(row, conn)
     
+    def get_video_by_source_url(self, source_url: str) -> Optional[Video]:
+        """根据 source_url 获取视频（用于检查是否已下载）"""
+        with self._get_conn() as conn:
+            # 支持模糊匹配，因为同一视频可能有不同的URL格式
+            # 例如 bilibili.com/video/BVxxx 和 b23.tv/xxx
+            cursor = conn.execute("""
+                SELECT * FROM videos WHERE source_url = ?
+            """, (source_url,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return self._row_to_video(row, conn)
+    
+    def get_video_by_video_id(self, platform: str, video_id: str) -> Optional[Video]:
+        """
+        根据平台和视频ID获取视频（用于检查是否已下载）
+        
+        Args:
+            platform: 平台名称 (bilibili, youtube, xiaohongshu等)
+            video_id: 平台视频ID (BVxxx, xxx等)
+        """
+        with self._get_conn() as conn:
+            # 在 source_url 中搜索视频ID
+            cursor = conn.execute("""
+                SELECT * FROM videos 
+                WHERE source_type = ? AND source_url LIKE ?
+            """, (platform, f"%{video_id}%"))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return self._row_to_video(row, conn)
+    
     def update_video_status(self, video_id: int, status: ProcessingStatus, 
                            error_message: Optional[str] = None):
         """更新视频处理状态"""

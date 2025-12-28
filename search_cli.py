@@ -343,8 +343,17 @@ def show_command(args):
                 print(f"  ... (共 {len(detail_lines)} 行)")
     
     if artifacts:
-        print(f"\n📄 相关文件 ({len(artifacts)} 个)")
+        # 只显示每种类型的最新文件
+        seen_types = set()
+        latest_artifacts = []
         for a in artifacts:
+            type_name = a.artifact_type.value if a.artifact_type else 'unknown'
+            if type_name not in seen_types:
+                seen_types.add(type_name)
+                latest_artifacts.append(a)
+        
+        print(f"\n📄 相关文件 ({len(latest_artifacts)} 个)")
+        for a in latest_artifacts:
             type_name = a.artifact_type.value if a.artifact_type else 'unknown'
             print(f"  • {type_name}: {a.file_path or '(内嵌)'}")
             if args.full and a.content_text:

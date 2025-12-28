@@ -75,6 +75,84 @@ class VideoDownloader:
         
         return None
     
+    def _extract_video_id(self, url: str, platform: str) -> Optional[str]:
+        """
+        从URL中提取视频ID
+        
+        Args:
+            url: 视频URL
+            platform: 平台名称
+            
+        Returns:
+            视频ID或None
+        """
+        if platform == "bilibili":
+            # BV号
+            bv_match = re.search(r'(BV[\w]+)', url)
+            if bv_match:
+                return bv_match.group(1)
+            # av号
+            av_match = re.search(r'av(\d+)', url)
+            if av_match:
+                return f"av{av_match.group(1)}"
+        elif platform == "youtube":
+            # YouTube视频ID
+            yt_match = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
+            if yt_match:
+                return yt_match.group(1)
+        elif platform == "xiaohongshu":
+            # 小红书笔记ID
+            xhs_match = re.search(r'/(?:explore|discovery/item)/([a-zA-Z0-9]+)', url)
+            if xhs_match:
+                return xhs_match.group(1)
+        
+        return None
+    
+    def check_already_downloaded(self, url: str) -> Optional[dict]:
+        """
+        检查视频是否已在数据库中存在
+        
+        Args:
+            url: 视频URL
+            
+        Returns:
+            如果已存在，返回 {'video_id': id, 'title': title, 'file_path': path}
+            否则返回 None
+        """
+        try:
+            from db import VideoRepository
+            repo = VideoRepository()
+            
+            platform = self._detect_platform(url)
+            video_id = self._extract_video_id(url, platform)
+            
+            # 先尝试通过视频ID查找
+            if video_id:
+                existing = repo.get_video_by_video_id(platform, video_id)
+                if existing:
+                    return {
+                        'video_id': existing.id,
+                        'title': existing.title,
+                        'file_path': existing.file_path,
+                        'source_url': existing.source_url
+                    }
+            
+            # 再尝试通过完整URL查找
+            existing = repo.get_video_by_source_url(url)
+            if existing:
+                return {
+                    'video_id': existing.id,
+                    'title': existing.title,
+                    'file_path': existing.file_path,
+                    'source_url': existing.source_url
+                }
+            
+            return None
+        except Exception as e:
+            # 数据库不可用时不影响下载
+            print(f"⚠️  检查数据库时出错: {e}")
+            return None
+    
     def download_video(self, url: str, force_redownload: bool = False) -> LocalFileInfo:
         """
         统一下载接口
@@ -89,11 +167,36 @@ class VideoDownloader:
         Raises:
             Exception: 下载失败时抛出异常
         """
-        print(f"📥 开始下载视频: {url}")
+        print(f"📥 准备下载视频: {url}")
         
         # 检测平台
         platform = self._detect_platform(url)
         print(f"🔍 检测到平台: {platform}")
+        
+        # 检查数据库中是否已存在
+        if not force_redownload:
+            existing = self.check_already_downloaded(url)
+            if existing:
+                print(f"✅ 视频已在数据库中 (ID: {existing['video_id']})")
+                print(f"   标题: {existing['title']}")
+                print(f"   文件: {existing['file_path']}")
+                print(f"💡 如需重新下载，请使用 force_redownload=True")
+                
+                # 检查文件是否仍然存在
+                if existing['file_path'] and Path(existing['file_path']).exists():
+                    # 返回已存在的文件信息
+                    return LocalFileInfo(
+                        file_path=Path(existing['file_path']),
+                        platform=platform,
+                        video_id=self._extract_video_id(url, platform) or "unknown",
+                        title=existing['title'],
+                        duration=None,
+                        uploader=None,
+                        upload_date=None,
+                        metadata={'already_downloaded': True, 'database_id': existing['video_id']}
+                    )
+                else:
+                    print(f"⚠️  原文件已不存在，将重新下载")
         
         # 尝试下载
         try:
