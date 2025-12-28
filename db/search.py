@@ -33,6 +33,84 @@ class SearchRepository:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path
     
+    def _escape_fts_query(self, query: str) -> str:
+        """
+        转义FTS查询中的特殊字符
+        
+        Args:
+            query: 原始查询字符串
+            
+        Returns:
+            转义后的查询字符串
+        """
+        # FTS5中的特殊字符需要用双引号包围而不是转义
+        # 因为反斜杠转义在某些情况下会导致语法错误
+        special_chars = '-"*()[]{}~^|&'
+        if any(char in query for char in special_chars):
+            # 如果包含特殊字符，用双引号包围（但要先转义内部的双引号）
+            escaped_query = query.replace('"', '""')
+            return f'"{escaped_query}"'
+        return query
+    
+    def _get_fuzzy_variants(self, query: str) -> List[str]:
+        """
+        生成模糊搜索的变体查询
+        
+        Args:
+            query: 原始查询
+            
+        Returns:
+            模糊搜索变体列表
+        """
+        variants = []
+        
+        # 基本通配符搜索
+        variants.append(f"{query}*")
+        
+        # MBTI类型特殊处理
+        mbti_types = ['infp', 'infj', 'intp', 'intj', 'enfp', 'enfj', 'entp', 'entj', 
+                      'isfp', 'isfj', 'istp', 'istj', 'esfp', 'esfj', 'estp', 'estj']
+        query_lower = query.lower()
+        
+        if query_lower in mbti_types:
+            # 为MBTI类型添加相关的变体
+            if query_lower.startswith('in'):  # 内向类型
+                variants.extend(['in*', 'inf*', 'int*'])
+                if 'f' in query_lower:  # 感情型
+                    variants.extend(['*nf*', 'f*'])
+                if 't' in query_lower:  # 思维型
+                    variants.extend(['*nt*', 't*'])
+                if 'p' in query_lower:  # 感知型
+                    variants.extend(['*p*'])
+                if 'j' in query_lower:  # 判断型
+                    variants.extend(['*j*'])
+            elif query_lower.startswith('en'):  # 外向类型
+                variants.extend(['en*', 'enf*', 'ent*'])
+                # 类似的逻辑...
+        
+        # 对于短查询，生成更多变体（非MBTI类型）
+        if len(query) >= 3 and len(query) <= 8 and query.isalpha() and query_lower not in mbti_types:
+            # 添加中间通配符（处理插入错误）
+            for i in range(1, len(query)):
+                variant = query[:i] + '*' + query[i:]
+                variants.append(variant)
+            
+            # 添加部分匹配（处理删除错误）
+            for i in range(len(query)):
+                if i == 0:
+                    variant = query[1:] + '*'
+                elif i == len(query) - 1:
+                    variant = query[:-1] + '*'
+                else:
+                    variant = query[:i] + query[i+1:] + '*'
+                
+                # 确保变体足够长，避免太短的匹配
+                if len(variant.rstrip('*')) >= 2:
+                    variants.append(variant)
+        
+        # 清理变体：去重
+        return list(set(variants))
+    
     def search(
         self,
         query: str,
@@ -44,7 +122,7 @@ class SearchRepository:
         min_relevance: float = 0.0,
         group_by_video: bool = True,
         match_all_keywords: bool = False,
-        fuzzy: bool = False
+        fuzzy: bool = True  # 默认启用模糊搜索
     ) -> List[SearchResult]:
         """
         全文搜索
@@ -132,7 +210,7 @@ class SearchRepository:
         sort_by: SortBy = SortBy.RELEVANCE,
         min_relevance: float = 0.0,
         group_by_video: bool = True,
-        fuzzy: bool = False
+        fuzzy: bool = True  # 默认启用模糊搜索
     ) -> List[SearchResult]:
         """
         单关键词搜索的内部实现
@@ -169,6 +247,24 @@ class SearchRepository:
                     )
                 """
             
+            # 模糊搜索预处理
+            has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
+            original_query = query  # 保存原始查询
+            fuzzy_queries = []  # 模糊搜索的查询变体
+            
+            if fuzzy and not has_chinese:
+                # 英文模糊搜索：生成多种变体以处理拼写错误
+                fuzzy_queries = self._get_fuzzy_variants(query)
+                # 使用第一个变体作为主查询
+                if fuzzy_queries:
+                    query = fuzzy_queries[0]
+                else:
+                    query = self._escape_fts_query(query) + '*'
+            
+            # 决定使用LIKE还是FTS搜索
+            # 中文短查询或者明确要求模糊搜索时使用LIKE，英文模糊搜索使用FTS
+            use_like = fuzzy and has_chinese and len(original_query) < 20
+            
             # 排序
             if sort_by == SortBy.RELEVANCE:
                 order_clause = "ORDER BY fts.rank"
@@ -179,19 +275,10 @@ class SearchRepository:
             elif sort_by == SortBy.TITLE:
                 order_clause = "ORDER BY v.title"
             else:
-                has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
-                use_like = (len(query) < 20 and has_chinese) or fuzzy
-                
-                # 模糊搜索处理
-                if fuzzy and not has_chinese:
-                    # 英文模糊搜索：添加通配符
-                    query = f'{query}*'
+                order_clause = "ORDER BY fts.rank"
             
             # 主查询
             if group_by_video:
-                # 按视频聚合：只返回每个视频的最佳匹配
-                # 对于中文查询使用LIKE后备搜索（解决FTS5中文分词问题）
-                use_like = len(query) < 20 and any('\u4e00' <= c <= '\u9fff' for c in query)
                 
                 if use_like:
                     # 使用LIKE搜索（中文）
@@ -310,7 +397,7 @@ class SearchRepository:
             
             # 模糊搜索处理（对于非聚合查询）
             if not group_by_video and fuzzy and not has_chinese:
-                query = f'{query}*'
+                query = self._escape_fts_query(query) + '*'
                     LEFT JOIN tags t ON vt.tag_id = t.id
                     WHERE fts.content MATCH ?
                     {field_filter}
@@ -320,36 +407,108 @@ class SearchRepository:
                     LIMIT ? OFFSET ?
                 """
             
-            # 执行查询
-            # 检测是否包含中文
-            use_like = len(query) < 20 and any('\u4e00' <= c <= '\u9fff' for c in query)
+            # 执行查询（支持模糊搜索多变体合并）
+            all_rows = []
+            used_video_ids = set()  # 避免重复的视频
             
-            if group_by_video:
-                if use_like:
-                    # LIKE模式：需要3个参数（source_field, content, WHERE过滤）
-                    like_pattern = f'%{query}%'
-                    params = [like_pattern, like_pattern, like_pattern]
-                else:
-                    # FTS模式：需要4个参数
-                    params = [query, query, query, query]
-            else:
-                params = [query]
+            # 如果是英文模糊搜索且有多个变体，合并所有变体的结果
+            if fuzzy and not has_chinese and not use_like and fuzzy_queries:
+                # 对变体按照重要性排序：原查询通配符 > 前缀匹配 > 其他变体
+                prioritized_queries = []
+                exact_match = f"{original_query}*"
+                prefix_patterns = [q for q in fuzzy_queries if q.endswith('*') and not '*' in q[:-1]]
+                other_patterns = [q for q in fuzzy_queries if q not in prefix_patterns and q != exact_match]
                 
-            if tags:
-                params.extend(tags)
-            params.extend([limit, offset])
-            
-            cursor = conn.execute(query_sql, params)
-            rows = cursor.fetchall()
+                if exact_match in fuzzy_queries:
+                    prioritized_queries.append(exact_match)
+                prioritized_queries.extend(sorted(prefix_patterns, key=len, reverse=True))  # 长的前缀优先
+                prioritized_queries.extend(other_patterns)
+                
+                for attempt_query in prioritized_queries:
+                    try:
+                        if group_by_video:
+                            # FTS模式：需要4个参数
+                            params = [attempt_query, attempt_query, attempt_query, attempt_query]
+                        else:
+                            params = [attempt_query]
+                            
+                        if tags:
+                            params.extend(tags)
+                        params.extend([limit * 2, offset])  # 适当增加limit
+                        
+                        cursor = conn.execute(query_sql, params)
+                        variant_rows = cursor.fetchall()
+                        
+                        # 合并结果，避免重复视频，并记录匹配的变体
+                        for row in variant_rows:
+                            if group_by_video:
+                                video_id = row['video_id']
+                                if video_id not in used_video_ids:
+                                    used_video_ids.add(video_id)
+                                    # 添加变体匹配信息
+                                    row_dict = dict(row)
+                                    row_dict['matched_variant'] = attempt_query
+                                    row_dict['variant_priority'] = prioritized_queries.index(attempt_query)
+                                    all_rows.append(row_dict)
+                                    # 如果已经收集到足够的结果就可以停止某些变体
+                                    if len(all_rows) >= limit * 1.5:
+                                        break
+                            else:
+                                row_dict = dict(row)
+                                row_dict['matched_variant'] = attempt_query
+                                row_dict['variant_priority'] = prioritized_queries.index(attempt_query)
+                                all_rows.append(row_dict)
+                                
+                    except Exception as e:
+                        # 如果查询失败，尝试下一个变体
+                        continue
+                
+                # 按相关性排序并限制结果数量
+                if all_rows and sort_by == SortBy.RELEVANCE:
+                    all_rows.sort(key=lambda x: x['rank'] if 'rank' in x.keys() and x['rank'] is not None else 999)
+                rows = all_rows[:limit]
+                
+                # 使用原始查询进行片段提取
+                query = original_query
+            else:
+                # 标准查询执行
+                if group_by_video:
+                    if use_like:
+                        # LIKE模式：需要3个参数（source_field, content, WHERE过滤）
+                        like_pattern = f'%{original_query}%'
+                        params = [like_pattern, like_pattern, like_pattern]
+                    else:
+                        # FTS模式：需要4个参数（使用处理过的query，可能包含通配符）
+                        params = [query, query, query, query]
+                else:
+                    params = [query]
+                    
+                if tags:
+                    params.extend(tags)
+                params.extend([limit, offset])
+                
+                cursor = conn.execute(query_sql, params)
+                rows = cursor.fetchall()
             
             # 转换为 SearchResult
             results = []
             for row in rows:
                 # 提取匹配片段
-                matched_snippet = self._extract_snippet(row['full_content'], query)
-                
-                # 计算相关性分数（BM25 rank 转换为 0-1）
-                relevance_score = self._normalize_rank(row['rank'])
+                if isinstance(row, dict) and 'matched_variant' in row:
+                    # 多变体搜索的结果
+                    matched_snippet = self._extract_snippet(row['full_content'], original_query)
+                    # 计算基于变体匹配的相关性分数
+                    relevance_score = self._calculate_variant_relevance(
+                        row['rank'], 
+                        row['matched_variant'], 
+                        original_query,
+                        row['variant_priority']
+                    )
+                else:
+                    # 标准搜索的结果
+                    matched_snippet = self._extract_snippet(row['full_content'], query)
+                    # 计算相关性分数（BM25 rank 转换为 0-1）
+                    relevance_score = self._normalize_rank(row['rank'])
                 
                 if relevance_score < min_relevance:
                     continue
@@ -583,6 +742,66 @@ class SearchRepository:
         
         return snippet
     
+    def _calculate_variant_relevance(self, rank: float, matched_variant: str, original_query: str, variant_priority: int) -> float:
+        """
+        计算基于变体匹配的相关性分数
+        
+        Args:
+            rank: FTS BM25 rank分数
+            matched_variant: 匹配到的查询变体
+            original_query: 原始查询
+            variant_priority: 变体优先级（0最高）
+            
+        Returns:
+            调整后的相关性分数
+        """
+        # 基础BM25分数
+        base_score = self._normalize_rank(rank)
+        
+        # 变体权重调整
+        variant_weight = 1.0
+        
+        # 精确匹配奖励
+        if matched_variant == f"{original_query}*":
+            variant_weight = 1.0  # 最高权重
+        elif matched_variant == original_query:
+            variant_weight = 1.0  # 完全精确匹配
+        else:
+            # 根据变体优先级和类型调整权重
+            if variant_priority == 0:
+                variant_weight = 1.0
+            elif variant_priority <= 2:
+                variant_weight = 0.85  # 高优先级变体
+            elif variant_priority <= 5:
+                variant_weight = 0.7   # 中等优先级
+            else:
+                variant_weight = 0.6   # 低优先级变体
+            
+            # 特殊情况：如果是MBTI相关的智能匹配
+            original_lower = original_query.lower()
+            variant_lower = matched_variant.lower().replace('*', '')
+            
+            if original_lower in ['infp', 'infj', 'intp', 'intj', 'enfp', 'enfj', 'entp', 'entj', 
+                                 'isfp', 'isfj', 'istp', 'istj', 'esfp', 'esfj', 'estp', 'estj']:
+                # MBTI智能匹配权重调整
+                if variant_lower in ['inf', 'int', 'enf', 'ent', 'isf', 'ist', 'esf', 'est']:
+                    # 检查是否是同系列（如INFP -> INF系列）
+                    if original_lower.startswith(variant_lower):
+                        variant_weight = 0.9  # 同系列匹配
+                    else:
+                        variant_weight = 0.75  # 跨系列匹配
+                elif variant_lower in ['in', 'en', 'is', 'es']:
+                    variant_weight = 0.65  # MBTI大类匹配
+                elif variant_lower in ['f', 't', 'p', 'j']:
+                    variant_weight = 0.5   # MBTI维度匹配
+        
+        # 内容相关性检查（简单的关键词匹配）
+        content_bonus = 1.0
+        # 这里可以添加更复杂的内容相关性分析
+        
+        final_score = base_score * variant_weight * content_bonus
+        return round(min(1.0, final_score), 3)
+
     def _normalize_rank(self, rank: float) -> float:
         """
         将 BM25 rank 归一化到 0-1

@@ -58,7 +58,7 @@ def search_command(args):
         min_relevance=args.min_relevance,
         group_by_video=not args.show_all_matches,  # 默认聚合，除非指定显示所有
         match_all_keywords=getattr(args, 'match_all', False),  # 多关键词匹配逻辑
-        fuzzy=getattr(args, 'fuzzy', False)  # 模糊搜索
+        fuzzy=not getattr(args, 'exact', False)  # 默认模糊搜索，除非指定精确
     )
     
     if not results:
@@ -436,7 +436,7 @@ def main():
     search_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
     search_parser.add_argument('--min-relevance', type=float, default=0.0, help='最小相关性')
     search_parser.add_argument('--match-all', action='store_true', help='多关键词AND逻辑（默认OR）')
-    search_parser.add_argument('--fuzzy', action='store_true', help='启用模糊搜索（部分匹配）')
+    search_parser.add_argument('--exact', action='store_true', help='精确搜索（默认模糊搜索）')
     search_parser.add_argument('--show-all-matches', action='store_true', help='显示所有匹配片段（默认每个视频只显示一次）')
     search_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     search_parser.add_argument('-v', '--verbose', action='store_true', help='详细输出')
