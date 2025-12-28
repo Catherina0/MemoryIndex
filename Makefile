@@ -154,7 +154,7 @@ setup: ensure-venv
 	@echo "  → 初始化 Whoosh 搜索索引..."
 	@$(PYTHON) -m db.whoosh_search init 2>/dev/null || true
 	@echo "  → 运行环境测试..."
-	@$(PYTHON) test_env.py
+	@$(PYTHON) tests/test_env.py
 	@echo ""
 	@echo "✅ 环境初始化完成！"
 	@echo "📝 下一步：编辑 .env 文件填入 API Key"
@@ -169,11 +169,11 @@ install: ensure-venv
 # 运行环境测试
 test: ensure-venv
 	@echo "🧪 运行环境测试..."
-	@$(PYTHON) test_env.py
+	@$(PYTHON) tests/test_env.py
 
 # 全功能自检和测试
 selftest: ensure-venv
-	@$(PYTHON) selftest.py
+	@$(PYTHON) scripts/selftest.py
 
 # 检查环境
 check: ensure-venv
@@ -220,7 +220,7 @@ run: ensure-venv
 	@echo "🔊 流程: 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@$(PYTHON) process_video.py "$(VIDEO)"
+	@$(PYTHON) core/process_video.py "$(VIDEO)"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ 处理完成！"
@@ -267,7 +267,7 @@ ocr: ensure-venv
 	echo "⏱️  注意：OCR 处理较慢，带进度条显示"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo ""; \
-	OCR_WORKERS=$$WORKERS $(PYTHON) process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
+	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "✅ 处理完成！"; \
@@ -336,9 +336,9 @@ download: ensure-venv
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@if [ "$(FORCE)" = "1" ]; then \
-		$(PYTHON) video_downloader.py "$(URL)" --force; \
+		$(PYTHON) core/video_downloader.py "$(URL)" --force; \
 	else \
-		$(PYTHON) video_downloader.py "$(URL)"; \
+		$(PYTHON) core/video_downloader.py "$(URL)"; \
 	fi
 	@echo ""
 	@echo "✅ 完成！"
@@ -358,7 +358,7 @@ download-run: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@# 下载视频并获取文件路径
-	@$(PYTHON) video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	@$(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
 	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
 	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
 		cat /tmp/download_output.txt | tail -20; \
@@ -372,7 +372,7 @@ download-run: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(PYTHON) process_video.py "$$VIDEO_PATH"
+	$(PYTHON) core/process_video.py "$$VIDEO_PATH"
 
 # 下载视频后自动处理（完整OCR模式）
 download-ocr: ensure-venv
@@ -389,7 +389,7 @@ download-ocr: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@# 下载视频并获取文件路径
-	@$(PYTHON) video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	@$(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
 	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
 	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
 		cat /tmp/download_output.txt | tail -20; \
@@ -404,7 +404,7 @@ download-ocr: ensure-venv
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
-	$(PYTHON) process_video.py "$$VIDEO_PATH" --with-frames
+	$(PYTHON) core/process_video.py "$$VIDEO_PATH" --with-frames
 
 # 查看所有报告列表
 list-reports:
@@ -487,14 +487,14 @@ db-test: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🧪 测试数据库功能"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) test_database.py
+	@$(PYTHON) tests/test_database.py
 
 # 导入真实数据测试
 db-import-test: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "📦 导入 output 目录真实数据测试"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) test_database_import.py
+	@$(PYTHON) tests/test_database_import.py
 
 # 搜索命令
 search: ensure-venv
@@ -507,7 +507,7 @@ search: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔍 搜索: $(Q)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) search_cli.py search "$(Q)" $(FLAGS)
+	@$(PYTHON) cli/search_cli.py search "$(Q)" $(FLAGS)
 
 # 按标签搜索
 search-tags: ensure-venv
@@ -520,7 +520,7 @@ search-tags: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🏷️  按标签搜索: $(TAGS)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) search_cli.py tags --tags $(TAGS) --match-all
+	@$(PYTHON) cli/search_cli.py tags --tags $(TAGS) --match-all
 
 # 搜索主题
 search-topics: ensure-venv
@@ -532,14 +532,14 @@ search-topics: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "📚 搜索主题: $(Q)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) search_cli.py topics "$(Q)"
+	@$(PYTHON) cli/search_cli.py topics "$(Q)"
 
 # 列出热门标签
 db-tags: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🏷️  热门标签"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(PYTHON) search_cli.py list-tags --limit 50
+	@$(PYTHON) cli/search_cli.py list-tags --limit 50
 
 # 列出所有视频（带标签和摘要）
 db-list: ensure-venv
@@ -547,7 +547,7 @@ db-list: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 视频列表 (前 $$LIMIT 条)"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(PYTHON) search_cli.py list --limit $$LIMIT
+	$(PYTHON) cli/search_cli.py list --limit $$LIMIT
 
 # 展示特定ID的视频详情
 db-show: ensure-venv
@@ -556,7 +556,7 @@ db-show: ensure-venv
 		echo "用法：make db-show ID=1"; \
 		exit 1; \
 	fi
-	@$(PYTHON) search_cli.py show $(ID) $(FLAGS)
+	@$(PYTHON) cli/search_cli.py show $(ID) $(FLAGS)
 
 # 数据库备份
 db-backup: ensure-venv
@@ -605,4 +605,4 @@ test-workers:
 	fi; \
 	echo "Make 变量: OCR_WORKERS=$(OCR_WORKERS)"; \
 	echo "Shell 变量: WORKERS=$$WORKERS"; \
-	OCR_WORKERS=$$WORKERS $(PYTHON) test_make_workers.py
+	OCR_WORKERS=$$WORKERS $(PYTHON) tests/test_make_workers.py

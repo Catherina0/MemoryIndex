@@ -1,0 +1,109 @@
+🎉 项目搭建完成 - Video Report Pipeline
+═══════════════════════════════════════════
+
+✅ 项目状态：本地骨架已完成
+⚠️  最近更新：2025-12-11 修复 PaddleOCR 3.x API 兼容性问题
+
+📁 项目位置
+───────────
+/Users/catherina/Documents/GitHub/knowledge/video_report/
+
+📦 已完成的组件
+───────────────
+✅ 核心 Python 脚本
+   • process_video.py    - 主入口（音频分离、抽帧、OCR、报告生成）
+   • ocr_utils.py        - PaddleOCR 工具集
+
+✅ 配置与文档
+   • requirements.txt    - Python 依赖（已更新到兼容版本）
+   • README.md          - 完整项目文档
+   • QUICKSTART.md      - 快速启动指南
+   • config_example.py  - 配置文件模板
+
+✅ 测试工具
+   • test_env.py        - 环境检查脚本（6/6 测试通过 ✓）
+
+✅ 环境搭建
+   • .venv/             - Python 虚拟环境（已安装所有依赖）
+   • .gitignore         - Git 忽略规则
+
+🔧 依赖版本
+───────────
+• Python 3.11（系统版本）
+• PaddlePaddle 3.2.2 ✅
+• PaddleOCR 3.3.2 ✅
+• OpenCV 4.12.0 ✅
+• NumPy 2.2.6 ✅
+• FFmpeg 7.1.1 ✅（系统级）
+
+🚀 快速开始
+───────────
+1. 激活虚拟环境
+   cd /Users/catherina/Documents/GitHub/knowledge/video_report
+   source .venv/bin/activate
+
+2. 运行环境检查（可选）
+   python test_env.py
+
+3. 处理视频（基础模式）
+   python process_video.py /path/to/video.mp4
+
+4. 处理视频（带抽帧 + OCR）
+   python process_video.py /path/to/video.mp4 --with-frames
+
+📋 命令行参数
+─────────────
+video                输入视频路径（必需）
+--with-frames        启用抽帧 + OCR
+--out-dir DIR        输出目录（默认：./output）
+--ocr-lang LANG      OCR 语言（默认：ch）
+
+🔗 当前状态
+───────────
+✅ 本地视频处理骨架完成
+   • 音频分离（ffmpeg）
+   • 抽帧功能（ffmpeg）
+   • 本地 OCR（PaddleOCR）
+
+⏳ Groq API 集成（预留接口）
+   • transcribe_audio_with_groq() - 第 57 行
+   • summarize_with_gpt_oss_120b() - 第 68 行
+
+📝 下一步任务
+─────────────
+1. 填充 Groq API 接口
+   • 音频转文字：Whisper API
+   • 文本总结：GPT-OSS 120B
+
+2. 增强报告功能
+   • 自动插入关键帧截图
+   • 生成 Markdown 格式报告
+
+3. 存储和检索
+   • 报告存档系统
+   • 全文搜索（SQLite / Vector DB）
+
+💡 提示
+───────
+• 第一次运行时 PaddleOCR 会下载模型（~100MB）
+• 使用 --with-frames 会显著增加处理时间（OCR 较慢）
+• 输出文件会自动生成在 output/ 目录下
+
+� 已知修复 (2025-12-11)
+────────────────────────
+✅ 修复 PaddleOCR 3.x API 变更
+   问题：OCR 返回空结果
+   原因：新版本返回字典格式 {'rec_texts': [...], 'rec_scores': [...]}
+   解决：更新 ocr_image() 函数支持新旧两种格式
+   文件：ocr_utils.py
+✅ 优化 OCR 检测参数
+   问题：OCR 只识别中文字幕，遗漏大量英文/数字文本
+   原因：检测阈值过高，文本框扩展比例不足
+   解决：
+   • 降低检测阈值 det_db_thresh: 0.3 → 0.2
+   • 降低边框阈值 det_db_box_thresh: 0.6 → 0.5
+   • 增大文本框扩展 det_db_unclip_ratio: 1.5 → 1.8
+   • 降低置信度过滤 min_score: 0.5 → 0.25
+   效果：测试15张图片，识别字符从21提升至453 (20倍+)
+   文件：ocr_utils.py, process_video.py
+�🐈‍⬛ 小黑猫干活完成！随时准备集成 Groq API！

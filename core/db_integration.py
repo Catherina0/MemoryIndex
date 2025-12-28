@@ -3,10 +3,15 @@
 视频处理完成后的数据库存储集成
 修改 process_video.py 的存储逻辑，将结果落库
 """
+import sys
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
+
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from db import VideoRepository, SearchRepository
 from db.models import (

@@ -3,10 +3,16 @@
 搜索命令行工具
 提供便捷的搜索界面
 """
+import sys
 import argparse
 import json
+from pathlib import Path
 from typing import List
 from tabulate import tabulate
+
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from db import SearchRepository
 from db.search import SearchField, SortBy

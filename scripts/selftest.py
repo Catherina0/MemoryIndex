@@ -8,6 +8,10 @@ import sys
 import subprocess
 from pathlib import Path
 
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 
 def print_header(title: str):
     """打印标题"""
@@ -26,8 +30,8 @@ def check_module_imports():
         ('db.repository', ['VideoRepository']),
         ('db.search', ['SearchRepository']),
         ('db.whoosh_search', ['WhooshSearchIndex', 'check_whoosh_status']),
-        ('video_downloader', ['VideoDownloader']),
-        ('process_video', ['process_video']),
+        ('core.video_downloader', ['VideoDownloader']),
+        ('core.process_video', ['process_video']),
     ]
     
     errors = []
@@ -156,7 +160,7 @@ def check_downloader():
     print_header("⬇️  6. 下载器状态")
     
     try:
-        from video_downloader import VideoDownloader
+        from core.video_downloader import VideoDownloader
         dl = VideoDownloader()
         
         print(f"   yt-dlp: {'✅ ' + dl.ytdlp_path if dl.ytdlp_path else '❌ 未安装'}")

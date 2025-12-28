@@ -1,0 +1,183 @@
+# ✨ URL 提取功能 - 完整指南
+
+## 🎯 功能总览
+
+用户现在可以直接粘贴任何包含视频链接的文本，系统会自动识别和提取有效的 URL，无需手动复制。
+
+## 💡 使用示例
+
+### 最简单的用法
+
+```bash
+# 直接使用纯 URL
+make download-run URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# 或者粘贴包含链接的任何文本
+make download-run URL="朋友推荐的视频：https://youtu.be/xxx 非常有趣"
+
+# 聊天记录也可以
+make download-ocr URL="嘿，看这个 https://b23.tv/abc123 笑死我了"
+
+# 带特殊字符的分享文本
+make download-ocr URL="推荐看！→ https://www.bilibili.com/video/BVxxx ← 超好"
+```
+
+## 🌐 支持的平台
+
+- ✅ YouTube (youtube.com, youtu.be)
+- ✅ Bilibili (bilibili.com, b23.tv)
+- ✅ Xiaohongshu (xiaohongshu.com, xhslink.com)
+- ✅ Douyin (douyin.com)
+- ✅ Twitter/X (twitter.com, x.com)
+- ✅ 通用 URL 格式
+
+## 🔍 提取过程
+
+1. **识别** - 检查输入文本中是否包含有效的视频 URL
+2. **提取** - 从文本中提取第一个匹配的 URL
+3. **清理** - 移除尾部标点符号（。，；等）
+4. **验证** - 确保 URL 格式正确
+5. **下载** - 自动下载视频到 `videos/` 目录
+6. **处理** - 根据命令进行音频提取或 OCR
+
+## 📝 常见场景
+
+| 场景 | 输入示例 | 结果 |
+|------|--------|------|
+| 微信分享 | `分享一个视频：https://...` | ✅ 自动提取 |
+| QQ 分享 | `推荐→ https://... ←好 | ✅ 自动提取 |
+| 聊天记录 | `看这个 https://... 很有趣` | ✅ 自动提取 |
+| 短链接 | `https://b23.tv/abc` | ✅ 自动提取 |
+| 纯链接 | `https://www.youtube.com/watch?v=...` | ✅ 自动提取 |
+
+## ⚠️ 注意事项
+
+1. 输入必须包含至少一个有效的视频 URL
+2. 一次只提取第一个 URL（如有多个，请分别处理）
+3. URL 格式必须以 http:// 或 https:// 开头
+4. 短链接和完整链接都支持
+
+## 🚫 无效输入示例
+
+```bash
+# ❌ 这些会失败：
+make download-run URL="这是一个普通的文本，没有链接"
+make download-run URL="搜索关键词：某某视频"
+make download-run URL="ftp://不支持的协议"
+```
+
+## ✅ 有效输入示例
+
+```bash
+# ✅ 这些都可以：
+make download-run URL="https://www.youtube.com/watch?v=abc123"
+make download-run URL="https://b23.tv/xyz789"
+make download-run URL="朋友分享：https://youtu.be/abc123 必看"
+make download-run URL="B站 https://bilibili.com/video/BVxxx 很棒"
+make download-ocr URL="看→ https://b23.tv/abc ←这个"
+```
+
+## 🔧 错误处理
+
+如果无法提取 URL，系统会显示友好的错误信息：
+
+```
+❌ 错误：无法从输入中提取有效的视频URL
+输入内容：你输入的文本
+
+支持的URL格式：
+  • YouTube: youtube.com/watch?v=... 或 youtu.be/...
+  • Bilibili: bilibili.com/video/BV... 或 b23.tv/...
+  • 小红书: xiaohongshu.com/... 或 xhslink.com/...
+  • 抖音: douyin.com/...
+  • Twitter/X: twitter.com/... 或 x.com/...
+```
+
+## 📊 工作流程示意
+
+```
+用户输入（可能包含额外文本）
+          ↓
+  URL 自动提取器
+          ↓
+    URL 有效性验证
+          ↓
+    自动平台检测
+          ↓
+    视频自动下载
+          ↓
+  音频/OCR 处理
+          ↓
+  生成报告和总结
+```
+
+## 🎓 技术细节
+
+### 实现原理
+
+系统使用正则表达式来识别各平台的 URL 模式：
+
+- YouTube: `https?://(?:www\.)?youtube\.com/watch\?v=...`
+- Bilibili: `https?://(?:www\.)?bilibili\.com/video/BV...`
+- 短链接: `https?://b23\.tv/...`
+
+### 自动清理
+
+移除这些尾部字符：`. , ; : ' " ) ]`
+
+这样即使 URL 后面有标点符号也能被正确提取。
+
+## 🚀 最佳实践
+
+### 推荐方法
+
+1. **直接粘贴分享内容** - 无需手动提取
+   ```bash
+   # 从微信/QQ 复制整条消息
+   make download-run URL="朋友分享的文本和链接"
+   ```
+
+2. **保留原文本** - 无需清理
+   ```bash
+   # 甚至包含多余内容也没关系
+   make download-ocr URL="这个视频超级有趣→ https://... ←必看！！"
+   ```
+
+3. **使用短链接** - 减少输入
+   ```bash
+   # 短链接比完整链接更简洁
+   make download-run URL="https://b23.tv/abc"
+   ```
+
+### 注意事项
+
+1. ❌ 不支持纯文本搜索（如"搜索YouTube的某个视频"）
+2. ❌ 不支持自定义协议（如 magnet: 链接）
+3. ✅ 支持各种分享格式
+4. ✅ 支持特殊字符和符号
+5. ✅ 支持长链接和短链接
+
+## 📞 常见问题
+
+**Q: 为什么提取失败？**
+A: 输入的文本可能不包含有效的视频 URL。检查是否：
+- 包含 http:// 或 https:// 前缀
+- 使用支持的平台（YouTube, Bilibili 等）
+- URL 没有被截断或损坏
+
+**Q: 支持多个链接吗？**
+A: 目前一次只提取第一个链接。如需处理多个，请分别执行命令。
+
+**Q: 能提取 Instagram/TikTok 的链接吗？**
+A: 当前支持 YouTube, Bilibili, 小红书, 抖音, Twitter/X。如需其他平台请告诉我。
+
+**Q: 提取后的链接去哪了？**
+A: 系统会在输出中显示识别的 URL，然后自动下载处理。
+
+## 📅 更新记录
+
+**v1.0 - 2025-12-12**
+- 实现 URL 智能提取
+- 支持 6 个视频平台
+- 自动尾部标点清理
+- 友好的错误提示

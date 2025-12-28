@@ -2,6 +2,13 @@
 """
 演示多关键词搜索的简单实现
 """
+import sys
+from pathlib import Path
+
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from db.search import SearchRepository
 
 def multi_keyword_search(query: str, match_all: bool = False):

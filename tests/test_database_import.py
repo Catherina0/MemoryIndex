@@ -3,10 +3,15 @@
 数据库导入测试脚本
 使用 output 目录中的真实数据测试数据库功能
 """
+import sys
 import json
 from pathlib import Path
 from datetime import datetime
 import re
+
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from db import VideoRepository
 from db.models import Video, Artifact, Topic, TimelineEntry, SourceType, ArtifactType, ProcessingStatus

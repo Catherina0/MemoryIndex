@@ -4,9 +4,14 @@
 从 porter unicode61 改为 trigram，以更好支持中文搜索
 """
 import sqlite3
+import sys
 from pathlib import Path
 
-DB_PATH = Path("storage/database/knowledge.db")
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+DB_PATH = PROJECT_ROOT / "storage/database/knowledge.db"
 
 def main():
     print("🔧 修复 FTS 分词器...")

@@ -2,6 +2,7 @@
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -11,6 +12,10 @@ import json
 import warnings
 import logging
 
+# 添加项目根目录到路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # 抑制 PaddleOCR/PaddleX 模型加载日志（必须在 import 前设置）
 os.environ['PADDLEX_DISABLE_PRINT'] = '1'
 os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
@@ -19,11 +24,11 @@ logging.getLogger('ppocr').setLevel(logging.ERROR)
 logging.getLogger('paddle').setLevel(logging.ERROR)
 logging.getLogger('paddlex').setLevel(logging.ERROR)
 
-from ocr_utils import init_ocr, ocr_folder_to_text
+from ocr.ocr_utils import init_ocr, ocr_folder_to_text
 
 # 导入多进程OCR（用于提升CPU利用率）
 try:
-    from ocr_parallel import ocr_folder_parallel
+    from ocr.ocr_parallel import ocr_folder_parallel
     PARALLEL_OCR_AVAILABLE = True
 except ImportError:
     PARALLEL_OCR_AVAILABLE = False
@@ -35,7 +40,7 @@ from db.models import Video, Artifact, Topic, TimelineEntry, SourceType, Artifac
 
 # 可选：支持从 URL 直接下载
 try:
-    from video_downloader import VideoDownloader
+    from core.video_downloader import VideoDownloader
     DOWNLOADER_AVAILABLE = True
 except ImportError:
     DOWNLOADER_AVAILABLE = False

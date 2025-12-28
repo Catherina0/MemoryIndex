@@ -8,8 +8,9 @@ output/
 *.egg-info/
 .pytest_cache/
 .env
-test/
-docs/
+storage/database/
+storage/whoosh_index/
+storage/backups/
 
 # Downloaded videos
 videos/
