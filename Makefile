@@ -87,13 +87,17 @@ help:
 	@echo "  • 支持平台：YouTube, Bilibili, 小红书等（需安装对应工具）"
 	@echo ""
 	@echo "🗄️  数据库与搜索："
-	@echo "  make db-init                初始化数据库"
-	@echo "  make db-status              查看数据库状态"
+	@echo "  make db-init                初始化数据库和搜索索引"
+	@echo "  make db-status              查看数据库和索引状态"
 	@echo "  make db-show ID=1           查看特定视频详情"
 	@echo "  make search Q=\"关键词\"      搜索视频内容"
 	@echo "  make search-tags TAGS=\"标签1 标签2\"  按标签搜索"
 	@echo "  make db-tags                查看热门标签"
 	@echo "  make db-backup              备份数据库"
+	@echo ""
+	@echo "🔍 Whoosh 中文搜索（jieba分词）："
+	@echo "  make whoosh-rebuild         从数据库重建搜索索引"
+	@echo "  make whoosh-search Q=\"美国\" 使用 Whoosh 搜索（中文优化）"
 	@echo ""
 	@echo "💡 搜索示例："
 	@echo "  make search Q=\"机器学习\"                            # 模糊搜索（默认）"
@@ -383,8 +387,12 @@ db-init: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@$(PYTHON) -m db.schema
 	@echo ""
+	@echo "🔍 初始化 Whoosh 搜索索引..."
+	@$(PYTHON) -m db.whoosh_search init
+	@echo ""
 	@echo "✅ 数据库初始化完成！"
 	@echo "📂 数据库位置: storage/database/knowledge.db"
+	@echo "📂 搜索索引位置: storage/whoosh_index/"
 
 # 重建数据库（删除所有数据）
 db-reset: ensure-venv
@@ -394,6 +402,7 @@ db-reset: ensure-venv
 	@read -p "确认删除所有数据？[y/N] " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
 		$(PYTHON) -m db.schema --force; \
+		$(PYTHON) -m db.whoosh_search init --force; \
 		echo "✅ 数据库已重建"; \
 	else \
 		echo "❌ 取消操作"; \
@@ -405,6 +414,34 @@ db-status: ensure-venv
 	@echo "📊 数据库状态"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@$(PYTHON) -m db.schema --check
+	@echo ""
+	@echo "🔍 搜索索引状态:"
+	@$(PYTHON) -m db.whoosh_search status
+
+# 重建搜索索引（从数据库同步）
+whoosh-rebuild: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔄 重建 Whoosh 搜索索引"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@$(PYTHON) -m db.whoosh_search rebuild
+	@echo ""
+	@echo "✅ 搜索索引重建完成！"
+
+# 测试 Whoosh 搜索
+whoosh-search: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔍 Whoosh 搜索测试"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ifdef Q
+	@$(PYTHON) -m db.whoosh_search search "$(Q)"
+else
+	@echo "用法: make whoosh-search Q=\"搜索词\""
+	@echo ""
+	@echo "示例:"
+	@echo "  make whoosh-search Q=\"美国\""
+	@echo "  make whoosh-search Q=\"INTP\""
+	@echo "  make whoosh-search Q=\"深度学习\""
+endif
 
 # 测试数据库功能
 db-test: ensure-venv

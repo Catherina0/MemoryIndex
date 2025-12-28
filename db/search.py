@@ -1,6 +1,7 @@
 """
 搜索 API
 提供全文搜索、标签搜索、主题搜索等功能
+支持 FTS5（英文）和 Whoosh+jieba（中文）混合搜索
 """
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -8,6 +9,13 @@ from enum import Enum
 
 from .schema import get_connection
 from .models import SearchResult
+
+# 尝试导入 Whoosh 搜索
+try:
+    from .whoosh_search import get_whoosh_index, check_whoosh_status
+    WHOOSH_AVAILABLE = check_whoosh_status()['ready']
+except ImportError:
+    WHOOSH_AVAILABLE = False
 
 
 class SearchField(str, Enum):
@@ -251,6 +259,20 @@ class SearchRepository:
             has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
             original_query = query  # 保存原始查询
             fuzzy_queries = []  # 模糊搜索的查询变体
+            
+            # 如果是中文且 Whoosh 可用，优先使用 Whoosh 搜索
+            if has_chinese and WHOOSH_AVAILABLE:
+                whoosh_results = self._search_with_whoosh(
+                    query=original_query,
+                    tags=tags,
+                    limit=limit,
+                    offset=offset,
+                    min_relevance=min_relevance,
+                    conn=conn
+                )
+                if whoosh_results is not None:
+                    return whoosh_results
+                # Whoosh 搜索失败，回退到 LIKE
             
             if fuzzy and not has_chinese:
                 # 英文模糊搜索：生成多种变体以处理拼写错误
@@ -684,6 +706,137 @@ class SearchRepository:
             
         finally:
             conn.close()
+    
+    def _search_with_whoosh(
+        self,
+        query: str,
+        tags: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+        min_relevance: float = 0.0,
+        conn = None
+    ) -> Optional[List[SearchResult]]:
+        """
+        使用 Whoosh 进行中文全文搜索（按视频聚合，每个视频只返回最相关的结果）
+        
+        Args:
+            query: 搜索查询（中文）
+            tags: 标签过滤
+            limit: 返回结果数量
+            offset: 分页偏移
+            min_relevance: 最小相关性阈值
+            conn: 数据库连接
+        
+        Returns:
+            List[SearchResult] 或 None（如果 Whoosh 搜索失败）
+        """
+        try:
+            whoosh_index = get_whoosh_index(self.db_path)
+            
+            # 使用 Whoosh 搜索（获取更多结果用于聚合）
+            whoosh_results = whoosh_index.search(
+                query, 
+                limit=(limit + offset) * 5  # 获取更多结果以便聚合
+            )
+            
+            if not whoosh_results:
+                return []
+            
+            # 按视频ID聚合，保留每个视频最相关的结果
+            video_best_results = {}  # video_id -> (relevance_score, wr, video_row)
+            
+            for wr in whoosh_results:
+                video_id = wr.video_id
+                relevance_score = wr.relevance_score if wr.relevance_score else 0.5
+                
+                # 检查是否已有该视频的结果，保留相关性更高的
+                if video_id in video_best_results:
+                    if relevance_score <= video_best_results[video_id][0]:
+                        continue  # 已有更相关的结果，跳过
+                
+                # 检查标签
+                if tags and video_id:
+                    cursor = conn.execute("""
+                        SELECT COUNT(DISTINCT t.id) as tag_count
+                        FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE vt.video_id = ? AND t.name IN ({})
+                    """.format(','.join(['?'] * len(tags))), [video_id] + tags)
+                    row = cursor.fetchone()
+                    if row['tag_count'] < len(tags):
+                        continue  # 不满足所有标签要求
+                
+                # 获取完整视频信息
+                cursor = conn.execute("""
+                    SELECT 
+                        v.id, v.title, v.source_type, 
+                        v.duration_seconds, v.file_path, v.created_at,
+                        (
+                            SELECT GROUP_CONCAT(t.name, ', ')
+                            FROM video_tags vt
+                            JOIN tags t ON vt.tag_id = t.id
+                            WHERE vt.video_id = v.id
+                        ) as tags
+                    FROM videos v
+                    WHERE v.id = ?
+                """, [video_id])
+                video_row = cursor.fetchone()
+                
+                if not video_row:
+                    continue
+                
+                if relevance_score < min_relevance:
+                    continue
+                
+                # 保存/更新该视频的最佳结果
+                video_best_results[video_id] = (relevance_score, wr, video_row)
+            
+            # 构建聚合后的结果列表
+            filtered_results = []
+            for video_id, (relevance_score, wr, video_row) in video_best_results.items():
+                # 提取匹配片段
+                content = wr.content or ''
+                matched_snippet = self._extract_snippet(content, query)
+                source_field = wr.source or 'ocr_text'
+                
+                # 获取时间戳信息
+                timestamp_info = self._get_timestamp_info(
+                    video_id, 
+                    source_field,
+                    matched_snippet,
+                    conn
+                )
+                
+                result = SearchResult(
+                    video_id=video_id,
+                    video_title=video_row['title'],
+                    source_field=source_field,
+                    matched_snippet=matched_snippet,
+                    full_content=content if len(content) < 500 else None,
+                    timestamp_seconds=timestamp_info.get('timestamp'),
+                    timestamp_range=timestamp_info.get('range'),
+                    tags=video_row['tags'].split(', ') if video_row['tags'] else [],
+                    source_type=video_row['source_type'],
+                    duration_seconds=video_row['duration_seconds'],
+                    file_path=video_row['file_path'],
+                    rank=None,  # Whoosh 不使用 rank
+                    relevance_score=relevance_score,
+                    created_at=video_row['created_at']
+                )
+                
+                filtered_results.append(result)
+            
+            # 按相关性排序
+            filtered_results.sort(key=lambda x: x.relevance_score, reverse=True)
+            
+            # 应用分页
+            return filtered_results[offset:offset + limit]
+            
+        except Exception as e:
+            # Whoosh 搜索失败，返回 None 以触发回退
+            import sys
+            print(f"Whoosh 搜索失败: {e}", file=sys.stderr)
+            return None
     
     def suggest_tags(self, prefix: str, limit: int = 10) -> List[str]:
         """标签自动补全"""
