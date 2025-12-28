@@ -56,7 +56,9 @@ def search_command(args):
         offset=args.offset,
         sort_by=sort_by,
         min_relevance=args.min_relevance,
-        group_by_video=not args.show_all_matches  # 默认聚合，除非指定显示所有
+        group_by_video=not args.show_all_matches,  # 默认聚合，除非指定显示所有
+        match_all_keywords=getattr(args, 'match_all', False),  # 多关键词匹配逻辑
+        fuzzy=getattr(args, 'fuzzy', False)  # 模糊搜索
     )
     
     if not results:
@@ -423,8 +425,8 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='子命令')
     
     # 全文搜索
-    search_parser = subparsers.add_parser('search', help='全文搜索')
-    search_parser.add_argument('query', help='搜索查询')
+    search_parser = subparsers.add_parser('search', help='全文搜索（支持多关键词）')
+    search_parser.add_argument('query', help='搜索查询（支持空格分隔多个关键词）')
     search_parser.add_argument('--tags', nargs='+', help='标签过滤')
     search_parser.add_argument('--field', choices=['all', 'report', 'transcript', 'ocr', 'topic'],
                               default='all', help='搜索字段')
@@ -433,6 +435,8 @@ def main():
     search_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
     search_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
     search_parser.add_argument('--min-relevance', type=float, default=0.0, help='最小相关性')
+    search_parser.add_argument('--match-all', action='store_true', help='多关键词AND逻辑（默认OR）')
+    search_parser.add_argument('--fuzzy', action='store_true', help='启用模糊搜索（部分匹配）')
     search_parser.add_argument('--show-all-matches', action='store_true', help='显示所有匹配片段（默认每个视频只显示一次）')
     search_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     search_parser.add_argument('-v', '--verbose', action='store_true', help='详细输出')

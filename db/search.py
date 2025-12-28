@@ -42,13 +42,15 @@ class SearchRepository:
         offset: int = 0,
         sort_by: SortBy = SortBy.RELEVANCE,
         min_relevance: float = 0.0,
-        group_by_video: bool = True
+        group_by_video: bool = True,
+        match_all_keywords: bool = False,
+        fuzzy: bool = False
     ) -> List[SearchResult]:
         """
         全文搜索
         
         Args:
-            query: 搜索查询字符串
+            query: 搜索查询字符串（支持多关键词，用空格分隔）
             tags: 标签过滤（AND逻辑：必须包含所有标签）
             fields: 搜索字段范围
             limit: 返回结果数量
@@ -56,9 +58,87 @@ class SearchRepository:
             sort_by: 排序方式
             min_relevance: 最小相关性分数（0-1）
             group_by_video: 是否按视频聚合（默认True，每个视频只显示最佳匹配）
+            match_all_keywords: 多关键词逻辑（True=AND都匹配，False=OR任一匹配）
+            fuzzy: 是否启用模糊搜索（支持部分匹配）
         
         Returns:
             List[SearchResult]: 搜索结果列表
+        """
+        # 解析多关键词
+        keywords = [k.strip() for k in query.split() if k.strip()]
+        if not keywords:
+            return []
+        
+        # 单关键词：使用原有逻辑
+        if len(keywords) == 1:
+            return self._search_single(
+                keywords[0], tags, fields, limit, offset, 
+                sort_by, min_relevance, group_by_video, fuzzy
+            )
+        
+        # 多关键词：收集所有结果并计算综合相似度
+        all_results = {}  # {video_id: {result, scores: [score1, score2, ...], matched_count}}
+        
+        for keyword in keywords:
+            results = self._search_single(
+                keyword, tags, fields, 999, 0,  # 大limit确保找到所有
+                sort_by, 0, group_by_video, fuzzy  # min_relevance=0，后续统一过滤
+            )
+            for r in results:
+                if r.video_id not in all_results:
+                    all_results[r.video_id] = {
+                        'result': r,
+                        'scores': [],
+                        'matched_count': 0
+                    }
+                all_results[r.video_id]['scores'].append(r.relevance_score or 0.5)
+                all_results[r.video_id]['matched_count'] += 1
+        
+        # 计算综合相似度
+        final_results = []
+        for video_id, data in all_results.items():
+            if match_all_keywords and data['matched_count'] < len(keywords):
+                # AND逻辑：必须匹配所有关键词
+                continue
+            
+            # 综合相似度 = 平均分 * (匹配关键词数 / 总关键词数)
+            avg_score = sum(data['scores']) / len(data['scores'])
+            coverage = data['matched_count'] / len(keywords)
+            combined_score = avg_score * (0.7 + 0.3 * coverage)  # 70%看质量，30%看覆盖率
+            
+            # 更新结果的相似度
+            result = data['result']
+            result.relevance_score = round(combined_score, 3)
+            
+            if combined_score >= min_relevance:
+                final_results.append(result)
+        
+        # 按相似度排序
+        if sort_by == SortBy.RELEVANCE:
+            final_results.sort(key=lambda x: x.relevance_score or 0, reverse=True)
+        elif sort_by == SortBy.DATE:
+            final_results.sort(key=lambda x: x.created_at or '', reverse=True)
+        
+        # 应用分页
+        return final_results[offset:offset+limit]
+    
+    def _search_single(
+        self,
+        query: str,
+        tags: Optional[List[str]] = None,
+        fields: SearchField = SearchField.ALL,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: SortBy = SortBy.RELEVANCE,
+        min_relevance: float = 0.0,
+        group_by_video: bool = True,
+        fuzzy: bool = False
+    ) -> List[SearchResult]:
+        """
+        单关键词搜索的内部实现
+        
+        Args:
+            fuzzy: 是否启用模糊搜索（中文用LIKE %x%，英文用FTS通配符）
         """
         conn = get_connection(self.db_path)
         
@@ -99,7 +179,13 @@ class SearchRepository:
             elif sort_by == SortBy.TITLE:
                 order_clause = "ORDER BY v.title"
             else:
-                order_clause = "ORDER BY fts.rank"
+                has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
+                use_like = (len(query) < 20 and has_chinese) or fuzzy
+                
+                # 模糊搜索处理
+                if fuzzy and not has_chinese:
+                    # 英文模糊搜索：添加通配符
+                    query = f'{query}*'
             
             # 主查询
             if group_by_video:
@@ -219,7 +305,12 @@ class SearchRepository:
                         GROUP_CONCAT(t.name, ', ') as tags
                     FROM fts_content fts
                     JOIN videos v ON fts.video_id = v.id
-                    LEFT JOIN video_tags vt ON v.id = vt.video_id
+            has_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
+            use_like = (len(query) < 20 and has_chinese) or fuzzy
+            
+            # 模糊搜索处理（对于非聚合查询）
+            if not group_by_video and fuzzy and not has_chinese:
+                query = f'{query}*'
                     LEFT JOIN tags t ON vt.tag_id = t.id
                     WHERE fts.content MATCH ?
                     {field_filter}
