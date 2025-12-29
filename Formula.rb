@@ -53,16 +53,29 @@ class Memoryindex < Formula
     (var/"memoryindex/storage").mkpath
   end
 
-  service do
-    run [opt_bin/"mi", "serve"]  # 如果有后台服务
-    keep_alive false
-    log_path var/"log/memoryindex.log"
-    error_log_path var/"log/memoryindex.error.log"
+  def caveats
+    <<~EOS
+      MemoryIndex 已安装！
+
+      快速开始：
+        memidx search "关键词"
+        memidx list
+        memidx-process video.mp4
+
+      数据目录：
+        #{var}/memoryindex/
+
+      查看帮助：
+        memidx --help
+
+      更多文档：
+        https://github.com/Catherina0/MemoryIndex
+    EOS
   end
 
   test do
-    system bin/"mi", "--version"
-    system bin/"mi", "--help"
+    system bin/"memidx", "--help"
+    system bin/"memidx", "list", "--limit", "1"
   end
 end
 
