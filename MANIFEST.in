@@ -1,0 +1,23 @@
+# 包含必要的非 Python 文件
+include README.md
+include LICENSE
+include requirements.txt
+include Makefile
+include CHEATSHEET.txt
+
+# 包含文档
+recursive-include docs *.md *.txt
+
+# 包含数据库架构
+include db/schema.sql
+
+# 排除不需要的文件
+recursive-exclude tests *
+recursive-exclude __pycache__ *
+recursive-exclude *.py[cod] *
+recursive-exclude output *
+recursive-exclude videos *
+recursive-exclude storage *
+recursive-exclude .venv *
+
+global-exclude .DS_Store

@@ -1,6 +1,25 @@
-# Video → Text Report Pipeline
+# MemoryIndex - 智能视频知识库系统
 
 一个智能视频处理系统，从在线下载到离线分析，全流程自动化。
+
+> 🎉 **现在可以全系统使用！** 安装后在任何目录运行 `mi search "关键词"` 即可搜索！
+
+## 🚀 一分钟快速开始
+
+```bash
+# 1. 一键安装（全系统可用）
+./install.sh
+
+# 2. 立即搜索
+mi search "关键词"
+
+# 3. 处理新视频
+mi-process video.mp4
+```
+
+**就这么简单！** 查看 [快速参考](QUICKREF.md) 了解更多命令。
+
+---
 
 ## 🎯 核心功能
 
@@ -23,27 +42,151 @@
 - 生成格式化的完整报告
 - 支持自定义输出目录
 
-### ⚡ **自动化环境管理**（新增）
+### ⚡ **自动化环境管理**
 - 首次运行自动创建虚拟环境
 - 自动安装所有依赖包
 - 自动检测和配置系统环境
-- 零配置启动：`make run VIDEO=xxx.mp4`
+- **全系统可用**：安装后在任何目录使用 `mi` 命令
+
+### 🔍 **智能搜索系统**（新增）
+- **全文搜索**：支持中文分词的全文检索
+- **多字段搜索**：可搜索标题、描述、OCR文本、转写内容
+- **标签系统**：智能标签分类和搜索
+- **主题管理**：按主题组织和查找内容
+- **命令行界面**：强大的 CLI 工具，随时随地搜索
+
+---
+
+## 📦 安装方式
+
+### 方式 1：一键安装（推荐）
+
+```bash
+./install.sh
+```
+
+安装后全系统可用：
+
+```bash
+mi search "关键词"          # 搜索视频内容
+mi list                     # 列出所有视频
+mi topics                   # 查看主题
+mi-process video.mp4        # 处理新视频
+```
+
+### 方式 2：开发模式
+
+```bash
+pip install -e .
+```
+
+- ✅ 代码修改立即生效
+- ✅ 适合开发和调试
+
+### 方式 3：Homebrew（高级）
+
+创建你自己的 Homebrew Tap：
+
+```bash
+brew tap Catherina0/memoryindex
+brew install memoryindex
+```
+
+详细步骤查看 [PACKAGING.md](PACKAGING.md)
+
+---
+
+## 🎯 使用命令
+
+### 搜索功能
+
+```bash
+# 全文搜索
+mi search "机器学习"
+
+# 搜索转写内容
+mi search "人工智能" --field transcript
+
+# 搜索 OCR 文本
+mi search "代码示例" --field ocr
+
+# 多关键词搜索
+mi search "Python 教程"
+mi search "Python OR JavaScript"
+```
+
+### 浏览和管理
+
+```bash
+# 列出所有视频
+mi list
+
+# 查看最近的10个视频
+mi list --limit 10 --sort-by date --desc
+
+# 查看所有主题
+mi topics
+
+# 按标签搜索
+mi tags --tags 教育 科技
+
+# 查看视频详情
+mi show 1
+```
+
+### 处理视频
+
+```bash
+# 处理本地视频
+mi-process video.mp4
+
+# 使用项目Makefile（传统方式）
+make run VIDEO=video.mp4
+make ocr VIDEO=video.mp4
+```
+
+更多命令查看 [QUICKREF.md](QUICKREF.md) 或运行 `mi --help`
+
+---
+
+## 📚 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| [QUICKREF.md](QUICKREF.md) | 📝 快速参考卡 - 常用命令速查 |
+| [USAGE.md](USAGE.md) | 🎯 使用指南 - 详细使用说明 |
+| [INSTALL.md](INSTALL.md) | 📖 安装指南 - 各种安装方式 |
+| [PACKAGING.md](PACKAGING.md) | 📦 打包指南 - 发布和分发 |
+| [alias.sh](alias.sh) | 💡 Shell 别名 - 便捷命令 |
+
+---
 
 ## 项目结构
 
 ```
-video_report/
-├── process_video.py       # 主入口脚本
-├── ocr_utils.py          # OCR 工具库
-├── requirements.txt      # Python 依赖
-├── output/               # 输出目录（自动生成）
-│   ├── audio/           # 提取的音频文件
-│   ├── frames/          # 抽取的帧图像
-│   └── reports/         # 生成的报告
-└── .venv/               # Python 虚拟环境
+memoryindex/
+├── cli/                   # 命令行界面
+│   └── search_cli.py     # 搜索命令
+├── core/                 # 核心功能
+│   ├── process_video.py  # 视频处理
+│   ├── video_downloader.py # 视频下载
+│   └── db_integration.py # 数据库集成
+├── db/                   # 数据库层
+│   ├── models.py        # 数据模型
+│   ├── repository.py    # 数据访问
+│   ├── search.py        # 搜索引擎
+│   └── whoosh_search.py # 全文索引
+├── ocr/                  # OCR 模块
+│   ├── ocr_parallel.py  # 并行处理
+│   └── ocr_utils.py     # OCR 工具
+├── output/              # 输出目录
+├── storage/             # 数据存储
+└── videos/              # 视频文件
 ```
 
-## 🚀 快速开始（全新自动化）
+---
+
+## 🚀 快速开始（传统方式）
 
 ### ✨ 零配置启动
 
@@ -106,7 +249,7 @@ nano .env
 
 详细配置见 [GROQ_SETUP.md](./GROQ_SETUP.md)
 
-## 使用方法
+## 使用方法（Makefile）
 
 ### 🚀 快速开始（推荐使用 Makefile）
 
