@@ -284,7 +284,14 @@ make download-ocr URL="这个视频很有趣→ https://b23.tv/xyz ←推荐看�
 
 #### 🆕 仅下载视频（不处理）
 ```bash
+# 使用 Makefile（推荐）
 make download URL="https://www.youtube.com/watch?v=xxxxx"
+
+# 强制重新下载
+make download URL="https://www.bilibili.com/video/BVxxxxx" FORCE=1
+
+# 或直接使用 process_video.py
+python core/process_video.py "https://www.youtube.com/watch?v=xxxxx" --download-only
 ```
 
 #### 查看所有命令

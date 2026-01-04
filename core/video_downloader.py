@@ -412,8 +412,7 @@ class VideoDownloader:
         """
         使用 XHS-Downloader 下载小红书视频（降级方案）
         
-        注意：需要先安装 XHS-Downloader
-        安装方式：https://github.com/JoeanAmier/XHS-Downloader
+        注意：需要先克隆 XHS-Downloader 到项目目录
         
         Args:
             url: 小红书URL
@@ -422,11 +421,106 @@ class VideoDownloader:
         Returns:
             LocalFileInfo: 下载后的文件信息
         """
-        # 这里是一个占位实现，具体需要根据 XHS-Downloader 的API调整
-        raise NotImplementedError(
-            "小红书下载需要配置 XHS-Downloader，"
-            "请参考: https://github.com/JoeanAmier/XHS-Downloader"
-        )
+        import sys
+        import asyncio
+        from pathlib import Path
+        
+        # 检查 Python 版本
+        python_version = sys.version_info
+        if python_version < (3, 12):
+            raise NotImplementedError(
+                f"XHS-Downloader 需要 Python 3.12+，但当前版本是 {python_version.major}.{python_version.minor}\n"
+                "\n"
+                "解决方案：\n"
+                "1. 手动下载小红书视频：\n"
+                "   - 访问视频页面\n"
+                "   - 使用浏览器插件或在线工具下载\n"
+                "   - 将视频保存到 videos/ 目录\n"
+                "   - 然后运行：make run VIDEO=videos/你的视频.mp4\n"
+                "\n"
+                "2. 升级 Python 到 3.12+\n"
+                "3. 使用在线小红书下载工具（推荐）\n"
+            )
+        
+        # 检查 XHS-Downloader 是否存在
+        xhs_path = Path(__file__).parent.parent / "XHS-Downloader"
+        if not xhs_path.exists():
+            raise NotImplementedError(
+                "XHS-Downloader 未安装。\n"
+                f"请先克隆: git clone https://github.com/JoeanAmier/XHS-Downloader.git"
+            )
+        
+        # 添加到 sys.path
+        if str(xhs_path) not in sys.path:
+            sys.path.insert(0, str(xhs_path))
+        
+        try:
+            from source import XHS
+        except ImportError as e:
+            raise NotImplementedError(
+                f"无法导入 XHS-Downloader: {e}\n"
+                "请确保已安装所有依赖：\n"
+                "pip install -r XHS-Downloader/requirements.txt"
+            )
+        
+        # 运行异步下载
+        return asyncio.run(self._async_download_xhs(url, XHS))
+    
+    async def _async_download_xhs(self, url: str, XHS) -> LocalFileInfo:
+        """异步下载小红书视频"""
+        import shutil
+        
+        # 配置 XHS-Downloader
+        work_path = str(self.download_dir.parent / "temp_xhs")
+        folder_name = "download"
+        
+        async with XHS(
+            work_path=work_path,
+            folder_name=folder_name,
+            image_download=False,  # 只下载视频
+            video_download=True,
+            cookie="",
+        ) as xhs:
+            # 下载作品
+            result = await xhs.extract(url, download=True)
+            
+            if not result:
+                raise Exception("无法获取小红书视频信息")
+            
+            # 查找下载的文件
+            download_dir = Path(work_path) / folder_name
+            video_files = list(download_dir.rglob("*.mp4"))
+            
+            if not video_files:
+                raise Exception("视频下载失败，未找到 MP4 文件")
+            
+            # 获取文件
+            src_file = video_files[0]
+            
+            # 重命名并移动
+            video_id = result.get("作品ID", "unknown")
+            title = self._sanitize_filename(result.get("作品标题", "untitled"))
+            filename = f"xiaohongshu_{video_id}_{title}.mp4"
+            dest_file = self.download_dir / filename
+            
+            # 移动文件
+            shutil.move(str(src_file), str(dest_file))
+            
+            # 清理临时目录
+            if Path(work_path).exists():
+                shutil.rmtree(work_path)
+            
+            # 返回信息
+            return LocalFileInfo(
+                file_path=dest_file,
+                platform="xiaohongshu",
+                video_id=video_id,
+                title=result.get("作品标题", ""),
+                duration=None,
+                uploader=result.get("作者昵称", ""),
+                upload_date=result.get("发布时间", ""),
+                metadata=result
+            )
 
 
 def extract_url_from_text(text: str) -> Optional[str]:

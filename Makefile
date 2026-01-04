@@ -64,6 +64,7 @@ help:
 	@echo "  make download URL=视频链接             下载视频到 videos/ 目录"
 	@echo "  make download-run URL=视频链接         下载后自动处理（音频模式）"
 	@echo "  make download-ocr URL=视频链接         下载后自动处理（完整模式）"
+	@echo "  make config-xhs-cookie                 配置小红书 Cookie"
 	@echo "  💡 自动检测已下载视频，使用 FORCE=1 强制重新下载"
 	@echo ""
 	@echo "💡 URL 输入支持："
@@ -336,9 +337,9 @@ download: ensure-venv
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@if [ "$(FORCE)" = "1" ]; then \
-		$(PYTHON) core/video_downloader.py "$(URL)" --force; \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --force; \
 	else \
-		$(PYTHON) core/video_downloader.py "$(URL)"; \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"; \
 	fi
 	@echo ""
 	@echo "✅ 完成！"
@@ -358,7 +359,7 @@ download-run: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@# 下载视频并获取文件路径
-	@$(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
 	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
 	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
 		cat /tmp/download_output.txt | tail -20; \
@@ -372,7 +373,7 @@ download-run: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(PYTHON) core/process_video.py "$$VIDEO_PATH"
+	cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/process_video.py "$$VIDEO_PATH"
 
 # 下载视频后自动处理（完整OCR模式）
 download-ocr: ensure-venv
@@ -389,7 +390,7 @@ download-ocr: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@# 下载视频并获取文件路径
-	@$(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
 	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
 	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
 		cat /tmp/download_output.txt | tail -20; \
@@ -403,7 +404,7 @@ download-ocr: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
+	cd $(PWD) && PYTHONPATH=$(PWD) DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
 	$(PYTHON) core/process_video.py "$$VIDEO_PATH" --with-frames
 
 # 查看所有报告列表
@@ -414,6 +415,14 @@ list-reports:
 	else \
 		echo "ℹ️  output/reports/ 目录不存在"; \
 	fi
+
+# 配置小红书 Cookie
+config-xhs-cookie: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🍪 配置小红书 Cookie"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) scripts/configure_xhs_cookie.py
 
 # ============================================
 # 数据库相关命令（新增）

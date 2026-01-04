@@ -1,16 +1,48 @@
+# Python
 .venv/
+venv/
+env/
+ENV/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.DS_Store
-output/
+*.so
+*.egg
 *.egg-info/
 .pytest_cache/
+.coverage
+.tox/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Project outputs
+output/
+reports/
+temp/
+temp_*/
+*.tmp
+
+# Database
 storage/database/
 storage/whoosh_index/
 storage/backups/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # Downloaded videos
 videos/
@@ -20,3 +52,52 @@ videos/
 *.flv
 *.avi
 *.mov
+*.m4v
+*.3gp
+
+# XHS-Downloader (小红书下载器)
+XHS-Downloader/Volume/settings.json
+XHS-Downloader/Volume/*.db
+XHS-Downloader/Volume/Download/
+XHS-Downloader/Volume/ExploreData.db
+XHS-Downloader/Volume/ExploreID.db
+XHS-Downloader/Volume/MappingData.db
+XHS-Downloader/.venv/
+XHS-Downloader/__pycache__/
+
+# 敏感信息
+# 先保留示例文件（否定模式）
+!*.example
+!*_example.json
+!*.template
+
+# 忽略真实的敏感文件
+*_cookie.txt
+*_cookies.json
+credentials.json
+secrets.json
+api_keys.txt
+
+# Build and distribution
+build/
+dist/
+*.spec
+*.manifest
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+Thumbs.db
+ehthumbs.db
+
+# Backup files
+*.bak
+*.backup
+*~
+*.orig
+
+docs/

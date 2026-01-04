@@ -1,4 +1,4 @@
-paddlepaddle==3.2.2
+paddlepaddle>=3.0.0
 paddleocr>=2.7.0
 opencv-python
 numpy
@@ -12,3 +12,8 @@ tabulate>=0.9.0          # 命令行表格输出
 # 全文搜索（中文支持）
 Whoosh>=2.7.4            # 纯Python全文搜索引擎
 jieba>=0.42.1            # 中文分词
+
+# 小红书下载支持（可选）
+httpx>=0.27.0            # XHS-Downloader 依赖
+aiosqlite>=0.20.0        # XHS-Downloader 依赖
+aiofiles>=24.0.0         # XHS-Downloader 依赖
