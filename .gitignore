@@ -35,7 +35,10 @@ temp/
 temp_*/
 *.tmp
 
-# Database
+# Documentation (文档不上传)
+docs/
+
+# Database (数据库文件不上传)
 storage/database/
 storage/whoosh_index/
 storage/backups/
