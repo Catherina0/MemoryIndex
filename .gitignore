@@ -1,18 +1,27 @@
-# Python
+# Python 虚拟环境
 .venv/
 venv/
 env/
 ENV/
+
+# Python 缓存和编译文件
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.so
+
+# Python 包管理
 *.egg
 *.egg-info/
+memoryindex.egg-info/
+
+# Python 测试和覆盖率
 .pytest_cache/
 .coverage
 .tox/
+
+# 日志文件
 *.log
 
 # IDE
