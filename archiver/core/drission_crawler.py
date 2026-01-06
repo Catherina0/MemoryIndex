@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 try:
-    from DrissionPage import ChromiumOptions, ChromiumPage
+    from DrissionPage import Chromium
     DRISSIONPAGE_AVAILABLE = True
 except ImportError:
     DRISSIONPAGE_AVAILABLE = False
@@ -26,6 +26,7 @@ except ImportError:
 from archiver.platforms.base import PlatformAdapter
 from archiver.utils.url_parser import detect_platform
 from archiver.utils.image_downloader import ImageDownloader
+from archiver.utils.browser_manager import get_browser_manager
 
 
 logger = logging.getLogger(__name__)
@@ -65,19 +66,8 @@ class DrissionArchiver:
         self.headless = headless
         self.verbose = verbose
         
-        # 配置浏览器
-        self.options = ChromiumOptions()
-        self.options.set_user_data_path(str(self.browser_data_dir.absolute()))
-        self.options.headless(headless)
-        
-        # 反爬虫配置
-        self.options.set_argument('--no-sandbox')
-        self.options.set_argument('--disable-blink-features=AutomationControlled')
-        # self.options.set_user_agent(
-        #     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        #     "AppleWebKit/537.36 (KHTML, like Gecko) "
-        #     "Chrome/131.0.0.0 Safari/537.36"
-        # )
+        # 获取浏览器管理器（全局单例）
+        self.browser_manager = get_browser_manager()
         
         # 配置 HTML2Text
         self.converter = html2text.HTML2Text()
@@ -85,19 +75,82 @@ class DrissionArchiver:
         self.converter.ignore_images = False
         self.converter.body_width = 0
         
-        # 浏览器实例（延迟初始化）
-        self.page = None
+        # 当前任务的标签页（每个任务一个 tab）
+        self.current_tab = None
         
         # 配置日志
         if verbose:
             logging.basicConfig(level=logging.INFO)
     
-    def _init_browser(self):
-        """初始化浏览器实例"""
-        if self.page is None:
-            logger.info("初始化浏览器...")
-            self.page = ChromiumPage(addr_or_opts=self.options)
-            logger.info("✓ 浏览器启动成功")
+    def _init_tab(self):
+        """为当前任务创建新标签页"""
+        # 获取全局浏览器实例
+        browser = self.browser_manager.get_browser(
+            browser_data_dir=str(self.browser_data_dir),
+            headless=self.headless
+        )
+        
+        # 创建新标签页
+        tab = self.browser_manager.new_tab()
+        logger.info("✓ 新标签页已创建")
+        return tab
+    
+    def _close_tab(self):
+        """关闭当前任务的标签页"""
+        if self.current_tab is not None:
+            self.browser_manager.close_tab(self.current_tab)
+            self.current_tab = None
+    
+    def _deduplicate_twitter_images(self, image_urls: list) -> list:
+        """
+        Twitter 图片去重：移除同一图片的不同尺寸版本
+        
+        Twitter 图片 URL 格式：
+        https://pbs.twimg.com/media/xxxxx?format=jpg&name=small
+        https://pbs.twimg.com/media/xxxxx?format=jpg&name=medium
+        https://pbs.twimg.com/media/xxxxx?format=jpg&name=large
+        https://pbs.twimg.com/media/xxxxx?format=jpg&name=orig
+        
+        策略：只保留每张图片的最大尺寸版本（优先级：orig > large > medium > small）
+        """
+        if not image_urls:
+            return image_urls
+        
+        # 按图片ID分组
+        image_groups = {}
+        size_priority = {'orig': 4, 'large': 3, '4096x4096': 3, 'medium': 2, 'small': 1, '900x900': 1, '360x360': 0}
+        
+        for url in image_urls:
+            if 'twimg.com/media/' in url:
+                # 提取图片ID（去除参数）
+                base_url = url.split('?')[0]
+                
+                # 提取尺寸参数
+                size = 'medium'  # 默认
+                if 'name=' in url:
+                    import re
+                    match = re.search(r'name=(\w+)', url)
+                    if match:
+                        size = match.group(1)
+                
+                # 记录或更新最大尺寸版本
+                if base_url not in image_groups:
+                    image_groups[base_url] = {'url': url, 'size': size, 'priority': size_priority.get(size, 0)}
+                else:
+                    current_priority = size_priority.get(size, 0)
+                    if current_priority > image_groups[base_url]['priority']:
+                        image_groups[base_url] = {'url': url, 'size': size, 'priority': current_priority}
+            else:
+                # 非 Twitter 图片，直接保留
+                image_groups[url] = {'url': url, 'size': 'unknown', 'priority': 999}
+        
+        # 返回去重后的 URL 列表
+        result = [item['url'] for item in image_groups.values()]
+        
+        if len(result) < len(image_urls):
+            logger.info(f"Twitter 图片去重: {len(image_urls)} -> {len(result)} 张（移除了重复尺寸）")
+        
+        return result
     
     def _load_manual_cookies(self, platform_name: str, url: str):
         """
@@ -127,9 +180,9 @@ class DrissionArchiver:
             logger.info(f"加载手动配置的 Cookie: {platform_name}")
             
             # 确保已访问页面（Cookie 需要域名）
-            if not self.page.url or self.page.url == 'about:blank':
+            if not self.current_tab.url or self.current_tab.url == 'about:blank':
                 logger.info(f"首次访问页面以设置 Cookie...")
-                self.page.get(url)
+                self.current_tab.get(url)
                 time.sleep(1)
             
             # 解析并设置 Cookie
@@ -146,7 +199,7 @@ class DrissionArchiver:
                 
                 try:
                     # 设置 Cookie
-                    self.page.set.cookies({
+                    self.current_tab.set.cookies({
                         'name': name,
                         'value': value,
                         'domain': self._get_cookie_domain(url),
@@ -160,7 +213,7 @@ class DrissionArchiver:
             
             # 刷新页面使 Cookie 生效
             logger.info("刷新页面...")
-            self.page.refresh()
+            self.current_tab.refresh()
             time.sleep(1)
             
             return True
@@ -179,12 +232,7 @@ class DrissionArchiver:
             return f".{'.'.join(domain_parts[-2:])}"
         return parsed.netloc
     
-    def _close_browser(self):
-        """关闭浏览器"""
-        if self.page is not None:
-            self.page.quit()
-            self.page = None
-            logger.info("浏览器已关闭")
+
     
     def archive(
         self,
@@ -221,8 +269,8 @@ class DrissionArchiver:
         
         logger.info(f"开始归档: {url}")
         
-        # 初始化浏览器
-        self._init_browser()
+        # 为此任务创建新标签页
+        self.current_tab = self._init_tab()
         
         try:
             # 自动检测平台
@@ -251,15 +299,15 @@ class DrissionArchiver:
             if platform_adapter.name in ['zhihu', 'xiaohongshu', 'bilibili', 'twitter']:
                 self._load_manual_cookies(platform_adapter.name, url)
             
-            self.page.get(url)
+            self.current_tab.get(url)
             
             # 智能等待页面加载
-            self.page.wait.load_start()
+            self.current_tab.wait.load_start()
             time.sleep(2)  # 等待 JS 执行
             
             # 检查是否需要登录（推特特殊处理）
             if platform_adapter.name == 'twitter':
-                current_url = self.page.url
+                current_url = self.current_tab.url
                 if 'login' in current_url or 'i/flow/login' in current_url:
                     logger.warning("⚠️  推特需要登录才能查看内容")
                     logger.info("💡 请运行以下命令登录推特：")
@@ -273,18 +321,18 @@ class DrissionArchiver:
             
             # 滚动页面确保懒加载内容加载完成
             logger.info("滚动页面加载懒加载内容...")
-            self.page.scroll.to_bottom()
+            self.current_tab.scroll.to_bottom()
             time.sleep(1)
-            self.page.scroll.to_top()
+            self.current_tab.scroll.to_top()
             time.sleep(1)
             
             # 获取页面标题
-            page_title = self.page.title
+            page_title = self.current_tab.title
             if not page_title:
                 page_title = "Untitled"
             
             # 🆕 提前提取图片URL（从完整页面）
-            full_page_html = self.page.html
+            full_page_html = self.current_tab.html
             logger.info("从完整页面提取图片URL...")
             
             # 提取内容
@@ -328,6 +376,9 @@ class DrissionArchiver:
                     logger.info("推特：尝试从完整页面提取图片...")
                     more_urls = image_downloader.extract_image_urls(full_page_html, url)
                     image_urls = list(set(image_urls + more_urls))
+                
+                # 调试：显示原始提取的图片 URL
+                logger.debug(f"原始提取的图片 URLs: {image_urls}")
             
             # 过滤图片（针对默认模式）
             if image_urls and mode == 'default':
@@ -346,6 +397,10 @@ class DrissionArchiver:
                     if len(filtered_urls) < len(image_urls):
                         logger.info(f"过滤了 {len(image_urls) - len(filtered_urls)} 张无关图片（头像/表情）")
                     image_urls = filtered_urls
+                
+                # Twitter 图片去重（移除同一图片的不同尺寸版本）
+                if platform_adapter.name == 'twitter':
+                    image_urls = self._deduplicate_twitter_images(image_urls)
             
             url_mapping = {}
             if image_urls:
@@ -390,6 +445,10 @@ class DrissionArchiver:
                 "error": str(e),
                 "url": url
             }
+        finally:
+            # 任务结束，关闭标签页（浏览器保持运行）
+            self._close_tab()
+            # 注意：浏览器会在程序退出时通过 atexit 自动关闭
     
     def _extract_content(self, platform_adapter: PlatformAdapter, mode: str = "default") -> str:
         """
@@ -414,11 +473,11 @@ class DrissionArchiver:
             "登入"
         ]
         
-        page_text = self.page.html
+        page_text = self.current_tab.html
         for indicator in login_indicators:
             if indicator in page_text:
                 # 检查是否有实际内容（登录提示通常文本很短）
-                if len(self.page.ele('body', timeout=1).text.strip()) < 500:
+                if len(self.current_tab.ele('body', timeout=1).text.strip()) < 500:
                     logger.warning(f"⚠️  检测到登录提示: {indicator}")
                     logger.warning("   建议操作：")
                     logger.warning("   1. 运行 'make login' 登录并保存登录态")
@@ -431,7 +490,7 @@ class DrissionArchiver:
                 logger.info("Twitter: 尝试构建纯净内容 (Text + Photos)...")
                 
                 # Manual finding of article to avoid selector issues
-                articles = self.page.eles('tag:article')
+                articles = self.current_tab.eles('tag:article')
                 article = None
                 for a in articles:
                     if a.attrs.get('data-testid') == 'tweet':
@@ -493,13 +552,13 @@ class DrissionArchiver:
                 else:
                     logger.warning("  - ❌ 未找到主推文容器 article[data-testid='tweet']")
                     # DEBUG: Check what articles actually exist
-                    arts = self.page.eles('tag:article')
+                    arts = self.current_tab.eles('tag:article')
                     logger.info(f"DEBUG: Found {len(arts)} generic articles in Crawler Session")
                     for i, a in enumerate(arts[:3]):
                         logger.info(f"DEBUG Art {i} Attrs: {a.attrs}")
                     
                     # DEBUG: Check title again
-                    logger.info(f"DEBUG Page Title: {self.page.title}")
+                    logger.info(f"DEBUG Page Title: {self.current_tab.title}")
 
             except Exception as e:
                 logger.warning(f"Twitter 纯净提取失败: {e}, 将尝试通用选择器")
@@ -509,7 +568,7 @@ class DrissionArchiver:
         if selector:
             for sel in selector.split(','):
                 sel = sel.strip()
-                element = self.page.ele(sel, timeout=2)
+                element = self.current_tab.ele(sel, timeout=2)
                 if element:
                     # 如果不是全量模式，且定义了排除选择器，尝试移除无关元素
                     # 注意：DrissionPage 的元素操作通常是即时的，这里我们直接操作页面上的元素
@@ -529,7 +588,7 @@ class DrissionArchiver:
                                 unwanted_elements = element.eles(exclude)
                                 removed_count = 0
                                 for unwanted in unwanted_elements:
-                                    self.page.run_js("arguments[0].remove()", unwanted)
+                                    self.current_tab.run_js("arguments[0].remove()", unwanted)
                                     removed_count += 1
                                 if removed_count > 0:
                                     logger.info(f"  - 已移除 {removed_count} 个 {exclude} 元素")
@@ -544,7 +603,7 @@ class DrissionArchiver:
                                 if profile_links:
                                     logger.info(f"  - 已移除 {len(profile_links)} 个用户profile链接")
                                     for link in profile_links:
-                                        self.page.run_js("arguments[0].remove()", link)
+                                        self.current_tab.run_js("arguments[0].remove()", link)
                             except:
                                 pass
                             
@@ -554,7 +613,7 @@ class DrissionArchiver:
                                 follow_count = 0
                                 for elem in all_elements:
                                     if elem.text and elem.text.strip() == '关注':
-                                        self.page.run_js("arguments[0].remove()", elem)
+                                        self.current_tab.run_js("arguments[0].remove()", elem)
                                         follow_count += 1
                                 if follow_count > 0:
                                     logger.info(f"  - 已移除 {follow_count} 个关注按钮")
@@ -570,14 +629,14 @@ class DrissionArchiver:
         
         # 回退：使用通用选择器
         for fallback in ['article', 'main', 'body']:
-            element = self.page.ele(fallback, timeout=2)
+            element = self.current_tab.ele(fallback, timeout=2)
             if element:
                 logger.info(f"使用回退选择器: {fallback}")
                 return element.html
         
         # 最后的回退：整个页面
         logger.warning("使用整个页面作为内容")
-        return self.page.html
+        return self.current_tab.html
     
     def _convert_to_markdown(
         self,
@@ -669,8 +728,13 @@ archived_at: {timestamp}
         return clean_title
     
     def close(self):
-        """关闭归档器"""
-        self._close_browser()
+        """
+        关闭归档器
+        
+        注意：不会关闭浏览器进程，只关闭当前标签页（如果有）
+        浏览器会在程序退出时自动关闭
+        """
+        self._close_tab()
     
     def __enter__(self):
         """上下文管理器入口"""

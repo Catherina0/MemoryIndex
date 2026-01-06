@@ -58,6 +58,10 @@ class ImageDownloader:
         Returns:
             图片URL列表（包括data: URL）
         """
+        # 先解码 HTML 实体
+        import html as html_module
+        html = html_module.unescape(html)
+        
         # 匹配 img src 和 data-src 属性
         patterns = [
             r'<img[^>]+src=["\']([^"\']+)["\']',
@@ -71,13 +75,23 @@ class ImageDownloader:
         for pattern in patterns:
             matches = re.findall(pattern, html, re.IGNORECASE)
             for url in matches:
-                # 🆕 解码HTML实体（&amp; → &）
-                url = url.replace('&amp;', '&')
+                # 再次检查和清理 URL
+                url = url.strip()
+                
+                # 过滤无效 URL（包含引号、不完整的 URL 等）
+                if '"' in url or "'" in url:
+                    # 提取引号之间的内容
+                    clean_match = re.search(r'https?://[^"\' ]+', url)
+                    if clean_match:
+                        url = clean_match.group(0)
+                    else:
+                        continue  # 跳过无效 URL
                 
                 # 处理 data URL（base64 图片）
                 if url.startswith('data:'):
                     urls.add(url)
                     continue
+                
                 # 转换为绝对URL
                 abs_url = urljoin(base_url, url)
                 # 只处理http/https图片
