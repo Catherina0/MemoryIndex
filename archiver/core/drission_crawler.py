@@ -73,11 +73,11 @@ class DrissionArchiver:
         # 反爬虫配置
         self.options.set_argument('--no-sandbox')
         self.options.set_argument('--disable-blink-features=AutomationControlled')
-        self.options.set_user_agent(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/131.0.0.0 Safari/537.36"
-        )
+        # self.options.set_user_agent(
+        #     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        #     "AppleWebKit/537.36 (KHTML, like Gecko) "
+        #     "Chrome/131.0.0.0 Safari/537.36"
+        # )
         
         # 配置 HTML2Text
         self.converter = html2text.HTML2Text()
@@ -231,7 +231,7 @@ class DrissionArchiver:
                 logger.info(f"检测平台: {platform_name} (模式: {mode})")
                 from archiver.platforms import (
                     ZhihuAdapter, XiaohongshuAdapter, BilibiliAdapter,
-                    RedditAdapter, WordPressAdapter
+                    RedditAdapter, WordPressAdapter, TwitterAdapter
                 )
                 
                 adapters = {
@@ -239,6 +239,7 @@ class DrissionArchiver:
                     "xiaohongshu": XiaohongshuAdapter(),
                     "bilibili": BilibiliAdapter(),
                     "reddit": RedditAdapter(),
+                    "twitter": TwitterAdapter(),
                     "wordpress": WordPressAdapter(),
                 }
                 platform_adapter = adapters.get(platform_name, WordPressAdapter())
@@ -247,7 +248,7 @@ class DrissionArchiver:
             logger.info(f"正在访问: {url}")
             
             # 尝试加载手动配置的 Cookie
-            if platform_adapter.name in ['zhihu', 'xiaohongshu', 'bilibili']:
+            if platform_adapter.name in ['zhihu', 'xiaohongshu', 'bilibili', 'twitter']:
                 self._load_manual_cookies(platform_adapter.name, url)
             
             self.page.get(url)
@@ -255,6 +256,20 @@ class DrissionArchiver:
             # 智能等待页面加载
             self.page.wait.load_start()
             time.sleep(2)  # 等待 JS 执行
+            
+            # 检查是否需要登录（推特特殊处理）
+            if platform_adapter.name == 'twitter':
+                current_url = self.page.url
+                if 'login' in current_url or 'i/flow/login' in current_url:
+                    logger.warning("⚠️  推特需要登录才能查看内容")
+                    logger.info("💡 请运行以下命令登录推特：")
+                    logger.info("   make login-twitter")
+                    logger.info("   或者访问 https://twitter.com 手动登录")
+                    return {
+                        "success": False,
+                        "error": "推特需要登录。请运行 'make login-twitter' 登录账号",
+                        "url": url
+                    }
             
             # 滚动页面确保懒加载内容加载完成
             logger.info("滚动页面加载懒加载内容...")
@@ -267,6 +282,10 @@ class DrissionArchiver:
             page_title = self.page.title
             if not page_title:
                 page_title = "Untitled"
+            
+            # 🆕 提前提取图片URL（从完整页面）
+            full_page_html = self.page.html
+            logger.info("从完整页面提取图片URL...")
             
             # 提取内容
             content_html = self._extract_content(platform_adapter, mode=mode)
@@ -299,8 +318,35 @@ class DrissionArchiver:
                 format="jpg"
             )
             
-            # 提取并下载图片
+            # 提取图片URL
+            # 默认只从内容提取，特殊情况（如无法提取到内容图片）才从全页提取
             image_urls = image_downloader.extract_image_urls(content_html, url)
+            
+            # 推特特殊处理：完整模式下，或者内容提取不到图片时，尝试从完整页面提取
+            if platform_adapter.name == 'twitter':
+                if mode == 'full' or not image_urls:
+                    logger.info("推特：尝试从完整页面提取图片...")
+                    more_urls = image_downloader.extract_image_urls(full_page_html, url)
+                    image_urls = list(set(image_urls + more_urls))
+            
+            # 过滤图片（针对默认模式）
+            if image_urls and mode == 'default':
+                # 推特：移除头像和表情包，只保留媒体图片
+                if platform_adapter.name == 'twitter':
+                    filtered_urls = []
+                    for img_url in image_urls:
+                        # 排除头像 (profile_images)
+                        if 'profile_images' in img_url:
+                            continue
+                        # 排除小图标/表情 (emoji)
+                        if 'emoji' in img_url:
+                            continue
+                        filtered_urls.append(img_url)
+                    
+                    if len(filtered_urls) < len(image_urls):
+                        logger.info(f"过滤了 {len(image_urls) - len(filtered_urls)} 张无关图片（头像/表情）")
+                    image_urls = filtered_urls
+            
             url_mapping = {}
             if image_urls:
                 logger.info(f"发现 {len(image_urls)} 张图片")
@@ -380,6 +426,86 @@ class DrissionArchiver:
                     break
         
         # 尝试使用选择器提取内容
+        if platform_adapter.name == 'twitter' and mode == 'default':
+            try:
+                logger.info("Twitter: 尝试构建纯净内容 (Text + Photos)...")
+                
+                # Manual finding of article to avoid selector issues
+                articles = self.page.eles('tag:article')
+                article = None
+                for a in articles:
+                    if a.attrs.get('data-testid') == 'tweet':
+                        article = a
+                        break
+                
+                if article:
+                    logger.info("  - 找到主推文容器 article[data-testid='tweet']")
+                    parts = []
+                    parts = []
+                    # 1. 提取正文 - Try CSS first, then XPath
+                    text_div = article.ele("[data-testid='tweetText']")
+                    if not text_div:
+                        logger.warning("  - CSS找不tweetText, 尝试XPath...")
+                        text_div = article.ele("xpath:.//*[@data-testid='tweetText']")
+                    
+                    if text_div:
+                        parts.append(text_div.html)
+                        logger.info(f"  - 找到推文正文 (长度: {len(text_div.text)})")
+                    else:
+                        logger.warning("  - ❌ 未找到推文正文 [data-testid='tweetText']")
+                    
+                    # 2. 提取图片容器
+                    # Try CSS first, then XPath, then manual scan
+                    photos = article.eles("[data-testid='tweetPhoto']")
+                    if not photos:
+                        logger.info("  - CSS未找到图片, 尝试XPath...")
+                        photos = article.eles("xpath:.//*[@data-testid='tweetPhoto']")
+                    
+                    if photos:
+                        logger.info(f"  - 找到 {len(photos)} 个图片容器")
+                        for p in photos:
+                            html_part = p.html
+                            # Ensure high res images in HTML to match downloader logic
+                            if 'name=' in html_part:
+                                import re
+                                html_part = re.sub(r'name=(small|medium|360x360|900x900)', 'name=large', html_part)
+                            parts.append(html_part)
+                    else:
+                        logger.info("  - ❌ 未找到图片容器 (tweetPhoto)")
+                        # Fallback: Find all images in article and filter avatars
+                        imgs = article.eles("tag:img")
+                        valid_imgs = []
+                        for img in imgs:
+                            src = img.attrs.get('src', '')
+                            if 'profile_images' in src or 'emoji' in src:
+                                continue
+                            if src:
+                                # Wrap in simple img tag if container not found
+                                valid_imgs.append(f'<img src="{src}" />')
+                        
+                        if valid_imgs:
+                             logger.info(f"  -由于未找到容器，直接提取了 {len(valid_imgs)} 张正文图片")
+                             parts.extend(valid_imgs)
+                            
+                    if parts:
+                        combined_html = "\n<br>\n".join(parts)
+                        return combined_html
+                else:
+                    logger.warning("  - ❌ 未找到主推文容器 article[data-testid='tweet']")
+                    # DEBUG: Check what articles actually exist
+                    arts = self.page.eles('tag:article')
+                    logger.info(f"DEBUG: Found {len(arts)} generic articles in Crawler Session")
+                    for i, a in enumerate(arts[:3]):
+                        logger.info(f"DEBUG Art {i} Attrs: {a.attrs}")
+                    
+                    # DEBUG: Check title again
+                    logger.info(f"DEBUG Page Title: {self.page.title}")
+
+            except Exception as e:
+                logger.warning(f"Twitter 纯净提取失败: {e}, 将尝试通用选择器")
+                import traceback
+                logger.warning(traceback.format_exc())
+
         if selector:
             for sel in selector.split(','):
                 sel = sel.strip()
@@ -477,46 +603,70 @@ archived_at: {timestamp}
         # 转换 HTML
         markdown_content = self.converter.handle(html)
         
-        # 如果是默认模式且是小红书，做额外的 Markdown 清洗
-        if mode == "default" and platform == "xiaohongshu":
+        # 如果是默认模式，做额外的 Markdown 清洗
+        if mode == "default":
             import re
-            # 移除用户profile链接 (格式: [![...](images/...jpg)](/user/profile/...)文字)
-            markdown_content = re.sub(
-                r'\[!\[.*?\]\(images/.*?\)\]\(/user/profile/[^\)]+\)\[.*?\]\(/user/profile/[^\)]+\)\s*',
-                '',
-                markdown_content
-            )
-            # 移除单独的用户链接 (格式: [用户名](/user/profile/...))
-            markdown_content = re.sub(
-                r'\[.*?\]\(/user/profile/[^\)]+\)\s*',
-                '',
-                markdown_content
-            )
-            # 移除单独的"关注"文字
-            markdown_content = re.sub(r'^\s*关注\s*$', '', markdown_content, flags=re.MULTILINE)
+            # 小红书：移除用户profile链接
+            if platform == "xiaohongshu":
+                # 移除用户profile链接 (格式: [![...](images/...jpg)](/user/profile/...)文字)
+                markdown_content = re.sub(
+                    r'\[!\[.*?\]\(images/.*?\)\]\(/user/profile/[^\)]+\)\[.*?\]\(/user/profile/[^\)]+\)\s*',
+                    '',
+                    markdown_content
+                )
+                # 移除单独的用户链接 (格式: [用户名](/user/profile/...))
+                markdown_content = re.sub(
+                    r'\[.*?\]\(/user/profile/[^\)]+\)\s*',
+                    '',
+                    markdown_content
+                )
+                # 移除单独的"关注"文字
+                markdown_content = re.sub(r'^\s*关注\s*$', '', markdown_content, flags=re.MULTILINE)
+            
+            # 推特：移除用户profile链接和互动按钮
+            elif platform == "twitter":
+                # 移除用户profile链接 (/@username)
+                markdown_content = re.sub(
+                    r'\[@[^\]]+\]\(/[^\)]+\)\s*',
+                    '',
+                    markdown_content
+                )
+                # 移除互动数字（转推、点赞等）
+                markdown_content = re.sub(
+                    r'^\s*\d+\s*(Retweets?|Likes?|Replies?|Views?)\s*$',
+                    '',
+                    markdown_content,
+                    flags=re.MULTILINE
+                )
+            
             # 移除多余的空行
             markdown_content = re.sub(r'\n{3,}', '\n\n', markdown_content)
         
         return metadata + markdown_content
     
     def _generate_folder_name(self, title: str, platform: str) -> str:
-        """生成输出文件夹名称（平台_标题）"""
+        """生成输出文件夹名称（仅使用标题，不包含来源）"""
         import re
         
         # 清理标题，移除非法字符
         clean_title = re.sub(r'[<>:"/\\|?*]', '', title)
         clean_title = clean_title.strip()
         
+        # 移除末尾的来源标识（如"- 小红书"、"- 知乎"等）
+        # 匹配模式：" - 平台名称" 或 " - 来源"
+        clean_title = re.sub(r'\s*-\s*(小红书|知乎|B站|哔哩哔哩|Reddit|wordpress|网站|社区).*$', '', clean_title)
+        clean_title = clean_title.strip()
+        
         # 限制长度
-        if len(clean_title) > 50:
-            clean_title = clean_title[:50]
+        if len(clean_title) > 60:
+            clean_title = clean_title[:60]
         
         # 如果标题为空，使用时间戳
         if not clean_title or clean_title == "Untitled":
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             return f"{platform}_{timestamp}"
         
-        return f"{platform}_{clean_title}"
+        return clean_title
     
     def close(self):
         """关闭归档器"""

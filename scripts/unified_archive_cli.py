@@ -77,9 +77,11 @@ def main():
     # 执行归档
     if use_drission:
         # 使用 DrissionPage（真实浏览器）
+        # Twitter usually requires headful mode to avoid detection/rendering issues
+        # For local archiving, headful is safer.
         from archiver.core.drission_crawler import DrissionArchiver
         
-        with DrissionArchiver(output_dir='archived', headless=True, verbose=True) as archiver:
+        with DrissionArchiver(output_dir='archived', headless=False, verbose=True) as archiver:
             result = archiver.archive(url, mode=mode)
             
             if result['success']:

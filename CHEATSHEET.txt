@@ -13,7 +13,7 @@
 • 🆕 图片自动下载 - HTTP + base64 → 本地JPG，自动更新引用
 • 🌐 双引擎归档 - Crawl4AI（快）+ DrissionPage（强）
 • 🔐 一次登录长期使用 - 浏览器数据自动保存，支持多平台
-• 🔗 支持多平台 - 知乎、小红书、B站、Reddit等
+• 🔗 支持多平台 - 知乎、小红书、B站、Reddit、推特等
 • 🍪 Cookie统一管理 - 一次配置，视频下载+网页归档都能用
 • 🤖 自动平台识别 - 检测URL自动选择最佳策略
 • 💾 处理视频后自动保存到数据库（视频信息+转写+OCR+报告+标签）
@@ -296,6 +296,7 @@ docs/
 ├── DRISSIONPAGE_GUIDE.md           # 🆕 DrissionPage 完整使用指南
 ├── DRISSIONPAGE_SUMMARY.md         # 🆕 DrissionPage 技术总结
 ├── ARCHIVER_IMAGE_DOWNLOAD.md      # 🆕 图片下载功能文档
+├── TWITTER_GUIDE.md                # 🆕 推特平台归档指南
 ├── GROQ_SETUP.md                   # Groq API 配置指南
 ├── QUICKSTART.md                   # 快速入门
 └── START.md                        # 详细启动指南
@@ -368,12 +369,13 @@ Groq API Docs: https://console.groq.com/docs
 
 🎯 核心功能
 ───────────────────────────────────────────────────────────────
-✅ 智能平台识别（知乎、小红书、B站、Reddit等）
+✅ 智能平台识别（知乎、小红书、B站、Reddit、推特等）
 ✅ 精准正文提取（自动排除评论、广告、推荐）
 ✅ Markdown转换（保留图片和格式）
 ✅ 图片自动下载（HTTP + base64 → 本地JPG）
 ✅ 两种引擎可选（Crawl4AI 快速 / DrissionPage 真实浏览器）
 ✅ 自动登录态管理（一次登录长期使用）
+✅ 双模式归档（默认纯内容 / 完整含评论）🆕
 ✅ 批量归档（异步并发处理）
 ✅ 反爬虫处理（自动UA + Cookie注入 + 真实浏览器指纹）
 
@@ -396,16 +398,22 @@ Groq API Docs: https://console.groq.com/docs
 │ # 会打开浏览器窗口，手动完成登录，勾选"记住我"              │
 │                                                            │
 │ # 步骤2：日常归档（自动使用登录态）                         │
-│ make drission-archive URL=链接                            │
+│ make archive URL=链接                            │
 │ # 💡 支持分享文本格式（自动提取URL）：                      │
-│ make drission-archive URL='【标题】 😆 https://...'       │
+│ make archive URL='【标题】 😆 https://...'       │
+│                                                            │
+│ # 步骤3：选择归档模式（默认纯内容/完整含评论）🆕            │
+│ make archive URL=链接                    # 默认：纯内容   │
+│ make archive URL=链接 MODE=full          # 完整：含评论   │
 │                                                            │
 │ 流程：启动浏览器 → 加载登录态 → 提取 → Markdown → 图片     │
-│ 输出：archived/平台_标题/                                  │
+│ 输出：archived/标题/  (不含平台前缀)🆕                     │
 │       ├── README.md                                       │
 │       └── images/                                         │
 │ 特点：🌟 真实浏览器、完整JS、自动登录态、更强反爬           │
 │       🌟 自动提取URL（支持从微信/QQ/浏览器复制的分享文本）  │
+│       🌟 双模式归档（默认纯内容/完整含评论）                │
+│       🌟 文件夹命名更简洁（仅标题，无平台前缀）             │
 │ 适用：需要登录、复杂JS、懒加载、反爬严格的平台              │
 └──────────────────────────────────────────────────────────┘
 
@@ -419,14 +427,17 @@ Groq API Docs: https://console.groq.com/docs
 │ 登录态管理   │ 手动配置     │ 自动保存        │
 │ 反爬能力     │ 中等         │ 最强            │
 │ 资源占用     │ 低           │ 中              │
+│ 双模式归档   │ ❌           │ ✅ (default/full)│
 │ 适用场景     │ 静态页面     │ 复杂/登录页面   │
-│ 命令         │ make archive │ make drission-archive│
+│ 命令         │ make archive │ make archive    │
 └──────────────┴──────────────┴─────────────────┘
 
 💡 选择建议：
-• 简单页面、不需要登录 → make archive
-• 需要登录、复杂JS渲染 → make drission-archive
-• 反爬严格（小红书等）→ make drission-archive
+• 简单页面、不需要登录 → Crawl4AI (自动)
+• 需要登录、复杂JS渲染 → DrissionPage (自动)
+• 反爬严格（小红书、推特）→ DrissionPage (自动)
+• 需要纯净内容（无评论）→ MODE=default
+• 需要完整内容（含评论）→ MODE=full
 
 ┌─ 批量归档 ────────────────────────────────────────────────┐
 │ # 创建URL列表文件                                          │
@@ -446,24 +457,33 @@ Groq API Docs: https://console.groq.com/docs
 ───────────────────────────────────────────────────────────────
 ┌─ 一次登录，长期使用 ──────────────────────────────────────┐
 │ # 1. 首次使用：浏览器登录（打开窗口）                       │
-│ make login                                                │
+│ make login                    # 通用登录（支持多平台）      │
+│ make login-twitter            # 推特专用登录 🆕             │
 │ → 会打开浏览器窗口                                         │
-│ → 手动访问平台（知乎/小红书/B站）                          │
+│ → 手动访问平台（知乎/小红书/B站/推特）                     │
 │ → 完成登录，勾选"记住我"                                   │
 │ → 关闭窗口，登录数据自动保存                               │
 │                                                            │
-│ # 2. 日常归档：自动使用登录态                              │
-│ make drission-archive URL=https://www.xiaohongshu.com/... │
+│ # 2. 验证登录状态                                          │
+│ make test-twitter-cookie      # 测试推特 Cookie 🆕         │
+│                                                            │
+│ # 3. 日常归档：自动使用登录态                              │
+│ make archive URL=https://www.xiaohongshu.com/...          │
+│ make archive URL=https://twitter.com/user/status/123 🆕   │
 │ → 无头模式后台运行                                         │
 │ → 自动加载登录态                                           │
 │ → 无需任何额外参数                                         │
 │                                                            │
-│ # 3. 登录态过期：重新登录                                  │
+│ # 4. 选择归档模式 🆕                                       │
+│ make archive URL=链接                     # 默认：纯内容  │
+│ make archive URL=链接 MODE=full           # 完整：含评论  │
+│                                                            │
+│ # 5. 登录态过期：重新登录                                  │
 │ make reset-browser  # 清空旧数据                          │
 │ make login          # 重新登录                             │
 │                                                            │
 │ 🎉 优势：                                                  │
-│ • 一次登录，所有平台都能用（知乎+小红书+B站+...）          │
+│ • 一次登录，所有平台都能用（知乎+小红书+B站+推特+...）     │
 │ • 自动保存 Cookies + LocalStorage + 浏览器指纹             │
 │ • 无需手动复制Cookie                                       │
 │ • 真实浏览器环境，不易被检测                               │
@@ -509,6 +529,7 @@ Groq API Docs: https://console.groq.com/docs
 │ 知乎     │ zhihu.com/question/ │ ❌      │ 回答正文 │
 │ 小红书   │ xiaohongshu.com/... │ ✅      │ 笔记+图片│
 │ B站      │ bilibili.com/read/  │ ❌      │ 专栏文章 │
+│ 推特/X🆕│ twitter.com/status/ │ ✅      │ 推文+图片│
 │ Reddit   │ reddit.com/r/.../   │ ❌      │ 帖子内容 │
 │ WordPress│ 通用博客网站         │ ❌      │ 文章主体 │
 └──────────┴─────────────────────┴─────────┴──────────┘
@@ -518,12 +539,17 @@ Groq API Docs: https://console.groq.com/docs
 • 自动排除评论、广告、侧边栏
 • 保留图片链接（Markdown格式）
 • 生成元数据（标题、URL、归档时间）
+• 🆕 支持双模式（默认纯内容/完整含评论）
 
 📝 命令速查
 ───────────────────────────────────────────────────────────────
-🆕 DrissionPage（真实浏览器）：
-  make login                            # 浏览器登录（首次）
-  make drission-archive URL=网址        # 归档（自动登录态）
+🆕 DrissionPage（真实浏览器）- 统一归档命令：
+  make login                            # 通用登录（首次）
+  make login-twitter                    # 推特专用登录 🆕
+  make test-twitter-cookie              # 测试推特 Cookie 🆕
+  make archive URL=网址                  # 归档（默认模式：纯内容）
+  make archive URL=网址 MODE=full        # 归档（完整模式：含评论）🆕
+  make export-twitter-cookies           # 导出推特 Cookie 🆕
   make reset-browser                    # 重置浏览器数据
 
 Crawl4AI（快速归档）：
@@ -542,12 +568,26 @@ Crawl4AI（快速归档）：
 Python命令行：
   python -m cli.archive_cli URL                    # 基本使用
   python -m cli.archive_cli URL -o output_dir     # 指定输出
-  🆕 DrissionPage 方式（推荐：需要登录的页面）
-make login                    # 首次：打开浏览器手动登录
-make drission-archive URL=https://www.xiaohongshu.com/explore/abc123
-make drission-archive URL=https://www.zhihu.com/question/12345/answer/67890
 
-# Crawl4AI 方式（推荐：简单静态页面）
+🎯 平台归档示例
+───────────────────────────────────────────────────────────────
+  🆕 DrissionPage 统一归档（推荐）
+make login                    # 首次：打开浏览器手动登录
+make archive URL=https://www.xiaohongshu.com/explore/abc123
+make archive URL=https://www.zhihu.com/question/12345/answer/67890
+make archive URL=https://twitter.com/user/status/123456 🆕
+
+# 🆕 推特归档（专用流程）
+make login-twitter            # 推特专用登录
+make test-twitter-cookie      # 验证登录状态
+make archive URL=https://twitter.com/elonmusk/status/123
+make archive URL=https://x.com/user/status/456  # x.com 自动转换
+
+# 🆕 双模式归档（默认 vs 完整）
+make archive URL=链接                  # 默认：纯内容（无评论）
+make archive URL=链接 MODE=full        # 完整：含评论区
+
+# Crawl4AI 方式（简单静态页面）
 make archive URL=https://www.zhihu.com/question/12345/answer/67890
 make archive URL=https://www.reddit.com/r/python/comments/abc123/
 
@@ -573,11 +613,11 @@ make archive-batch FILE=xhs_urls.txt
 📂 输出格式
 ───────────────────────────────────────────────────────────────
 输出目录：archived/（自动创建）
-文件夹结构：平台_标题/
+文件夹结构：标题/  (不含平台前缀)🆕
 
 示例：
 archived/
-└── xiaohongshu_美食分享/
+└── 为什么INTP有很强的小猫特质？/    # 🆕 简洁命名
     ├── README.md              # Markdown 内容
     └── images/                # 下载的图片
         ├── image_abc123.jpg
@@ -592,19 +632,17 @@ archived_at: 2026-01-07 12:34:56
 ---
 
 正文内容...
-图片引用: ![](images/image_abc123.jpg)容：
----
-title: 文章标题
-url: https://example.com
-platform: zhihu
-archived_at: 2026-01-07 12:34:56
----
+图片引用: ![](images/image_abc123.jpg)
 
-# 正文标题
-
-这是提取的正文内容...
-
-![图片描述](https://example.com/image.jpg)
+🆕 默认模式 vs 完整模式：
+  默认模式 (MODE=default)：
+    • 纯净内容，无评论、无用户profile
+    • 文件夹命名：标题（无平台前缀）
+    • 适合：知识收集、内容存档
+  
+  完整模式 (MODE=full)：
+    • 包含所有内容（评论、互动、推荐）
+    • 适合：完整记录、数据分析
 
 ⚡ 高级选项
 ───────────────────────────────────────────────────────────────
@@ -1113,10 +1151,117 @@ docs/
 ✨ 全文搜索：FTS5 引擎，支持中英文混合
 ✨ 智能去重：SHA256 hash 自动识别重复视频
 ✨ 时间定位：搜索结果精确到秒，可跳转播放
-✨ 标签系统：自动提取6-01-07
-✨ 版本：v3.1 - 网页归档 + 数据库与搜索 + 统一下载 + 智能
+✨ 标签系统：自动提取主题关键词
+
+╔═══════════════════════════════════════════════════════════════╗
+║         🐦 推特(Twitter/X) 归档 - 完整示例 🆕                 ║
+╚═══════════════════════════════════════════════════════════════╝
+
+🎯 快速开始（三步走）
+───────────────────────────────────────────────────────────────
+1️⃣ 首次登录（只需一次）
+   make login-twitter
+   # 在打开的浏览器中登录推特账号
+
+2️⃣ 验证登录
+   make test-twitter-cookie
+   # 看到 ✅ 表示登录成功
+
+3️⃣ 开始归档
+   make archive URL="https://twitter.com/elonmusk/status/123"
+   # 或
+   make archive URL="https://x.com/user/status/456"
+
+📝 归档模式对比
+───────────────────────────────────────────────────────────────
+┌────────────────┬─────────────────┬─────────────────┐
+│ 模式           │ 默认模式        │ 完整模式        │
+├────────────────┼─────────────────┼─────────────────┤
+│ 命令           │ MODE=default    │ MODE=full       │
+│ 推文正文       │ ✅              │ ✅              │
+│ 图片和视频     │ ✅              │ ✅              │
+│ 用户profile    │ ❌ 自动移除     │ ✅              │
+│ 互动数字       │ ❌ 自动移除     │ ✅              │
+│ 评论区         │ ❌ 自动排除     │ ✅              │
+│ 侧边栏推荐     │ ❌ 自动排除     │ ❌              │
+│ 适用场景       │ 知识收集        │ 完整记录        │
+└────────────────┴─────────────────┴─────────────────┘
+
+💡 使用示例：
+  # 默认模式：纯内容（推荐日常使用）
+  make archive URL="https://twitter.com/user/status/123"
+  
+  # 完整模式：含评论和互动
+  make archive URL="https://twitter.com/user/status/123" MODE=full
+
+🔐 登录管理
+───────────────────────────────────────────────────────────────
+登录推特：
+  make login-twitter
+
+测试 Cookie：
+  make test-twitter-cookie
+  # 输出示例：
+  # ✅ auth_token: abc123...
+  # ✅ ct0: xyz789...
+  # ✅ 已登录！
+
+导出 Cookie：
+  make export-twitter-cookies
+  # 导出到 cookies/twitter.txt
+
+重置登录：
+  make reset-browser
+  make login-twitter
+
+📂 输出示例
+───────────────────────────────────────────────────────────────
+输出位置：archived/推文标题/
+
+示例结构：
+archived/
+└── The future of AI is exciting/
+    ├── README.md
+    └── images/
+        └── tweet_image_001.jpg
+
+README.md 内容：
+---
+title: The future of AI is exciting
+url: https://twitter.com/user/status/123
+platform: twitter
+archived_at: 2026-01-07 12:34:56
+---
+
+推文正文内容...
+
+![](images/tweet_image_001.jpg)
+
+🛠️ 故障排除
+───────────────────────────────────────────────────────────────
+❌ 问题：403/401 错误
+✅ 解决：
+   make test-twitter-cookie    # 检查登录状态
+   make reset-browser          # 清空数据
+   make login-twitter          # 重新登录
+
+❌ 问题：Cookie 过期
+✅ 解决：
+   推特 Cookie 通常有效期很长（数周），过期后重新登录即可
+
+❌ 问题：x.com 链接
+✅ 解决：
+   自动转换为 twitter.com，无需手动修改
+
+📚 更多信息
+───────────────────────────────────────────────────────────────
+完整文档：docs/TWITTER_GUIDE.md
+技术细节：archiver/platforms/twitter.py
+
+6-01-07
+✨ 版本：v3.1 - 网页归档 + 推特支持 + 数据库 + 统一下载
 
 ═══════════════════════════════════════════════════════════════
-📌 最后更新：2025-12-29
-✨ 版本：v3.0 - 数据库与搜索系统 + 统一下载 + 智能 OCR
+📌 最后更新：2026-01-07
+✨ 版本：v3.1 - 推特归档 + 双模式 + 网页归档 + 数据库
 打印或保存这张卡片，随时查阅！🎯

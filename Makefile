@@ -699,6 +699,21 @@ login: ensure-venv
 	@echo "🔐 启动浏览器登录辅助..."
 	@$(PYTHON) scripts/login_helper.py
 
+# 推特登录辅助
+login-twitter: ensure-venv
+	@echo "🔐 启动推特登录辅助..."
+	@$(PYTHON) scripts/login_twitter.py
+
+# 测试推特 Cookie
+test-twitter-cookie: ensure-venv
+	@echo "🧪 测试推特 Cookie..."
+	@$(PYTHON) scripts/test_twitter_cookie.py
+
+# 导出推特 Cookies 到文件
+export-twitter-cookies: ensure-venv
+	@echo "📤 导出推特 Cookies..."
+	@$(PYTHON) scripts/login_twitter.py --export
+
 # 手动配置 Cookie（login 失败时的备选方案）
 config-drission-cookie: ensure-venv
 	@echo "🍪 手动配置 DrissionPage Cookie..."

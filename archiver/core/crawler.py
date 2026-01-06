@@ -79,9 +79,43 @@ class UniversalArchiver:
         # 自动检测平台
         if platform_adapter is None:
             platform_name = detect_platform(url)
+            
+            # 需要登录的平台强制使用 DrissionPage
+            if platform_name in ['xiaohongshu', 'twitter']:
+                logger.info(f"检测到需要登录的平台 ({platform_name})，强制使用 DrissionPage")
+                try:
+                    from archiver.core.drission_crawler import DrissionArchiver
+                    from archiver.platforms import (
+                        ZhihuAdapter, XiaohongshuAdapter, BilibiliAdapter,
+                        RedditAdapter, TwitterAdapter, WordPressAdapter
+                    )
+                    adapters = {
+                        "zhihu": ZhihuAdapter(),
+                        "xiaohongshu": XiaohongshuAdapter(),
+                        "bilibili": BilibiliAdapter(),
+                        "reddit": RedditAdapter(),
+                        "twitter": TwitterAdapter(),
+                        "wordpress": WordPressAdapter(),
+                    }
+                    platform_adapter_instance = adapters.get(platform_name, WordPressAdapter())
+                    
+                    drission = DrissionArchiver(
+                        output_dir=self.output_dir,
+                        browser_data_dir="./browser_data",
+                        headless=self.headless,
+                        verbose=self.verbose
+                    )
+                    return drission.archive(url, platform_adapter_instance, mode=mode)
+                except Exception as e:
+                    logger.error(f"DrissionPage 归档失败: {e}")
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "url": url
+                    }
             from archiver.platforms import (
                 ZhihuAdapter, XiaohongshuAdapter, BilibiliAdapter,
-                RedditAdapter, WordPressAdapter
+                RedditAdapter, TwitterAdapter, WordPressAdapter
             )
             
             adapters = {
@@ -89,6 +123,7 @@ class UniversalArchiver:
                 "xiaohongshu": XiaohongshuAdapter(),
                 "bilibili": BilibiliAdapter(),
                 "reddit": RedditAdapter(),
+                "twitter": TwitterAdapter(),
                 "wordpress": WordPressAdapter(),
             }
             platform_adapter = adapters.get(platform_name, WordPressAdapter())
@@ -134,11 +169,12 @@ class UniversalArchiver:
             
             logger.info(f"转换了 {len(playwright_cookies)} 个 Cookie")
             
-        # 优先使用 DrissionCrawler (因为 Crawl4AI 对 JS 动态渲染支持较弱)
+        # 优先使用 DrissionArchiver (因为 Crawl4AI 对 JS 动态渲染支持较弱)
         try:
-            from archiver.core.drission_crawler import DrissionCrawler
-            drission = DrissionCrawler(
+            from archiver.core.drission_crawler import DrissionArchiver
+            drission = DrissionArchiver(
                 output_dir=self.output_dir,
+                browser_data_dir="./browser_data",
                 headless=self.headless,
                 verbose=self.verbose
             )

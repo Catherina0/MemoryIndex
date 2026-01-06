@@ -63,12 +63,17 @@ class ImageDownloader:
             r'<img[^>]+src=["\']([^"\']+)["\']',
             r'<img[^>]+data-src=["\']([^"\']+)["\']',
             r'<img[^>]+data-original=["\']([^"\']+)["\']',
+            # 🆕 推特的背景图片
+            r'background-image:\s*url\(["\']?([^"\'()]+)["\']?\)',
         ]
         
         urls = set()
         for pattern in patterns:
             matches = re.findall(pattern, html, re.IGNORECASE)
             for url in matches:
+                # 🆕 解码HTML实体（&amp; → &）
+                url = url.replace('&amp;', '&')
+                
                 # 处理 data URL（base64 图片）
                 if url.startswith('data:'):
                     urls.add(url)
@@ -77,6 +82,19 @@ class ImageDownloader:
                 abs_url = urljoin(base_url, url)
                 # 只处理http/https图片
                 if abs_url.startswith(('http://', 'https://')):
+                    # 🆕 推特图片特殊处理：确保使用large尺寸
+                    if 'twimg.com' in abs_url:
+                        # 对于profile图片（头像），保持原尺寸，不强制large
+                        if 'profile_images' in abs_url:
+                            # 移除我们添加的format和name参数
+                            if '?format=jpg&name=large' in abs_url:
+                                abs_url = abs_url.replace('?format=jpg&name=large', '')
+                        # 对于媒体图片，确保使用large尺寸
+                        elif '/media/' in abs_url:
+                            if 'name=' in abs_url:
+                                abs_url = re.sub(r'name=\w+', 'name=large', abs_url)
+                            elif '?' not in abs_url:
+                                abs_url += '?format=jpg&name=large'
                     urls.add(abs_url)
         
         logger.info(f"提取到 {len(urls)} 个图片URL")
