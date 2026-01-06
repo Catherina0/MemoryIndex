@@ -59,7 +59,8 @@ class UniversalArchiver:
         self,
         url: str,
         platform_adapter: Optional[PlatformAdapter] = None,
-        cookies: Optional[Dict[str, str]] = None
+        cookies: Optional[Dict[str, str]] = None,
+        mode: str = "default"
     ) -> Dict[str, Any]:
         """
         归档指定URL的网页内容
@@ -68,6 +69,7 @@ class UniversalArchiver:
             url: 目标URL
             platform_adapter: 平台适配器（如果为None则自动检测）
             cookies: Cookie字典
+            mode: 归档模式 (default/full)
         
         Returns:
             包含归档结果的字典
@@ -131,6 +133,23 @@ class UniversalArchiver:
                 playwright_cookies.append(cookie)
             
             logger.info(f"转换了 {len(playwright_cookies)} 个 Cookie")
+            
+        # 优先使用 DrissionCrawler (因为 Crawl4AI 对 JS 动态渲染支持较弱)
+        try:
+            from archiver.core.drission_crawler import DrissionCrawler
+            drission = DrissionCrawler(
+                output_dir=self.output_dir,
+                headless=self.headless,
+                verbose=self.verbose
+            )
+            # 注意: DrissionCrawler 是同步的，这里直接调用
+            result = drission.archive(url, platform_adapter, mode=mode)
+            if result.get('success'):
+                return result
+            else:
+                logger.warning(f"DrissionPage 归档失败，尝试回退到 Crawl4AI: {result.get('error')}")
+        except Exception as e:
+            logger.warning(f"DrissionCrawler 异常: {e}")
         
         # 配置浏览器
         browser_config = BrowserConfig(

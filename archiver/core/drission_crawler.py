@@ -189,7 +189,8 @@ class DrissionArchiver:
     def archive(
         self,
         url: str,
-        platform_adapter: Optional[PlatformAdapter] = None
+        platform_adapter: Optional[PlatformAdapter] = None,
+        mode: str = "default"
     ) -> Dict[str, Any]:
         """
         归档指定URL的网页内容
@@ -197,6 +198,7 @@ class DrissionArchiver:
         Args:
             url: 目标URL（支持分享文本格式，会自动提取URL）
             platform_adapter: 平台适配器（如果为None则自动检测）
+            mode: 归档模式 (default/full)
         
         Returns:
             包含归档结果的字典
@@ -226,6 +228,7 @@ class DrissionArchiver:
             # 自动检测平台
             if platform_adapter is None:
                 platform_name = detect_platform(url)
+                logger.info(f"检测平台: {platform_name} (模式: {mode})")
                 from archiver.platforms import (
                     ZhihuAdapter, XiaohongshuAdapter, BilibiliAdapter,
                     RedditAdapter, WordPressAdapter
@@ -266,7 +269,7 @@ class DrissionArchiver:
                 page_title = "Untitled"
             
             # 提取内容
-            content_html = self._extract_content(platform_adapter)
+            content_html = self._extract_content(platform_adapter, mode=mode)
             
             if not content_html:
                 return {
@@ -280,7 +283,8 @@ class DrissionArchiver:
                 html=content_html,
                 title=page_title,
                 url=url,
-                platform=platform_adapter.name
+                platform=platform_adapter.name,
+                mode=mode
             )
             
             # 创建文件夹
@@ -341,9 +345,18 @@ class DrissionArchiver:
                 "url": url
             }
     
-    def _extract_content(self, platform_adapter: PlatformAdapter) -> str:
-        """提取页面内容"""
+    def _extract_content(self, platform_adapter: PlatformAdapter, mode: str = "default") -> str:
+        """
+        提取页面内容
+        
+        Args:
+            platform_adapter: 平台适配器
+            mode: 归档模式 ('default' 或 'full')
+                  default: 仅保留正文和图片，移除评论、侧边栏等无关元素
+                  full: 保留选定容器内的所有内容
+        """
         selector = platform_adapter.content_selector
+        exclude_selector = platform_adapter.exclude_selector if hasattr(platform_adapter, 'exclude_selector') else ""
         
         # 检测是否需要登录（常见登录提示）
         login_indicators = [
@@ -372,6 +385,57 @@ class DrissionArchiver:
                 sel = sel.strip()
                 element = self.page.ele(sel, timeout=2)
                 if element:
+                    # 如果不是全量模式，且定义了排除选择器，尝试移除无关元素
+                    # 注意：DrissionPage 的元素操作通常是即时的，这里我们直接操作页面上的元素
+                    # 但为了不破坏页面结构影响后续（虽然我们很快就关闭），或者为了处理方便
+                    # 我们主要通过 BeautifulSoup 后处理，或者在这里尝试移除
+                    
+                    if mode == "default" and exclude_selector:
+                        logger.info(f"清理模式: 移除无关元素")
+                        
+                        # 1. 移除配置中定义的元素
+                        for exclude in exclude_selector.split(','):
+                            exclude = exclude.strip()
+                            if not exclude:
+                                continue
+                            
+                            try:
+                                unwanted_elements = element.eles(exclude)
+                                removed_count = 0
+                                for unwanted in unwanted_elements:
+                                    self.page.run_js("arguments[0].remove()", unwanted)
+                                    removed_count += 1
+                                if removed_count > 0:
+                                    logger.info(f"  - 已移除 {removed_count} 个 {exclude} 元素")
+                            except Exception as e:
+                                logger.debug(f"  - 移除 {exclude} 失败: {e}")
+                        
+                        # 2. 对于小红书，额外移除作者信息和关注按钮
+                        if platform_adapter.name == "xiaohongshu":
+                            # 移除用户profile链接（作者头像和名字）
+                            try:
+                                profile_links = element.eles('a[href*="/user/profile"]')
+                                if profile_links:
+                                    logger.info(f"  - 已移除 {len(profile_links)} 个用户profile链接")
+                                    for link in profile_links:
+                                        self.page.run_js("arguments[0].remove()", link)
+                            except:
+                                pass
+                            
+                            # 移除"关注"按钮 - 通过文字内容匹配
+                            try:
+                                all_elements = element.eles('tag:div') + element.eles('tag:button')
+                                follow_count = 0
+                                for elem in all_elements:
+                                    if elem.text and elem.text.strip() == '关注':
+                                        self.page.run_js("arguments[0].remove()", elem)
+                                        follow_count += 1
+                                if follow_count > 0:
+                                    logger.info(f"  - 已移除 {follow_count} 个关注按钮")
+                            except:
+                                pass
+                    
+                    # 重新获取 HTML (移除元素后)
                     html = element.html
                     # 检查是否有实际内容
                     if html and len(html) > 1000:
@@ -394,7 +458,8 @@ class DrissionArchiver:
         html: str,
         title: str,
         url: str,
-        platform: str
+        platform: str,
+        mode: str = "default"
     ) -> str:
         """将 HTML 转换为 Markdown"""
         # 添加元数据头部
@@ -411,6 +476,26 @@ archived_at: {timestamp}
         
         # 转换 HTML
         markdown_content = self.converter.handle(html)
+        
+        # 如果是默认模式且是小红书，做额外的 Markdown 清洗
+        if mode == "default" and platform == "xiaohongshu":
+            import re
+            # 移除用户profile链接 (格式: [![...](images/...jpg)](/user/profile/...)文字)
+            markdown_content = re.sub(
+                r'\[!\[.*?\]\(images/.*?\)\]\(/user/profile/[^\)]+\)\[.*?\]\(/user/profile/[^\)]+\)\s*',
+                '',
+                markdown_content
+            )
+            # 移除单独的用户链接 (格式: [用户名](/user/profile/...))
+            markdown_content = re.sub(
+                r'\[.*?\]\(/user/profile/[^\)]+\)\s*',
+                '',
+                markdown_content
+            )
+            # 移除单独的"关注"文字
+            markdown_content = re.sub(r'^\s*关注\s*$', '', markdown_content, flags=re.MULTILINE)
+            # 移除多余的空行
+            markdown_content = re.sub(r'\n{3,}', '\n\n', markdown_content)
         
         return metadata + markdown_content
     

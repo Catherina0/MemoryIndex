@@ -639,11 +639,11 @@ ls: db-list
 archive: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误: 请提供URL参数"; \
-		echo "用法: make archive URL=网址"; \
+		echo "用法: make archive URL=网址 [MODE=full]"; \
 		echo "💡 支持分享文本格式（自动提取URL）"; \
 		exit 1; \
 	fi
-	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)"
+	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default)
 
 # 批量归档（从文件读取URL列表）
 archive-batch: ensure-venv

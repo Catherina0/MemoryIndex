@@ -15,7 +15,13 @@ class XiaohongshuAdapter(PlatformAdapter):
             # 小红书的内容选择器（优先级从高到低）
             # 优先使用 .note-container 以同时包含图片和文字
             content_selector="#noteContainer, .note-container, .note-detail, #detail-desc, .note-content",
-            exclude_selector=".comments-container, .comment-container, .footer, [class*='comment'], [class*='related'], .recommend-container",
+            # 精确清除策略：只删除特定的无关元素，避免误删正文
+            # 注意：小红书的正文通常在 #detail-desc 中，不要删除包含它的容器
+            exclude_selector=(
+                ".comments-container, .comment-container, "
+                "[class*='comment-list'], [class*='comment-item'], "
+                ".recommend-container, [class*='recommend']"
+            ),
             wait_for_selector="#detail-desc",
             requires_login=True,  # 小红书通常需要登录
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"

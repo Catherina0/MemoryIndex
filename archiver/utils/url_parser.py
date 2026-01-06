@@ -41,6 +41,22 @@ def extract_url_from_text(text: str) -> Optional[str]:
         url = match.group(0)
         # 移除可能的尾部标点
         url = url.rstrip('.,;!?')
+        
+        # 尝试修复常见的小红书 URL 格式错误（缺失问号）
+        # Case: .../item/<id>source=...
+        if 'xiaohongshu.com' in url and '/item/' in url and '?' not in url:
+            # 检查是否有 source=, xhsshare= 等参数直接连在ID后面
+            common_params = ['source=', 'xhsshare=', 'xsec_token=']
+            for param in common_params:
+                if param in url:
+                    # 找到参数开始的位置
+                    idx = url.find(param)
+                    if idx > 0:
+                        # 插入问号
+                        fixed_url = url[:idx] + '?' + url[idx:]
+                        print(f"🔧 自动修复URL格式: {url} -> {fixed_url}")
+                        return fixed_url
+                        
         return url
     
     return None

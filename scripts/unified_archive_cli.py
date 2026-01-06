@@ -47,6 +47,12 @@ def main():
     
     input_text = sys.argv[1]
     
+    # 解析模式参数
+    mode = "default"
+    for arg in sys.argv:
+        if arg.startswith("--mode="):
+            mode = arg.split("=", 1)[1]
+    
     # 提取 URL
     url = extract_url_from_text(input_text)
     if not url:
@@ -74,7 +80,7 @@ def main():
         from archiver.core.drission_crawler import DrissionArchiver
         
         with DrissionArchiver(output_dir='archived', headless=True, verbose=True) as archiver:
-            result = archiver.archive(url)
+            result = archiver.archive(url, mode=mode)
             
             if result['success']:
                 print(f"\n✓ 归档成功: {result['output_path']}")
@@ -92,7 +98,7 @@ def main():
         
         async def archive_with_crawl4ai():
             archiver = UniversalArchiver(output_dir='archived', verbose=True)
-            result = await archiver.archive(url)
+            result = await archiver.archive(url, mode=mode)
             
             if result['success']:
                 print(f"\n✓ 归档成功: {result['output_path']}")
