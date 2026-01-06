@@ -99,6 +99,86 @@ class DrissionArchiver:
             self.page = ChromiumPage(addr_or_opts=self.options)
             logger.info("✓ 浏览器启动成功")
     
+    def _load_manual_cookies(self, platform_name: str, url: str):
+        """
+        加载手动配置的 Cookie（如果存在）
+        
+        Args:
+            platform_name: 平台名称（zhihu, xiaohongshu, bilibili）
+            url: 目标URL
+        """
+        # 配置文件路径
+        config_dir = Path(__file__).parent.parent / "config"
+        cookie_file = config_dir / f"{platform_name}_drission_cookie.txt"
+        
+        if not cookie_file.exists():
+            logger.debug(f"未找到手动配置的 Cookie: {cookie_file}")
+            return False
+        
+        try:
+            # 读取 Cookie
+            with open(cookie_file, 'r', encoding='utf-8') as f:
+                cookie_string = f.read().strip()
+            
+            if not cookie_string:
+                logger.warning(f"Cookie 文件为空: {cookie_file}")
+                return False
+            
+            logger.info(f"加载手动配置的 Cookie: {platform_name}")
+            
+            # 确保已访问页面（Cookie 需要域名）
+            if not self.page.url or self.page.url == 'about:blank':
+                logger.info(f"首次访问页面以设置 Cookie...")
+                self.page.get(url)
+                time.sleep(1)
+            
+            # 解析并设置 Cookie
+            # 格式：name1=value1; name2=value2; ...
+            cookie_pairs = [pair.strip() for pair in cookie_string.split(';') if pair.strip()]
+            
+            for pair in cookie_pairs:
+                if '=' not in pair:
+                    continue
+                
+                name, value = pair.split('=', 1)
+                name = name.strip()
+                value = value.strip()
+                
+                try:
+                    # 设置 Cookie
+                    self.page.set.cookies({
+                        'name': name,
+                        'value': value,
+                        'domain': self._get_cookie_domain(url),
+                        'path': '/'
+                    })
+                    logger.debug(f"✓ 设置 Cookie: {name}")
+                except Exception as e:
+                    logger.warning(f"✗ 设置 Cookie 失败 {name}: {e}")
+            
+            logger.info(f"✓ 成功加载 {len(cookie_pairs)} 个 Cookie")
+            
+            # 刷新页面使 Cookie 生效
+            logger.info("刷新页面...")
+            self.page.refresh()
+            time.sleep(1)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"加载手动 Cookie 失败: {e}")
+            return False
+    
+    def _get_cookie_domain(self, url: str) -> str:
+        """从 URL 提取 Cookie 域名"""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        # 返回 .domain.com 格式
+        domain_parts = parsed.netloc.split('.')
+        if len(domain_parts) >= 2:
+            return f".{'.'.join(domain_parts[-2:])}"
+        return parsed.netloc
+    
     def _close_browser(self):
         """关闭浏览器"""
         if self.page is not None:
@@ -115,12 +195,28 @@ class DrissionArchiver:
         归档指定URL的网页内容
         
         Args:
-            url: 目标URL
+            url: 目标URL（支持分享文本格式，会自动提取URL）
             platform_adapter: 平台适配器（如果为None则自动检测）
         
         Returns:
             包含归档结果的字典
         """
+        # 从输入文本中提取 URL（支持分享文本格式）
+        from archiver.utils.url_parser import extract_url_from_text
+        original_input = url
+        url = extract_url_from_text(url)
+        
+        if not url:
+            return {
+                'success': False,
+                'error': '无法从输入中提取有效的URL',
+                'input': original_input
+            }
+        
+        # 如果提取的URL与输入不同，记录日志
+        if url != original_input:
+            logger.info(f"从分享文本中提取URL: {url}")
+        
         logger.info(f"开始归档: {url}")
         
         # 初始化浏览器
@@ -146,6 +242,11 @@ class DrissionArchiver:
             
             # 访问页面
             logger.info(f"正在访问: {url}")
+            
+            # 尝试加载手动配置的 Cookie
+            if platform_adapter.name in ['zhihu', 'xiaohongshu', 'bilibili']:
+                self._load_manual_cookies(platform_adapter.name, url)
+            
             self.page.get(url)
             
             # 智能等待页面加载
@@ -244,14 +345,38 @@ class DrissionArchiver:
         """提取页面内容"""
         selector = platform_adapter.content_selector
         
+        # 检测是否需要登录（常见登录提示）
+        login_indicators = [
+            "登录后推荐",
+            "马上登录",
+            "请先登录",
+            "Sign in",
+            "Log in",
+            "登入"
+        ]
+        
+        page_text = self.page.html
+        for indicator in login_indicators:
+            if indicator in page_text:
+                # 检查是否有实际内容（登录提示通常文本很短）
+                if len(self.page.ele('body', timeout=1).text.strip()) < 500:
+                    logger.warning(f"⚠️  检测到登录提示: {indicator}")
+                    logger.warning("   建议操作：")
+                    logger.warning("   1. 运行 'make login' 登录并保存登录态")
+                    logger.warning("   2. 或运行 'make config-drission-cookie' 手动配置Cookie")
+                    break
+        
         # 尝试使用选择器提取内容
         if selector:
             for sel in selector.split(','):
                 sel = sel.strip()
                 element = self.page.ele(sel, timeout=2)
                 if element:
-                    logger.info(f"使用选择器提取内容: {sel}")
-                    return element.html
+                    html = element.html
+                    # 检查是否有实际内容
+                    if html and len(html) > 1000:
+                        logger.info(f"使用选择器提取内容: {sel}")
+                        return html
         
         # 回退：使用通用选择器
         for fallback in ['article', 'main', 'body']:

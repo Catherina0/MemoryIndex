@@ -130,14 +130,26 @@ class ImageDownloader:
                 }
             
             # 设置Referer（防止防盗链）
+            # 注意：Referer 必须是 ASCII 编码，避免中文字符
             if referer:
-                headers['Referer'] = referer
+                # 确保 referer 不包含中文字符
+                try:
+                    referer.encode('latin-1')
+                    headers['Referer'] = referer
+                except UnicodeEncodeError:
+                    # 如果包含中文，使用域名作为 referer
+                    from urllib.parse import urlparse
+                    parsed = urlparse(referer)
+                    headers['Referer'] = f"{parsed.scheme}://{parsed.netloc}/"
             elif 'xiaohongshu' in url or 'xhscdn' in url:
                 headers['Referer'] = 'https://www.xiaohongshu.com/'
             elif 'zhihu' in url or 'zhimg' in url:
                 headers['Referer'] = 'https://www.zhihu.com/'
             else:
-                headers['Referer'] = url
+                # 从 URL 中提取域名作为 referer
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                headers['Referer'] = f"{parsed.scheme}://{parsed.netloc}/"
             
             # 下载图片
             response = requests.get(url, headers=headers, timeout=10)

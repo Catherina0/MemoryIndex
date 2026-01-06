@@ -396,13 +396,16 @@ Groq API Docs: https://console.groq.com/docs
 │ # 会打开浏览器窗口，手动完成登录，勾选"记住我"              │
 │                                                            │
 │ # 步骤2：日常归档（自动使用登录态）                         │
-│ make drission-archive URL=小红书/知乎/B站链接              │
+│ make drission-archive URL=链接                            │
+│ # 💡 支持分享文本格式（自动提取URL）：                      │
+│ make drission-archive URL='【标题】 😆 https://...'       │
 │                                                            │
 │ 流程：启动浏览器 → 加载登录态 → 提取 → Markdown → 图片     │
 │ 输出：archived/平台_标题/                                  │
 │       ├── README.md                                       │
 │       └── images/                                         │
 │ 特点：🌟 真实浏览器、完整JS、自动登录态、更强反爬           │
+│       🌟 自动提取URL（支持从微信/QQ/浏览器复制的分享文本）  │
 │ 适用：需要登录、复杂JS、懒加载、反爬严格的平台              │
 └──────────────────────────────────────────────────────────┘
 

@@ -5,6 +5,45 @@ URL解析器
 
 import re
 from urllib.parse import urlparse
+from typing import Optional
+
+
+def extract_url_from_text(text: str) -> Optional[str]:
+    """
+    从文本中提取URL（支持从分享文本中自动提取）
+    
+    支持的场景：
+    - 纯URL输入
+    - URL + 其他文本（自动提取URL）
+    - 多个URL（返回第一个有效的）
+    
+    Args:
+        text: 输入文本（可能包含URL和其他内容）
+        
+    Returns:
+        提取到的URL，或None
+    
+    示例：
+        >>> extract_url_from_text("57 【标题】 😆 https://www.xiaohongshu.com/item/123")
+        'https://www.xiaohongshu.com/item/123'
+    """
+    text = text.strip()
+    
+    # 如果是纯URL，直接返回
+    if is_valid_url(text):
+        return text
+    
+    # 从文本中提取 URL（通用模式）
+    url_pattern = r'https?://[^\s\"\'\u4e00-\u9fff]+'
+    match = re.search(url_pattern, text)
+    
+    if match:
+        url = match.group(0)
+        # 移除可能的尾部标点
+        url = url.rstrip('.,;!?')
+        return url
+    
+    return None
 
 
 def detect_platform(url: str) -> str:

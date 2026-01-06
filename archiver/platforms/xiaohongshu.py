@@ -12,9 +12,10 @@ class XiaohongshuAdapter(PlatformAdapter):
         """获取小红书的默认配置"""
         return PlatformConfig(
             name="xiaohongshu",
-            content_selector=".note-content, #detail-desc, .note-text",
-            exclude_selector=".comments-container, .interaction-container, .footer",
-            wait_for_selector=".note-content",
+            # 小红书的内容选择器（优先级从高到低）
+            content_selector="#detail-desc, .note-content, .content, [class*='noteContainer'], [class*='content']",
+            exclude_selector=".comments-container, .interaction-container, .footer, [class*='comment'], [class*='related']",
+            wait_for_selector="#detail-desc",
             requires_login=True,  # 小红书通常需要登录
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         )

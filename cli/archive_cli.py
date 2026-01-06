@@ -10,6 +10,7 @@ import logging
 
 from archiver import UniversalArchiver, detect_platform
 from archiver.utils.cookie_manager import CookieManager
+from archiver.utils.url_parser import extract_url_from_text, extract_domain
 
 
 def setup_logging(verbose: bool):
@@ -23,6 +24,17 @@ def setup_logging(verbose: bool):
 
 async def archive_single(args):
     """归档单个URL"""
+    # 从输入文本中提取URL（支持分享文本格式）
+    url = extract_url_from_text(args.url)
+    if not url:
+        print(f"❌ 错误：无法从输入中提取有效的URL")
+        print(f"   输入内容: {args.url}")
+        sys.exit(1)
+    
+    # 如果提取的URL与输入不同，提示用户
+    if url != args.url:
+        print(f"📎 从分享文本中提取URL: {url}\n")
+    
     archiver = UniversalArchiver(
         output_dir=args.output,
         headless=not args.show_browser,
@@ -34,8 +46,7 @@ async def archive_single(args):
     if args.cookies:
         cookie_manager = CookieManager()
         if args.browser:
-            from archiver.utils.url_parser import extract_domain
-            domain = extract_domain(args.url)
+            domain = extract_domain(url)
             cookies = cookie_manager.load_from_browser(domain, args.browser)
         else:
             cookies = cookie_manager.load_from_file(args.cookies)
@@ -43,7 +54,7 @@ async def archive_single(args):
     # 注意：对于小红书，不需要手动指定，爬虫会自动加载XHS配置
     
     # 执行归档
-    result = await archiver.archive(args.url, cookies=cookies)
+    result = await archiver.archive(url, cookies=cookies)
     
     if result['success']:
         print(f"✓ 归档成功: {result['output_path']}")
