@@ -13,8 +13,9 @@ class XiaohongshuAdapter(PlatformAdapter):
         return PlatformConfig(
             name="xiaohongshu",
             # 小红书的内容选择器（优先级从高到低）
-            content_selector="#detail-desc, .note-content, .content, [class*='noteContainer'], [class*='content']",
-            exclude_selector=".comments-container, .interaction-container, .footer, [class*='comment'], [class*='related']",
+            # 优先使用 .note-container 以同时包含图片和文字
+            content_selector="#noteContainer, .note-container, .note-detail, #detail-desc, .note-content",
+            exclude_selector=".comments-container, .comment-container, .footer, [class*='comment'], [class*='related'], .recommend-container",
             wait_for_selector="#detail-desc",
             requires_login=True,  # 小红书通常需要登录
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
