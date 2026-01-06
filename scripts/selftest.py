@@ -32,6 +32,9 @@ def check_module_imports():
         ('db.whoosh_search', ['WhooshSearchIndex', 'check_whoosh_status']),
         ('core.video_downloader', ['VideoDownloader']),
         ('core.process_video', ['process_video']),
+        ('archiver', ['UniversalArchiver', 'detect_platform']),
+        ('archiver.utils.cookie_manager', ['CookieManager', 'get_xiaohongshu_cookies']),
+        ('archiver.platforms', ['ZhihuAdapter', 'XiaohongshuAdapter', 'BilibiliAdapter']),
     ]
     
     errors = []
@@ -72,7 +75,7 @@ def check_dependencies():
         print("   ❌ python-dotenv 未安装")
         errors.append('python-dotenv')
     
-    # 可选依赖
+    # 可选依赖 - 搜索
     try:
         import whoosh
         print("   ✅ whoosh")
@@ -84,6 +87,37 @@ def check_dependencies():
         print("   ✅ jieba")
     except ImportError:
         print("   ⚠️  jieba 未安装（可选，用于中文分词）")
+    
+    # 可选依赖 - 网页归档
+    try:
+        import crawl4ai
+        print("   ✅ crawl4ai（归档）")
+    except ImportError:
+        print("   ⚠️  crawl4ai 未安装（网页归档需要）")
+    
+    try:
+        import playwright
+        print("   ✅ playwright（归档）")
+    except ImportError:
+        print("   ⚠️  playwright 未安装（网页归档需要）")
+    
+    try:
+        import bs4
+        print("   ✅ beautifulsoup4（归档）")
+    except ImportError:
+        print("   ⚠️  beautifulsoup4 未安装（网页归档需要）")
+    
+    try:
+        import html2text
+        print("   ✅ html2text（归档）")
+    except ImportError:
+        print("   ⚠️  html2text 未安装（网页归档需要）")
+    
+    try:
+        import browser_cookie3
+        print("   ✅ browser-cookie3（Cookie管理）")
+    except ImportError:
+        print("   ⚠️  browser-cookie3 未安装（可选，用于浏览器Cookie）")
     
     return errors
 
@@ -261,6 +295,201 @@ def check_disk_space():
     return []
 
 
+def check_archiver():
+    """10. 网页归档功能"""
+    print_header("🌐 10. 网页归档功能")
+    
+    errors = []
+    try:
+        # 导入测试
+        from archiver import UniversalArchiver, detect_platform
+        from archiver.utils.url_parser import normalize_url, is_valid_url
+        from archiver.platforms import (
+            ZhihuAdapter, XiaohongshuAdapter, BilibiliAdapter,
+            RedditAdapter, WordPressAdapter
+        )
+        
+        print("   ✅ 归档模块导入成功")
+        
+        # 平台检测测试
+        test_cases = [
+            ("https://www.zhihu.com/question/123", "zhihu"),
+            ("https://www.xiaohongshu.com/explore/abc", "xiaohongshu"),
+            ("https://www.bilibili.com/video/BV123", "bilibili"),
+            ("https://www.reddit.com/r/python/", "reddit"),
+        ]
+        
+        platform_ok = True
+        for url, expected in test_cases:
+            result = detect_platform(url)
+            if result == expected:
+                print(f"   ✅ 平台检测: {expected}")
+            else:
+                print(f"   ❌ 平台检测失败: {url} → {result} (应为 {expected})")
+                platform_ok = False
+        
+        if not platform_ok:
+            errors.append('archiver-platform-detection')
+        
+        # 适配器测试
+        adapters = [
+            (ZhihuAdapter(), "zhihu"),
+            (XiaohongshuAdapter(), "xiaohongshu"),
+            (BilibiliAdapter(), "bilibili"),
+            (RedditAdapter(), "reddit"),
+            (WordPressAdapter(), "wordpress"),
+        ]
+        
+        for adapter, name in adapters:
+            if adapter.name == name and adapter.content_selector:
+                print(f"   ✅ {name} 适配器配置正常")
+            else:
+                print(f"   ❌ {name} 适配器配置异常")
+                errors.append(f'archiver-{name}')
+        
+        # URL工具测试
+        assert normalize_url("example.com") == "https://example.com"
+        assert is_valid_url("https://example.com") == True
+        print("   ✅ URL工具函数正常")
+        
+        # 检查归档输出目录
+        archived_dir = Path('archived')
+        if archived_dir.exists():
+            count = len(list(archived_dir.glob('*.md')))
+            print(f"   📁 已归档文件: {count} 个")
+        
+    except Exception as e:
+        print(f"   ❌ 归档功能检查失败: {e}")
+        errors.append('archiver')
+    
+    return errors
+
+
+def check_cookie_management():
+    """11. Cookie统一管理"""
+    print_header("🍪 11. Cookie统一管理")
+    
+    try:
+        from archiver.utils.cookie_manager import (
+            CookieManager, 
+            get_xiaohongshu_cookies
+        )
+        
+        print("   ✅ Cookie管理器导入成功")
+        
+        # 创建管理器
+        manager = CookieManager()
+        print("   ✅ CookieManager 初始化成功")
+        
+        # 检查XHS配置
+        config_path = Path("XHS-Downloader") / "Volume" / "settings.json"
+        if config_path.exists():
+            import json
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            has_cookie = bool(config.get('cookie'))
+            has_ua = bool(config.get('user_agent'))
+            
+            print(f"   {'✅' if has_cookie else '⚠️ '} 小红书Cookie: {'已配置' if has_cookie else '未配置'}")
+            print(f"   {'✅' if has_ua else '⚠️ '} User-Agent: {'已配置' if has_ua else '未配置'}")
+            
+            # 测试Cookie加载
+            cookies = get_xiaohongshu_cookies()
+            if cookies:
+                print(f"   ✅ Cookie加载成功 ({len(cookies)} 个字段)")
+                
+                # 检查关键字段
+                if 'web_session' in cookies:
+                    print("   ✅ 包含 web_session 字段")
+                else:
+                    print("   ⚠️  缺少 web_session 字段")
+            else:
+                print("   ⚠️  Cookie加载失败")
+        else:
+            print("   ⚠️  XHS-Downloader 配置不存在")
+            print("      运行 make config-xhs-cookie 配置")
+        
+        # 测试从XHS配置加载
+        xhs_cookies = manager.load_from_xhs_config()
+        if xhs_cookies:
+            print(f"   ✅ XHS配置加载功能正常")
+        else:
+            print(f"   ⚠️  XHS配置未设置（可选）")
+        
+    except Exception as e:
+        print(f"   ❌ Cookie管理检查失败: {e}")
+        return ['cookie-management']
+    
+    return []
+
+
+def check_archiver_integration():
+    """12. 归档集成测试"""
+    print_header("🔗 12. 归档集成测试")
+    
+    try:
+        # 测试自动Cookie加载
+        from archiver.utils.url_parser import detect_platform
+        from archiver.utils.cookie_manager import get_xiaohongshu_cookies
+        
+        # 平台检测
+        xhs_url = "https://www.xiaohongshu.com/explore/abc123"
+        platform = detect_platform(xhs_url)
+        print(f"   ✅ URL平台检测: {platform}")
+        
+        # Cookie可用性
+        if platform == "xiaohongshu":
+            cookies = get_xiaohongshu_cookies()
+            if cookies:
+                print(f"   ✅ 小红书Cookie自动加载可用")
+            else:
+                print(f"   ⚠️  小红书Cookie未配置（需要时配置）")
+        
+        # 测试Markdown转换器
+        from archiver.core.markdown_converter import MarkdownConverter
+        converter = MarkdownConverter()
+        
+        test_html = "<p>测试<strong>内容</strong></p>"
+        markdown = converter.convert(
+            html=test_html,
+            title="测试",
+            url="https://example.com",
+            platform="test"
+        )
+        
+        if "title: 测试" in markdown and "测试" in markdown:
+            print("   ✅ Markdown转换器正常")
+        else:
+            print("   ❌ Markdown转换器异常")
+            return ['markdown-converter']
+        
+        # 检查文档
+        docs = [
+            "docs/ARCHIVER_GUIDE.md",
+            "docs/ARCHIVER_QUICKREF.md",
+            "docs/COOKIE_UNIFIED.md",
+            "archiver/README.md",
+        ]
+        
+        missing_docs = []
+        for doc in docs:
+            if Path(doc).exists():
+                print(f"   ✅ {doc}")
+            else:
+                print(f"   ❌ {doc} 缺失")
+                missing_docs.append(doc)
+        
+        if missing_docs:
+            return ['archiver-docs']
+        
+    except Exception as e:
+        print(f"   ❌ 归档集成测试失败: {e}")
+        return ['archiver-integration']
+    
+    return []
+
+
 def main():
     """主函数"""
     print("━" * 50)
@@ -279,6 +508,9 @@ def main():
     all_errors.extend(check_ffmpeg())
     all_errors.extend(check_api_config())
     all_errors.extend(check_disk_space())
+    all_errors.extend(check_archiver())
+    all_errors.extend(check_cookie_management())
+    all_errors.extend(check_archiver_integration())
     
     # 总结
     print("\n" + "━" * 50)
@@ -286,11 +518,43 @@ def main():
         print(f"⚠️  发现 {len(all_errors)} 个问题:")
         for err in all_errors:
             print(f"   • {err}")
+        print("\n💡 建议:")
+        
+        if 'archiver' in all_errors or any('archiver' in e for e in all_errors):
+            print("   • 网页归档功能问题:")
+            print("     - 安装依赖: make install")
+            print("     - 安装浏览器: playwright install chromium")
+            print("     - 运行测试: make test-archiver")
+        
+        if 'cookie-management' in all_errors:
+            print("   • Cookie管理问题:")
+            print("     - 配置小红书Cookie: make config-xhs-cookie")
+            print("     - 测试Cookie: python scripts/test_cookie_unified.py")
+        
+        if 'ffmpeg' in all_errors:
+            print("   • FFmpeg问题:")
+            print("     - 安装: brew install ffmpeg")
+        
+        if 'database' in all_errors:
+            print("   • 数据库问题:")
+            print("     - 初始化: make db-init")
+        
         print("\n请修复以上问题后重新运行 make selftest")
         print("━" * 50)
         return 1
     else:
         print("✅ 所有检查通过！系统运行正常")
+        print("\n🎯 功能状态:")
+        print("   ✅ 视频处理系统")
+        print("   ✅ 视频下载系统")
+        print("   ✅ 数据库与搜索")
+        print("   ✅ 网页归档系统")
+        print("   ✅ Cookie统一管理")
+        print("\n💡 快速开始:")
+        print("   • 处理视频: make run VIDEO=video.mp4")
+        print("   • 下载视频: make download-run URL=视频链接")
+        print("   • 归档网页: make archive URL=网页链接")
+        print("   • 搜索内容: make search Q='关键词'")
         print("━" * 50)
         return 0
 

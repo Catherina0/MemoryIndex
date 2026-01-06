@@ -44,8 +44,15 @@ temp/
 temp_*/
 *.tmp
 
-# Documentation (文档不上传)
-docs/
+# Archiver outputs (网页归档输出)
+archived/
+test_archived/
+
+# DrissionPage browser data (浏览器数据 - 包含登录态)
+browser_data/
+
+# Documentation (保留部分重要文档)
+# docs/ - 已改为选择性上传，见下方白名单
 
 # Database (数据库文件不上传)
 storage/database/
@@ -112,4 +119,15 @@ ehthumbs.db
 *~
 *.orig
 
-docs/
+# ===========================================
+# 文档白名单 (重要文档需要上传)
+# ===========================================
+# 默认忽略所有文档（避免误传敏感内容）
+docs/*
+
+# 临时测试文档不上传
+docs/*_TEST.md
+docs/*_DRAFT.md
+docs/*_WIP.md
+docs/.*.md
+docs/QUICKSTART.md

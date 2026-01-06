@@ -65,6 +65,7 @@ help:
 	@echo "  make download-run URL=视频链接         下载后自动处理（音频模式）"
 	@echo "  make download-ocr URL=视频链接         下载后自动处理（完整模式）"
 	@echo "  make config-xhs-cookie                 配置小红书 Cookie"
+	@echo "  make config-zhihu-cookie               配置知乎 Cookie"
 	@echo "  💡 自动检测已下载视频，使用 FORCE=1 强制重新下载"
 	@echo ""
 	@echo "💡 URL 输入支持："
@@ -103,6 +104,19 @@ help:
 	@echo "🔍 Whoosh 中文搜索（jieba分词）："
 	@echo "  make whoosh-rebuild         从数据库重建搜索索引"
 	@echo "  make whoosh-search Q=\"美国\" 使用 Whoosh 搜索（中文优化）"
+	@echo ""
+	@echo "🌐 网页归档（Web Archiver）："
+	@echo "  make archive URL=网址               归档单个网页 (Crawl4AI)"
+	@echo "  make drission-archive URL=网址      归档单个网页 (DrissionPage)"
+	@echo "  make archive-batch FILE=urls.txt    批量归档"
+	@echo "  make login                          浏览器登录辅助"
+	@echo "  make reset-browser                  重置浏览器数据"
+	@echo "  make test-archiver                  测试归档功能"
+	@echo ""
+	@echo "💡 归档示例："
+	@echo "  make archive URL=https://www.zhihu.com/question/123"
+	@echo "  make archive URL=https://www.xiaohongshu.com/explore/123"
+	@echo "  make archive URL=\"https://www.bilibili.com/read/cv123\""
 	@echo ""
 	@echo "💡 搜索示例："
 	@echo "  make search Q=\"机器学习\"                            # 模糊搜索（默认）"
@@ -424,6 +438,14 @@ config-xhs-cookie: ensure-venv
 	@echo ""
 	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) scripts/configure_xhs_cookie.py
 
+# 配置知乎 Cookie
+config-zhihu-cookie: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🍪 配置知乎 Cookie"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) scripts/configure_zhihu_cookie.py
+
 # ============================================
 # 数据库相关命令（新增）
 # ============================================
@@ -604,6 +626,82 @@ ds: db-status
 
 # 快捷命令：列出视频
 ls: db-list
+
+# ============================================
+# 网页归档功能 (Web Archiver)
+# ============================================
+
+# 归档单个URL
+archive: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误: 请提供URL参数"; \
+		echo "用法: make archive URL=网址"; \
+		exit 1; \
+	fi
+	@echo "🌐 归档网页: $(URL)"
+	@$(PYTHON) -m cli.archive_cli "$(URL)" $(if $(OUTPUT),-o $(OUTPUT))
+
+# 批量归档（从文件读取URL列表）
+archive-batch: ensure-venv
+	@if [ -z "$(FILE)" ]; then \
+		echo "❌ 错误: 请提供URL列表文件"; \
+		echo "用法: make archive-batch FILE=urls.txt"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(FILE)" ]; then \
+		echo "❌ 错误: 文件不存在: $(FILE)"; \
+		exit 1; \
+	fi
+	@echo "🌐 批量归档 $(FILE) 中的URL..."
+	@$(PYTHON) -m cli.archive_cli -f "$(FILE)" $(if $(OUTPUT),-o $(OUTPUT))
+
+# 检测URL平台
+archive-detect: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误: 请提供URL参数"; \
+		echo "用法: make archive-detect URL=网址"; \
+		exit 1; \
+	fi
+	@$(PYTHON) -m cli.archive_cli --detect "$(URL)"
+
+# 测试归档功能
+test-archiver: ensure-venv
+	@echo "🧪 测试网页归档功能..."
+	@$(PYTHON) tests/test_archiver.py
+
+# DrissionPage 归档（真实浏览器）
+drission-archive: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误: 请提供URL参数"; \
+		echo "用法: make drission-archive URL=网址"; \
+		exit 1; \
+	fi
+	@echo "🌐 使用 DrissionPage 归档: $(URL)"
+	@$(PYTHON) -c "from archiver.core.drission_crawler import DrissionArchiver; \
+		with DrissionArchiver(output_dir='archived', headless=True, verbose=True) as archiver: \
+			result = archiver.archive('$(URL)'); \
+			if result['success']: \
+				print(f\"\\n✓ 归档成功: {result['output_path']}\"); \
+				print(f\"  图片: {result.get('images_downloaded', 0)}/{result.get('images_total', 0)}\"); \
+				print(f\"  内容: {result['content_length']} 字符\"); \
+			else: \
+				print(f\"\\n✗ 归档失败: {result.get('error', 'Unknown error')}\")"
+
+# 浏览器登录辅助（保存登录态）
+login: ensure-venv
+	@echo "🔐 启动浏览器登录辅助..."
+	@$(PYTHON) scripts/login_helper.py
+
+# 重置浏览器数据（清空登录态）
+reset-browser:
+	@echo "🔄 重置浏览器数据..."
+	@$(PYTHON) scripts/reset_browser.py
+
+# 清理归档输出
+clean-archived:
+	@echo "🗑️  清理归档输出..."
+	@rm -rf archived/ test_archived/
+	@echo "✅ 清理完成"
 
 # 测试 OCR_WORKERS 参数传递
 test-workers:
