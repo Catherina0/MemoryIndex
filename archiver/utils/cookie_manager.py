@@ -141,20 +141,47 @@ class CookieManager:
     
     def load_from_xhs_config(self) -> Optional[Dict[str, str]]:
         """
-        从小红书下载器配置中加载Cookie（复用视频下载模块的配置）
+        从小红书配置中加载Cookie
+        优先使用统一位置 archiver/config/xiaohongshu_cookie.json
+        备用位置 XHS-Downloader/Volume/settings.json
         
         Returns:
             Cookie字典，失败返回None
         """
         try:
-            # XHS-Downloader 配置文件路径
-            config_path = Path(__file__).parent.parent.parent / "XHS-Downloader" / "Volume" / "settings.json"
+            # 1. 优先：统一位置（推荐）
+            unified_config_path = Path(__file__).parent.parent / "config" / "xiaohongshu_cookie.json"
             
-            if not config_path.exists():
-                logger.warning(f"XHS-Downloader config not found: {config_path}")
+            if unified_config_path.exists():
+                try:
+                    with open(unified_config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    
+                    cookie_str = config.get('cookie', '')
+                    if cookie_str:
+                        # 将Cookie字符串转换为字典
+                        cookies_dict = {}
+                        for item in cookie_str.split(';'):
+                            item = item.strip()
+                            if '=' in item:
+                                key, value = item.split('=', 1)
+                                cookies_dict[key.strip()] = value.strip()
+                        
+                        logger.info(f"Loaded {len(cookies_dict)} cookies from unified config (archiver/config)")
+                        return cookies_dict
+                except Exception as e:
+                    logger.warning(f"Failed to load from unified config: {e}")
+            
+            # 2. 备用：XHS-Downloader 配置文件路径（兼容旧版本）
+            xhs_config_path = Path(__file__).parent.parent.parent / "XHS-Downloader" / "Volume" / "settings.json"
+            
+            if not xhs_config_path.exists():
+                logger.warning("No XHS cookie config found in both locations")
+                logger.info(f"  - Unified: {unified_config_path}")
+                logger.info(f"  - Legacy: {xhs_config_path}")
                 return None
             
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(xhs_config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
             cookie_str = config.get('cookie', '')
@@ -170,7 +197,8 @@ class CookieManager:
                     key, value = item.split('=', 1)
                     cookies_dict[key.strip()] = value.strip()
             
-            logger.info(f"Loaded {len(cookies_dict)} cookies from XHS-Downloader config")
+            logger.info(f"Loaded {len(cookies_dict)} cookies from XHS-Downloader config (legacy)")
+            logger.warning("💡 建议运行 'make export-cookies' 迁移到统一位置")
             return cookies_dict
             
         except Exception as e:

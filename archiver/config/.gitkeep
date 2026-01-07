@@ -1,0 +1,51 @@
+# Cookie 配置文件目录
+
+该目录用于存储各平台的 Cookie 配置文件。
+
+## 🎯 重要说明
+
+**XHS-Downloader 和 archiver 共用小红书 Cookie 配置**  
+只需维护 `xiaohongshu_cookie.json` 一个文件即可。
+
+## 配置格式
+
+所有 Cookie 配置文件应遵循统一格式：
+
+```json
+{
+  "cookie": "cookie字符串",
+  "user_agent": "用户代理（可选）",
+  "source": "来源标识（可选）"
+}
+```
+
+## 配置文件命名
+
+- `xiaohongshu_cookie.json` - 小红书（XHS-Downloader 和 archiver 共用）
+- `zhihu_cookie.json` - 知乎
+- `bilibili_cookie.json` - B站
+- `twitter_cookie.json` - 推特/X
+- `reddit_cookie.json` - Reddit
+
+## 获取 Cookie
+
+1. **小红书**：
+   - 方式1: `make config-xhs-cookie` 配置到旧位置，然后运行 `make export-cookies` 迁移
+   - 方式2: 直接手动创建 `xiaohongshu_cookie.json`（推荐）
+   
+2. **知乎**：`make config-zhihu-cookie`
+3. **推特**：`python scripts/login_twitter.py`
+4. **其他平台**：手动创建 JSON 文件
+
+## 优先级
+
+系统会按以下优先级查找配置：
+1. 统一位置：`archiver/config/*.json`（优先）
+2. 旧位置：`XHS-Downloader/Volume/settings.json`（兼容）
+3. 浏览器：`browser_data/Default/Cookies`（备用）
+
+建议使用统一位置，便于管理和维护。
+
+## 安全提示
+
+⚠️ Cookie 文件包含敏感信息，已被 `.gitignore` 忽略，不会提交到 Git 仓库。

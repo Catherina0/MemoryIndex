@@ -6,6 +6,7 @@
 
 import sys
 import subprocess
+import json
 from pathlib import Path
 
 # 添加项目根目录到路径
@@ -58,7 +59,7 @@ def check_dependencies():
     errors = []
     
     # 必需依赖
-    required = ['groq', 'paddleocr', 'tabulate']
+    required = ['groq', 'tabulate']
     for dep in required:
         try:
             __import__(dep)
@@ -66,6 +67,33 @@ def check_dependencies():
         except ImportError:
             print(f"   ❌ {dep} 未安装")
             errors.append(dep)
+    
+    # OCR 引擎（至少需要一个）
+    ocr_available = False
+    try:
+        import paddleocr
+        print("   ✅ paddleocr（可选 OCR 引擎）")
+        ocr_available = True
+    except ImportError:
+        print("   ⚠️  paddleocr 未安装（可选，跨平台 OCR）")
+    
+    # Vision OCR (macOS 系统自带)
+    import platform
+    if platform.system() == 'Darwin':
+        try:
+            result = subprocess.run(['swift', '--version'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                print("   ✅ Apple Vision OCR（系统自带）")
+                ocr_available = True
+            else:
+                print("   ⚠️  Swift 不可用")
+        except:
+            print("   ⚠️  Swift 不可用")
+    
+    if not ocr_available:
+        print("   ⚠️  未找到可用的 OCR 引擎")
+        print("      macOS: 应自动使用 Vision OCR")
+        print("      其他平台: 运行 'make install-paddle-ocr'")
     
     # dotenv 特殊处理
     try:
@@ -234,6 +262,122 @@ def check_ffmpeg():
     return errors
 
 
+def check_ocr_engines():
+    """7.5 OCR 引擎检查"""
+    print_header("🔍 7.5. OCR 引擎检查")
+    
+    import platform
+    errors = []
+    ocr_engines = []
+    
+    # 1. 检查 Vision OCR（macOS）
+    if platform.system() == 'Darwin':
+        print("   🍎 Apple Vision OCR (macOS 原生):")
+        
+        # 检查 macOS 版本
+        try:
+            mac_ver = platform.mac_ver()[0]
+            major_ver = int(mac_ver.split('.')[0]) if mac_ver else 0
+            if major_ver >= 10:
+                print(f"      ✅ macOS 版本: {mac_ver}")
+            else:
+                print(f"      ❌ macOS 版本过低: {mac_ver} (需要 10.15+)")
+                errors.append('vision-ocr-version')
+        except:
+            print("      ⚠️  无法检测 macOS 版本")
+        
+        # 检查 Swift
+        try:
+            result = subprocess.run(
+                ['swift', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                swift_ver = result.stdout.split('\n')[0]
+                print(f"      ✅ Swift: {swift_ver[:50]}")
+                
+                # 检查 Swift 脚本
+                swift_script = Path('ocr/vision_ocr.swift')
+                if swift_script.exists():
+                    print(f"      ✅ Swift OCR 脚本: {swift_script}")
+                    ocr_engines.append('vision')
+                else:
+                    print(f"      ❌ Swift OCR 脚本不存在: {swift_script}")
+                    errors.append('vision-ocr-script')
+            else:
+                print("      ❌ Swift 不可用")
+                errors.append('vision-ocr-swift')
+        except FileNotFoundError:
+            print("      ❌ Swift 未安装（系统应自带）")
+            errors.append('vision-ocr-swift')
+        except Exception as e:
+            print(f"      ⚠️  Swift 检查失败: {e}")
+        
+        # 测试 Vision OCR Python 接口
+        try:
+            from ocr.ocr_vision import init_vision_ocr
+            print("      ✅ Vision OCR Python 模块")
+        except ImportError as e:
+            print(f"      ⚠️  Vision OCR Python 模块导入失败: {e}")
+    else:
+        print(f"   ⚠️  非 macOS 系统 ({platform.system()})，Vision OCR 不可用")
+    
+    print()
+    
+    # 2. 检查 PaddleOCR（跨平台）
+    print("   🐼 PaddleOCR (跨平台):")
+    try:
+        import paddleocr
+        print("      ✅ PaddleOCR 已安装")
+        
+        # 检查 Paddle
+        try:
+            import paddle
+            paddle_ver = paddle.__version__
+            print(f"      ✅ PaddlePaddle: {paddle_ver}")
+            
+            # 检查 GPU 支持
+            if paddle.is_compiled_with_cuda():
+                print("      ✅ GPU 支持: 可用")
+            else:
+                print("      ℹ️  GPU 支持: 不可用（使用 CPU）")
+            
+            ocr_engines.append('paddle')
+            
+        except Exception as e:
+            print(f"      ⚠️  Paddle 检查失败: {e}")
+        
+        # 检查 OCR 工具模块
+        try:
+            from ocr.ocr_utils import init_ocr
+            print("      ✅ OCR 工具模块")
+        except ImportError as e:
+            print(f"      ⚠️  OCR 工具模块导入失败: {e}")
+            
+    except ImportError:
+        print("      ⚠️  PaddleOCR 未安装")
+        print("      安装方法: make install-paddle-ocr")
+    
+    print()
+    
+    # 3. 总结
+    if ocr_engines:
+        print(f"   ✅ 可用的 OCR 引擎: {', '.join(ocr_engines)}")
+        if 'vision' in ocr_engines:
+            print("   💡 推荐: 使用 Vision OCR (macOS 原生，速度快)")
+    else:
+        print("   ❌ 未找到可用的 OCR 引擎")
+        if platform.system() == 'Darwin':
+            print("   💡 macOS 用户: 应自动使用 Vision OCR，请检查 Swift 环境")
+        else:
+            print("   💡 请安装 PaddleOCR: make install-paddle-ocr")
+        errors.append('no-ocr-engine')
+    
+    return errors
+
+
 def check_api_config():
     """8. API 配置"""
     print_header("🔑 8. API 配置检查")
@@ -369,6 +513,9 @@ def check_cookie_management():
     """11. Cookie统一管理"""
     print_header("🍪 11. Cookie统一管理")
     
+    errors = []
+    configured_platforms = []
+    
     try:
         from archiver.utils.cookie_manager import (
             CookieManager, 
@@ -380,48 +527,259 @@ def check_cookie_management():
         # 创建管理器
         manager = CookieManager()
         print("   ✅ CookieManager 初始化成功")
+        print()
         
-        # 检查XHS配置
-        config_path = Path("XHS-Downloader") / "Volume" / "settings.json"
-        if config_path.exists():
-            import json
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            has_cookie = bool(config.get('cookie'))
-            has_ua = bool(config.get('user_agent'))
-            
-            print(f"   {'✅' if has_cookie else '⚠️ '} 小红书Cookie: {'已配置' if has_cookie else '未配置'}")
-            print(f"   {'✅' if has_ua else '⚠️ '} User-Agent: {'已配置' if has_ua else '未配置'}")
-            
-            # 测试Cookie加载
-            cookies = get_xiaohongshu_cookies()
-            if cookies:
-                print(f"   ✅ Cookie加载成功 ({len(cookies)} 个字段)")
+        # ========== 检查各平台 Cookie 配置状态 ==========
+        print("   📋 平台 Cookie 配置状态:")
+        print()
+        
+        # 1. 小红书 (XHS-Downloader)
+        print("   🔴 小红书 (XiaohongShu):")
+        
+        # 检查统一位置（优先）
+        unified_config = Path("archiver") / "config" / "xiaohongshu_cookie.json"
+        xhs_config = Path("XHS-Downloader") / "Volume" / "settings.json"
+        
+        has_cookie = False
+        cookie_source = None
+        
+        # 优先检查统一位置
+        if unified_config.exists():
+            try:
+                with open(unified_config, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
                 
-                # 检查关键字段
-                if 'web_session' in cookies:
-                    print("   ✅ 包含 web_session 字段")
-                else:
-                    print("   ⚠️  缺少 web_session 字段")
-            else:
-                print("   ⚠️  Cookie加载失败")
-        else:
-            print("   ⚠️  XHS-Downloader 配置不存在")
-            print("      运行 make config-xhs-cookie 配置")
+                cookie = config.get('cookie', '')
+                if cookie:
+                    has_cookie = True
+                    cookie_source = "unified"
+                    print(f"      ✅ Cookie: 已配置 (统一位置)")
+                    print(f"         📁 archiver/config/xiaohongshu_cookie.json")
+                    print(f"         📊 {len(cookie)} 字符")
+                    configured_platforms.append('xiaohongshu')
+                    
+                    # 测试Cookie加载
+                    cookies = get_xiaohongshu_cookies()
+                    if cookies:
+                        cookie_count = len(cookies)
+                        print(f"      ✅ 加载成功: {cookie_count} 个字段")
+                        
+                        # 检查关键字段
+                        if 'web_session' in cookies:
+                            print("      ✅ web_session: 已包含")
+                        else:
+                            print("      ⚠️  web_session: 缺失")
+                    else:
+                        print("      ⚠️  Cookie加载失败")
+            except Exception as e:
+                print(f"      ⚠️  统一位置配置读取失败: {e}")
         
-        # 测试从XHS配置加载
-        xhs_cookies = manager.load_from_xhs_config()
-        if xhs_cookies:
-            print(f"   ✅ XHS配置加载功能正常")
+        # 检查旧位置（XHS-Downloader）
+        if not has_cookie and xhs_config.exists():
+            try:
+                with open(xhs_config, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                cookie = config.get('cookie', '')
+                if cookie:
+                    has_cookie = True
+                    cookie_source = "legacy"
+                    print(f"      ⚠️  Cookie: 使用旧位置（建议迁移）")
+                    print(f"         📁 XHS-Downloader/Volume/settings.json")
+                    print(f"         📊 {len(cookie)} 字符")
+                    print(f"         💡 运行 'make export-cookies' 迁移到统一位置")
+                    configured_platforms.append('xiaohongshu')
+                    
+                    # 测试Cookie加载
+                    cookies = get_xiaohongshu_cookies()
+                    if cookies:
+                        cookie_count = len(cookies)
+                        print(f"      ✅ 加载成功: {cookie_count} 个字段")
+            except Exception as e:
+                print(f"      ⚠️  旧位置配置读取失败: {e}")
+        
+        if not has_cookie:
+            print("      ⚠️  Cookie: 未配置")
+            print("      💡 配置方法:")
+            print("         1. make config-xhs-cookie (传统方式)")
+            print("         2. 手动创建 archiver/config/xiaohongshu_cookie.json (推荐)")
+        
+        print()
+        
+        # 2. 知乎 (Zhihu)
+        print("   🔵 知乎 (Zhihu):")
+        zhihu_config = Path("archiver") / "config" / "zhihu_cookie.json"
+        if zhihu_config.exists():
+            try:
+                with open(zhihu_config, 'r', encoding='utf-8') as f:
+                    zhihu_data = json.load(f)
+                    zhihu_cookie = zhihu_data.get('cookie', '')
+                if zhihu_cookie and len(zhihu_cookie) > 50:  # 检查 cookie 字符串
+                    print(f"      ✅ Cookie: 已配置 ({len(zhihu_cookie)} 字符)")
+                    configured_platforms.append('zhihu')
+                else:
+                    print("      ⚠️  Cookie: 已创建但为空")
+                    print("      💡 配置方法: make config-zhihu-cookie")
+            except Exception as e:
+                print(f"      ⚠️  配置读取失败: {e}")
         else:
-            print(f"   ⚠️  XHS配置未设置（可选）")
+            print("      ℹ️  Cookie: 未配置（可选，无需登录可访问部分内容）")
+            print("      💡 配置方法: make config-zhihu-cookie")
+        print()
+        
+        # 3. B站 (Bilibili)
+        print("   🩷 B站 (Bilibili):")
+        bilibili_config = Path("archiver") / "config" / "bilibili_cookies.json"
+        if bilibili_config.exists():
+            try:
+                with open(bilibili_config, 'r', encoding='utf-8') as f:
+                    bilibili_cookies = json.load(f)
+                if bilibili_cookies and len(bilibili_cookies) > 0:
+                    print(f"      ✅ Cookie: 已配置 ({len(bilibili_cookies)} 个字段)")
+                    configured_platforms.append('bilibili')
+                else:
+                    print("      ⚠️  Cookie: 已创建但为空")
+            except Exception as e:
+                print(f"      ⚠️  配置读取失败: {e}")
+        else:
+            print("      ℹ️  Cookie: 未配置（可选，无需登录可访问部分内容）")
+            print("      💡 通过浏览器扩展或手动配置")
+        print()
+        
+        # 4. Reddit
+        print("   🟠 Reddit:")
+        reddit_config = Path("archiver") / "config" / "reddit_cookies.json"
+        if reddit_config.exists():
+            try:
+                with open(reddit_config, 'r', encoding='utf-8') as f:
+                    reddit_cookies = json.load(f)
+                if reddit_cookies and len(reddit_cookies) > 0:
+                    print(f"      ✅ Cookie: 已配置 ({len(reddit_cookies)} 个字段)")
+                    configured_platforms.append('reddit')
+                else:
+                    print("      ⚠️  Cookie: 已创建但为空")
+            except Exception as e:
+                print(f"      ⚠️  配置读取失败: {e}")
+        else:
+            print("      ℹ️  Cookie: 未配置（可选，无需登录可访问公开内容）")
+        print()
+        
+        # 5. 推特/X (Twitter)
+        print("   🐦 推特 (Twitter/X):")
+        twitter_config = Path("archiver") / "config" / "twitter_cookie.json"
+        twitter_browser_data = Path("browser_data") / "Default" / "Cookies"
+        
+        has_json_config = False
+        has_browser_data = False
+        
+        # 检查 JSON 配置
+        if twitter_config.exists():
+            try:
+                with open(twitter_config, 'r', encoding='utf-8') as f:
+                    twitter_data = json.load(f)
+                    twitter_cookie = twitter_data.get('cookie', '')
+                if twitter_cookie and len(twitter_cookie) > 50:
+                    print(f"      ✅ Cookie(JSON): 已配置 ({len(twitter_cookie)} 字符)")
+                    configured_platforms.append('twitter')
+                    has_json_config = True
+                else:
+                    print("      ⚠️  Cookie(JSON): 已创建但为空")
+            except Exception as e:
+                print(f"      ⚠️  Cookie(JSON): 读取失败 - {e}")
+        
+        # 检查 DrissionPage browser_data
+        if twitter_browser_data.exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(twitter_browser_data))
+                cursor = conn.cursor()
+                # 查询推特相关的 cookie
+                cursor.execute("SELECT COUNT(*) FROM cookies WHERE host_key LIKE '%twitter.com%' OR host_key LIKE '%x.com%'")
+                count = cursor.fetchone()[0]
+                conn.close()
+                
+                if count > 0:
+                    print(f"      ✅ Cookie(DrissionPage): 已配置 ({count} 条)")
+                    if not has_json_config:
+                        configured_platforms.append('twitter')
+                    has_browser_data = True
+                else:
+                    print(f"      ℹ️  Cookie(DrissionPage): 未找到推特相关 cookie")
+            except Exception as e:
+                print(f"      ℹ️  Cookie(DrissionPage): 检查失败")
+        
+        # 如果两种都没有
+        if not has_json_config and not has_browser_data:
+            print("      ℹ️  Cookie: 未配置（推荐配置以访问完整内容）")
+            print("      💡 方法1: python scripts/login_twitter.py (DrissionPage)")
+            print("      💡 方法2: 手动创建 archiver/config/twitter_cookie.json")
+        elif has_browser_data and not has_json_config:
+            print("      💡 可选: 导出为 JSON 格式以提高兼容性")
+        
+        print()
+        
+        # 扫描其他未知的 cookie 配置
+        print("   🔍 扫描其他 Cookie 配置:")
+        config_dir = Path("archiver") / "config"
+        if config_dir.exists():
+            all_cookie_files = list(config_dir.glob("*cookie*.json"))
+            known_files = {
+                Path("archiver") / "config" / "zhihu_cookie.json",
+                Path("archiver") / "config" / "bilibili_cookies.json",
+                Path("archiver") / "config" / "bilibili_cookie.json",
+                Path("archiver") / "config" / "reddit_cookies.json",
+                Path("archiver") / "config" / "reddit_cookie.json",
+                Path("archiver") / "config" / "twitter_cookie.json",
+                Path("archiver") / "config" / "twitter_cookies.json",
+            }
+            unknown_files = [f for f in all_cookie_files if f not in known_files]
+            
+            if unknown_files:
+                for unknown_file in unknown_files:
+                    print(f"      ⚠️  发现其他配置: {unknown_file.name}")
+                    try:
+                        with open(unknown_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            cookie = data.get('cookie', '')
+                            if cookie and len(cookie) > 50:
+                                print(f"         ✅ 已配置 ({len(cookie)} 字符)")
+                            else:
+                                print(f"         ℹ️  未配置或为空")
+                    except:
+                        pass
+            else:
+                print(f"      ✅ 无其他配置文件")
+        print()
+        
+        # 总结
+        print("   " + "─" * 50)
+        if configured_platforms:
+            platform_map = {
+                'xiaohongshu': '小红书',
+                'zhihu': '知乎', 
+                'bilibili': 'B站',
+                'reddit': 'Reddit',
+                'twitter': '推特'
+            }
+            platform_names = [platform_map.get(p, p) for p in configured_platforms]
+            print(f"   ✅ 已配置平台 ({len(configured_platforms)}): {', '.join(platform_names)}")
+        else:
+            print("   ⚠️  尚未配置任何平台的 Cookie")
+            print("   💡 小红书等平台需要 Cookie 才能正常访问")
+        
+        print()
+        print("   💡 配置优先级:")
+        print("      🔴 必需: 小红书（反爬虫严格）- make config-xhs-cookie")
+        print("      🟡 推荐: 知乎、推特（增强访问能力）- make config-zhihu-cookie")
+        print("      🟢 可选: B站、Reddit（公开内容无需登录）")
         
     except Exception as e:
         print(f"   ❌ Cookie管理检查失败: {e}")
-        return ['cookie-management']
+        import traceback
+        traceback.print_exc()
+        errors.append('cookie-management')
     
-    return []
+    return errors
 
 
 def check_archiver_integration():
@@ -506,6 +864,7 @@ def main():
     all_errors.extend(check_search())
     all_errors.extend(check_downloader())
     all_errors.extend(check_ffmpeg())
+    all_errors.extend(check_ocr_engines())  # 新增 OCR 检查
     all_errors.extend(check_api_config())
     all_errors.extend(check_disk_space())
     all_errors.extend(check_archiver())
@@ -534,6 +893,12 @@ def main():
         if 'ffmpeg' in all_errors:
             print("   • FFmpeg问题:")
             print("     - 安装: brew install ffmpeg")
+        
+        if any('ocr' in e for e in all_errors):
+            print("   • OCR 引擎问题:")
+            print("     - macOS: 检查 Swift 环境 (swift --version)")
+            print("     - 跨平台: 安装 PaddleOCR (make install-paddle-ocr)")
+            print("     - 测试 Vision OCR: make test-vision-ocr")
         
         if 'database' in all_errors:
             print("   • 数据库问题:")

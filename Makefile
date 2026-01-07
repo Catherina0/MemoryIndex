@@ -47,17 +47,26 @@ help:
 	@echo "  make run VIDEO=视频路径   音频转文字 + AI总结（快速模式）"
 	@echo "  make ocr VIDEO=视频路径   音频 + OCR + AI总结（完整模式）"
 	@echo ""
-	@echo "🤖 OCR 模型选择（可选参数）："
+	@echo "🤖 OCR 引擎选择："
+	@echo "  OCR_ENGINE=vision|paddle  OCR 引擎（默认 vision，macOS 推荐）"
+	@echo "  💡 Vision OCR: macOS 原生，速度快，无需下载模型"
+	@echo "  💡 PaddleOCR: 跨平台，需安装依赖（make install-paddle-ocr）"
+	@echo ""
+	@echo "🤖 PaddleOCR 模型选择（OCR_ENGINE=paddle 时可用）："
 	@echo "  DET_MODEL=mobile|server   检测模型（默认 mobile=快速）"
 	@echo "  REC_MODEL=mobile|server   识别模型（默认 mobile=快速）"
 	@echo "  USE_GPU=1                 启用 GPU 加速"
 	@echo "  OCR_WORKERS=N             并行进程数（1-10，默认=auto，即CPU核心/2）"
 	@echo ""
 	@echo "🔧 维护命令："
-	@echo "  make install            安装/更新依赖"
+	@echo "  make install            安装/更新依赖（默认使用 Vision OCR）"
+	@echo "  make install-paddle-ocr 安装 PaddleOCR（可选，跨平台支持）"
 	@echo "  make install-chromium   安装独立 Chromium 浏览器"
 	@echo "  make check              检查环境配置"
 	@echo "  make selftest           🆕 全功能自检和测试"
+	@echo "  make export-cookies     📥 导出 Cookie 到统一位置"
+	@echo "  make list-cookies       📋 列出已配置的 Cookie"
+	@echo "  make cleanup-project    🧹 清理临时和debug文件"
 	@echo "  make clean              清理输出文件"
 	@echo "  make clean-all          清理所有（含虚拟环境）"
 	@echo ""
@@ -110,6 +119,10 @@ help:
 	@echo "  make archive URL=网址               归档网页（无头模式，后台运行）"
 	@echo "  make archive-visible URL=网址       归档网页（显示浏览器，供调试）"
 	@echo "  make archive-batch FILE=urls.txt    批量归档"
+	@echo "  📊 新增：归档 + 数据库集成"
+	@echo "  make archive-run URL=网址           归档并生成AI报告（存入数据库）"
+	@echo "  make archive-ocr URL=网址           归档+OCR识别+AI报告"
+	@echo "  make archive-run-visible URL=网址   可视化调试模式"
 	@echo "  make login                          浏览器登录辅助"
 	@echo "  make config-drission-cookie         手动配置 Cookie（备选）"
 	@echo "  make reset-browser                  重置浏览器数据"
@@ -117,8 +130,8 @@ help:
 	@echo ""
 	@echo "💡 归档示例："
 	@echo "  make archive URL=https://www.zhihu.com/question/123"
-	@echo "  make archive URL=https://www.xiaohongshu.com/explore/123"
-	@echo "  make archive URL=\"https://www.bilibili.com/read/cv123\""
+	@echo "  make archive-run URL=https://www.xiaohongshu.com/explore/123"
+	@echo "  make archive-ocr URL=\"https://www.bilibili.com/read/cv123\""
 	@echo "  make archive-visible URL=...  # 调试模式：显示浏览器界面"
 	@echo ""
 	@echo ""
@@ -182,11 +195,22 @@ setup: ensure-venv
 	@echo "📝 下一步：编辑 .env 文件填入 API Key"
 	@echo "   nano .env"
 
-# 安装/更新依赖
+# 安装/更新依赖（默认不包含 PaddleOCR）
 install: ensure-venv
 	@echo "📦 安装依赖..."
 	@$(PIP) install -r requirements.txt
 	@echo "✅ 依赖安装完成"
+	@echo ""
+	@echo "💡 提示："
+	@echo "  • macOS 用户：默认使用 Vision OCR（系统自带，零配置）"
+	@echo "  • 跨平台支持：运行 'make install-paddle-ocr' 安装 PaddleOCR"
+
+# 安装 PaddleOCR（可选）
+install-paddle-ocr: ensure-venv
+	@echo "📦 安装 PaddleOCR 及相关依赖..."
+	@$(PIP) install paddlepaddle>=3.0.0 paddleocr>=2.7.0 opencv-python
+	@echo "✅ PaddleOCR 安装完成"
+	@echo "💡 使用方法：make ocr VIDEO=xxx.mp4 OCR_ENGINE=paddle"
 
 # 运行环境测试
 test: ensure-venv
@@ -196,6 +220,37 @@ test: ensure-venv
 # 全功能自检和测试
 selftest: ensure-venv
 	@$(PYTHON) scripts/selftest.py
+
+# Cookie 统一管理
+export-cookies: ensure-venv
+	@echo "📥 导出 Cookie 到统一位置..."
+	@$(PYTHON) scripts/export_cookies.py
+
+list-cookies: ensure-venv
+	@echo "📋 已配置的 Cookie:"
+	@$(PYTHON) -c "from pathlib import Path; import json; [print(f'  ✅ {f.stem.replace(\"_cookie\", \"\")}: {len(json.load(open(f)).get(\"cookie\", \"\"))} 字符') for f in sorted(Path('archiver/config').glob('*cookie*.json')) if Path(f).exists() and json.load(open(f)).get('cookie')]" 2>/dev/null || echo "  ℹ️  未找到已配置的 Cookie"
+
+cleanup-project:
+	@echo "🧹 清理项目临时文件..."
+	@$(PYTHON) scripts/cleanup_project.py --yes
+
+# 测试 Vision OCR（仅 macOS）
+test-vision-ocr: ensure-venv
+	@echo "🧪 测试 Apple Vision OCR..."
+	@$(PYTHON) tests/test_vision_ocr.py
+
+# 测试 Vision OCR（带图片）
+test-vision-ocr-image: ensure-venv
+	@if [ -z "$(IMAGE)" ]; then \
+		echo "❌ 错误：请提供图片路径"; \
+		echo "   用法: make test-vision-ocr-image IMAGE=图片路径"; \
+		echo ""; \
+		echo "💡 示例:"; \
+		echo "   make test-vision-ocr-image IMAGE=XHS-Downloader/static/screenshot/命令行模式截图CN1.png"; \
+		echo "   make test-vision-ocr-image IMAGE=test.png"; \
+		exit 1; \
+	fi
+	@$(PYTHON) tests/test_vision_ocr.py $(IMAGE)
 
 # 安装独立 Chromium（用于网页归档）
 install-chromium:
@@ -784,3 +839,64 @@ test-workers:
 	echo "Make 变量: OCR_WORKERS=$(OCR_WORKERS)"; \
 	echo "Shell 变量: WORKERS=$$WORKERS"; \
 	OCR_WORKERS=$$WORKERS $(PYTHON) tests/test_make_workers.py
+
+# ============================================
+# 网页归档 + 数据库集成 (新增)
+# ============================================
+
+# 归档网页并生成AI报告（类似 download-run）
+archive-run: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定网页URL"; \
+		echo "用法：make archive-run URL=https://example.com"; \
+		echo ""; \
+		echo "💡 示例："; \
+		echo "  make archive-run URL=https://www.zhihu.com/question/123/answer/456"; \
+		echo "  make archive-run URL=https://www.xiaohongshu.com/explore/abc123"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🌐 归档网页并生成报告"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "📝 流程: 归档 → AI分析 → 数据库存储"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)"
+
+# 归档网页并进行OCR识别（类似 download-ocr）
+archive-ocr: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定网页URL"; \
+		echo "用法：make archive-ocr URL=https://example.com"; \
+		echo ""; \
+		echo "💡 此功能将归档网页后对其中的图片进行OCR识别"; \
+		echo ""; \
+		echo "示例："; \
+		echo "  make archive-ocr URL=https://www.zhihu.com/question/123/answer/456"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🌐 归档网页并进行OCR识别"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "🔍 流程: 归档 → OCR识别 → AI分析 → 数据库存储"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --with-ocr
+
+# 归档网页（显示浏览器，供调试）
+archive-run-visible: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误：请指定网页URL"; \
+		echo "用法：make archive-run-visible URL=https://example.com"; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🌐 归档网页（可视化调试模式）"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🔗 URL: $(URL)"
+	@echo "👁️  浏览器窗口将可见"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --visible

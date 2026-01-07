@@ -3,11 +3,18 @@
 使用 Crawl4AI 实现跨平台网页内容提取
 """
 
+import os
 import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
 
 try:
     from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
@@ -265,6 +272,33 @@ class UniversalArchiver:
             if image_urls:
                 logger.info(f"  - 图片: {len(url_mapping)}/{len(image_urls)} 张")
             
+            # 使用 LLM 生成语义化的文件夹名称并重命名
+            logger.info(">> 使用 LLM 生成语义化文件夹名...")
+            new_folder_name = self._generate_folder_name_with_llm(
+                markdown_content=markdown_content,
+                title=page_title,
+                platform=platform_adapter.name,
+                url=url
+            )
+            
+            # 如果生成的名称与当前文件夹名不同，则重命名
+            current_folder_name = folder_path.name
+            if new_folder_name != folder_name:
+                new_folder_path = self.output_dir / new_folder_name
+                try:
+                    # 如果目标文件夹已存在，添加时间戳避免冲突
+                    if new_folder_path.exists():
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        new_folder_name = f"{new_folder_name}_{timestamp}"
+                        new_folder_path = self.output_dir / new_folder_name
+                    
+                    folder_path.rename(new_folder_path)
+                    folder_path = new_folder_path  # 更新引用
+                    md_path = folder_path / md_filename
+                    logger.info(f"✅ 文件夹已重命名为: {folder_path.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  文件夹重命名失败: {e}，保持原名称: {current_folder_name}")
+            
             return {
                 "success": True,
                 "url": url,
@@ -301,6 +335,111 @@ class UniversalArchiver:
             return f"{platform}_{timestamp}"
         
         return f"{platform}_{clean_title}"
+    
+    def _generate_folder_name_with_llm(self, markdown_content: str, title: str, platform: str, url: str) -> str:
+        """
+        使用 llama-3.1-8b-instant 模型根据网页内容生成简洁的文件夹名称
+        
+        Args:
+            markdown_content: 保存的 Markdown 内容
+            title: 原始页面标题
+            platform: 平台名称
+            url: 原始 URL
+        
+        Returns:
+            生成的文件夹名称（长度限制在50个字符以内）
+        """
+        if not GROQ_AVAILABLE:
+            logger.warning("Groq SDK 未安装，使用默认文件夹名")
+            return self._generate_folder_name(title, platform)
+        
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            logger.warning("GROQ_API_KEY 未设置，使用默认文件夹名")
+            return self._generate_folder_name(title, platform)
+        
+        try:
+            client = Groq(api_key=api_key)
+            
+            # 提取内容摘要（去掉前面的 metadata 和图片链接，限制长度）
+            content_lines = markdown_content.split('\n')
+            content_start = 0
+            
+            # 跳过 YAML frontmatter
+            if content_lines and content_lines[0].strip() == '---':
+                for i, line in enumerate(content_lines[1:], 1):
+                    if line.strip() == '---':
+                        content_start = i + 1
+                        break
+            
+            # 获取实际内容
+            actual_content = '\n'.join(content_lines[content_start:])
+            # 移除图片链接
+            import re
+            actual_content = re.sub(r'!\[.*?\]\(.*?\)', '', actual_content)
+            # 限制长度到前800字符
+            content_summary = actual_content[:800].strip()
+            
+            if not content_summary or len(content_summary) < 20:
+                logger.warning("内容太短，使用默认文件夹名")
+                return self._generate_folder_name(title, platform)
+            
+            prompt = f"""根据以下网页内容，生成一个简洁、描述性的文件夹名称。
+
+网页标题：{title}
+平台：{platform}
+URL：{url}
+
+内容摘要：
+{content_summary}
+
+要求：
+1. 文件夹名称应该简洁明了，能够反映内容的核心主题
+2. 使用下划线(_)分隔单词，不要使用空格或特殊字符
+3. 长度不超过30个字符（中文按2个字符计算）
+4. 只返回文件夹名称，不要有任何解释或标点符号
+5. 使用中文或英文均可，但要确保文件系统兼容
+6. 不需要包含平台名称
+
+示例格式：
+- 机器学习入门指南
+- Python数据分析技巧
+- 深度学习图像分类
+
+请直接返回文件夹名称："""
+
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁、描述性的文件夹名称。"},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=50,
+                temperature=0.3,
+            )
+            
+            folder_name = response.choices[0].message.content.strip()
+            
+            # 清理文件夹名称
+            folder_name = re.sub(r'["\'\'\n\r\t]', '', folder_name)
+            folder_name = re.sub(r'[/\\\\]', '_', folder_name)
+            folder_name = re.sub(r'[<>:"|?*]', '', folder_name)
+            
+            # 限制长度
+            if len(folder_name) > 50:
+                folder_name = folder_name[:50]
+            
+            # 如果生成失败或为空，使用原始标题
+            if not folder_name or len(folder_name) < 3:
+                logger.warning("LLM 生成的文件夹名无效，使用原始标题")
+                return self._generate_folder_name(title, platform)
+            
+            logger.info(f"✅ LLM 生成的文件夹名: {folder_name}")
+            return folder_name
+            
+        except Exception as e:
+            logger.warning(f"LLM 文件夹命名失败: {e}，使用默认名称")
+            return self._generate_folder_name(title, platform)
     
     async def archive_batch(
         self,

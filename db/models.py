@@ -8,7 +8,7 @@ from enum import Enum
 
 
 class SourceType(str, Enum):
-    """视频来源类型"""
+    """视频来源类型（扩展支持网页归档）"""
     LOCAL = 'local'
     YOUTUBE = 'youtube'
     BILIBILI = 'bilibili'
@@ -16,6 +16,10 @@ class SourceType(str, Enum):
     XIAOHONGSHU = 'xiaohongshu'
     DOUYIN = 'douyin'
     TIKTOK = 'tiktok'
+    # 网页归档类型
+    WEB_ARCHIVE = 'web_archive'
+    ZHIHU = 'zhihu'
+    REDDIT = 'reddit'
     UNKNOWN = 'unknown'
 
 

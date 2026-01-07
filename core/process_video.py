@@ -24,7 +24,29 @@ logging.getLogger('ppocr').setLevel(logging.ERROR)
 logging.getLogger('paddle').setLevel(logging.ERROR)
 logging.getLogger('paddlex').setLevel(logging.ERROR)
 
-from ocr.ocr_utils import init_ocr, ocr_folder_to_text
+# OCR 引擎选择：优先使用 Vision OCR（macOS），否则使用 PaddleOCR
+import platform
+OCR_ENGINE = None  # 'vision' 或 'paddle'
+
+# 尝试导入 Vision OCR（macOS）
+try:
+    from ocr.ocr_vision import init_vision_ocr, ocr_folder_vision
+    if platform.system() == 'Darwin':  # macOS
+        OCR_ENGINE = 'vision'
+        print("✅ 使用 Apple Vision OCR（系统原生）")
+except ImportError:
+    pass
+
+# 如果 Vision OCR 不可用，尝试导入 PaddleOCR
+if not OCR_ENGINE:
+    try:
+        from ocr.ocr_utils import init_ocr, ocr_folder_to_text
+        OCR_ENGINE = 'paddle'
+        print("✅ 使用 PaddleOCR")
+    except ImportError:
+        print("⚠️  警告：未找到可用的 OCR 引擎")
+        print("   • macOS: 无需安装，应该自动检测 Vision OCR")
+        print("   • 其他平台: 请运行 'make install-paddle-ocr'")
 
 # 导入多进程OCR（用于提升CPU利用率）
 try:
@@ -558,6 +580,121 @@ def merge_summary_with_details(summary: str, detailed_content: str) -> str:
     return summary + f"\n\n---\n\n## 📖 详细内容概括（完整版）\n\n{detailed_content}\n"
 
 
+def generate_folder_name_with_llm(report_content: str, video_name: str) -> str:
+    """
+    使用 GPT-OSS20B 模型根据 report 内容生成简洁的文件夹名称
+    
+    Args:
+        report_content: 完整的报告内容
+        video_name: 原始视频名称（作为备用）
+    
+    Returns:
+        生成的文件夹名称（长度限制在30个字符以内，使用下划线分隔）
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print("  ⚠️  GROQ_API_KEY 未设置，使用默认文件夹名")
+        return video_name
+    
+    try:
+        client = Groq(api_key=api_key)
+        
+        # 从报告中提取关键信息（摘要部分）
+        # 优先提取 "## 摘要" 部分，这是视频的核心内容概括
+        summary_section = ""
+        
+        # 方法1: 查找 ## 摘要
+        if "## 摘要" in report_content:
+            parts = report_content.split("## 摘要")
+            if len(parts) > 1:
+                summary_part = parts[1].split("\n##")[0]
+                summary_section = summary_part.strip()[:800]
+        
+        # 方法2: 如果没有摘要，查找 AI 智能总结后的第一段内容
+        if not summary_section and "## 🤖 AI 智能总结" in report_content:
+            parts = report_content.split("## 🤖 AI 智能总结")
+            if len(parts) > 1:
+                # 跳过空行，获取实际内容
+                lines = parts[1].split('\n')
+                content_lines = [line for line in lines if line.strip() and not line.strip().startswith('#')]
+                if content_lines:
+                    summary_section = '\n'.join(content_lines[:10])[:800]
+        
+        # 方法3: 如果还是没有，使用报告前部分但移除格式化标记
+        if not summary_section:
+            import re
+            # 移除所有 Markdown 标题和格式化符号
+            clean_content = re.sub(r'#+\s+.*?\n', '', report_content)
+            clean_content = re.sub(r'\*\*|\*|`', '', clean_content)
+            summary_section = clean_content[:800].strip()
+        
+        prompt = f"""你的任务是为一个视频内容生成简短的文件夹名称。
+
+这是视频的内容总结（请忽略报告格式，专注于视频讲了什么）：
+{summary_section}
+
+要求：
+1. 基于视频的**核心主题和内容**生成名称，不要描述报告本身
+2. 名称要**具体且有细节**，包含关键信息点（如技术栈、场景、人物等）
+3. 使用下划线(_)分隔词语，不要用空格
+4. 长度控制在30-40个字符（中文约15-20个字）
+5. 只返回文件夹名称，不要任何解释
+
+✅ 好的示例（要有细节）：
+- Python爬虫实战_BeautifulSoup解析
+- 深度学习入门_CNN图像分类
+- 单反摄影技巧_人像布光教程
+- Midjourney绘画_提示词技巧
+
+❌ 避免这样（描述报告格式）：
+- 视频分析报告
+- 内容总结
+- 知识归档
+
+请直接返回文件夹名称："""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "你是一个专业的内容标注员。你的任务是根据视频内容生成简洁、准确的主题标签，而不是描述文档格式。"},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=50,
+            temperature=0.3,
+        )
+        
+        folder_name = response.choices[0].message.content.strip()
+        
+        # 清理文件夹名称：移除特殊字符，限制长度
+        import re
+        # 移除引号、换行符等
+        folder_name = re.sub(r'["\'\n\r\t]', '', folder_name)
+        # 移除路径分隔符
+        folder_name = re.sub(r'[/\\]', '_', folder_name)
+        # 移除其他不安全的文件名字符
+        folder_name = re.sub(r'[<>:"|?*]', '', folder_name)
+        # 限制长度
+        if len(folder_name) > 50:
+            folder_name = folder_name[:50]
+        
+        # 如果生成失败或为空，使用原始视频名
+        if not folder_name or len(folder_name) < 3:
+            print(f"  ⚠️  LLM 生成的文件夹名无效，使用原始名称")
+            print(f"      调试信息：folder_name = '{folder_name}', 长度 = {len(folder_name) if folder_name else 0}")
+            print(f"      原始响应：{response.choices[0].message.content if response else 'N/A'}")
+            return video_name
+        
+        print(f"  ✅ LLM 生成的文件夹名: {folder_name}")
+        return folder_name
+        
+    except Exception as e:
+        print(f"  ⚠️  LLM 文件夹命名失败: {e}")
+        print(f"      错误类型: {type(e).__name__}")
+        import traceback
+        print(f"      详细堆栈:\n{traceback.format_exc()}")
+        return video_name
+
+
 def generate_timeline_report(timeline: list, output_path: Path):
     """
     生成音画时间轴对照报告
@@ -603,7 +740,8 @@ def generate_formatted_report(
     summary: str,
     with_frames: bool,
     session_dir: Path,
-    timeline: list = None
+    timeline: list = None,
+    video_path: Path = None
 ) -> str:
     """
     生成格式化的报告，包含元信息、AI总结和原始数据
@@ -624,6 +762,8 @@ def generate_formatted_report(
     report.append(f"**📝 视频名称**: {video_name}  ")
     report.append(f"**🕒 处理时间**: {formatted_time}  ")
     report.append(f"**📁 输出目录**: `{session_dir.name}`  ")
+    if video_path:
+        report.append(f"**🎥 原始视频**: [{video_path.name}]({video_path.absolute()})  ")
     report.append(f"**🔧 处理模式**: {'完整模式 (OCR + 音频)' if with_frames else '音频模式'}  ")
     report.append("\n---\n")
     report.append("## 📊 数据统计\n")
@@ -793,6 +933,7 @@ def save_to_database(
     video_duration: float = 0,
     source_url: str = None,
     platform_title: str = None,
+    ocr_engine: str = None,
 ) -> int:
     """
     将处理结果保存到数据库
@@ -870,12 +1011,13 @@ def save_to_database(
         
         # 2.2 OCR识别
         if with_frames and ocr_text.strip():
+            model_name = "apple-vision-ocr" if (ocr_engine or OCR_ENGINE) == 'vision' else "paddleocr-v4"
             ocr_artifact = Artifact(
                 video_id=video_id,
                 artifact_type=ArtifactType.OCR,
                 content_text=ocr_text,
                 file_path=str(session_dir / "ocr_raw.md"),
-                model_name="paddleocr-v4",
+                model_name=model_name,
                 char_count=len(ocr_text)
             )
             repo.save_artifact(ocr_artifact)
@@ -962,6 +1104,7 @@ def process_video(
     use_gpu: bool = False,
     source_url: str = None,
     platform_title: str = None,
+    ocr_engine: str = None,  # 新增：'vision' 或 'paddle'，None=自动选择
 ):
     ensure_dir(output_dir)
 
@@ -1000,44 +1143,66 @@ def process_video(
 
         print("\n>> OCR 处理中...")
         
-        # 使用多进程并行处理以提升CPU利用率
-        if PARALLEL_OCR_AVAILABLE:
-            import os
-            # 从环境变量读取工作进程数，如果未设置则使用CPU核心数/2
-            ocr_workers_env = os.environ.get('OCR_WORKERS', '').strip()
-            if ocr_workers_env and ocr_workers_env.lower() != 'auto':
-                try:
-                    num_workers = max(1, int(ocr_workers_env))
-                except ValueError:
+        # 决定使用哪个 OCR 引擎
+        selected_engine = ocr_engine or OCR_ENGINE
+        
+        if selected_engine == 'vision':
+            print(f"   🍎 使用 Apple Vision OCR (lang={ocr_lang})")
+            try:
+                ocr = init_vision_ocr(
+                    lang=ocr_lang,
+                    recognition_level='accurate',  # 'fast' 或 'accurate'
+                )
+                ocr_text = ocr_folder_vision(
+                    ocr,
+                    frames_dir,
+                    output_path=ocr_raw_path,
+                    debug=False,
+                )
+            except Exception as e:
+                print(f"   ⚠️  Vision OCR 失败，尝试降级到 PaddleOCR: {e}")
+                selected_engine = 'paddle'
+        
+        if selected_engine == 'paddle':
+            # 使用多进程并行处理以提升CPU利用率
+            if PARALLEL_OCR_AVAILABLE:
+                import os
+                # 从环境变量读取工作进程数，如果未设置则使用CPU核心数/2
+                ocr_workers_env = os.environ.get('OCR_WORKERS', '').strip()
+                if ocr_workers_env and ocr_workers_env.lower() != 'auto':
+                    try:
+                        num_workers = max(1, int(ocr_workers_env))
+                    except ValueError:
+                        num_workers = max(1, os.cpu_count() // 2)
+                else:
                     num_workers = max(1, os.cpu_count() // 2)
+                
+                print(f"   🐼 使用 PaddleOCR (多进程, workers={num_workers})")
+                ocr_text = ocr_folder_parallel(
+                    str(frames_dir),
+                    min_score=0.3,
+                    num_workers=num_workers,
+                    use_preprocessing=True,
+                    hybrid_mode=True,
+                )
             else:
-                num_workers = max(1, os.cpu_count() // 2)
-            
-            ocr_text = ocr_folder_parallel(
-                str(frames_dir),
-                min_score=0.3,
-                num_workers=num_workers,
-                use_preprocessing=True,
-                hybrid_mode=True,
-            )
-        else:
-            # 降级到单进程模式
-            print(f">> 初始化 OCR (det={ocr_det_model}, rec={ocr_rec_model})...")
-            ocr = init_ocr(
-                lang=ocr_lang,
-                use_gpu=use_gpu,
-                det_model=ocr_det_model,
-                rec_model=ocr_rec_model
-            )
-            ocr_text = ocr_folder_to_text(
-                ocr, 
-                str(frames_dir), 
-                min_score=0.3,
-                debug=False,
-                use_preprocessing=True,
-                roi_bottom_only=True,
-                hybrid_mode=True,
-            )
+                # 降级到单进程模式
+                print(f"   🐼 使用 PaddleOCR (det={ocr_det_model}, rec={ocr_rec_model})")
+                ocr = init_ocr(
+                    lang=ocr_lang,
+                    use_gpu=use_gpu,
+                    det_model=ocr_det_model,
+                    rec_model=ocr_rec_model
+                )
+                ocr_text = ocr_folder_to_text(
+                    ocr, 
+                    str(frames_dir), 
+                    min_score=0.3,
+                    debug=False,
+                    use_preprocessing=True,
+                    roi_bottom_only=True,
+                    hybrid_mode=True,
+                )
         
         if ocr_text.strip():
             char_count = len(ocr_text)
@@ -1149,12 +1314,32 @@ def process_video(
         summary=summary,
         with_frames=with_frames,
         session_dir=session_dir,
-        timeline=timeline
+        timeline=timeline,
+        video_path=video_path
     )
     
     report_path.write_text(report_content, encoding="utf-8")
     print(f"\n📄 报告已保存到: {report_path}")
     print(f"📁 完整输出目录: {session_dir}")
+    
+    # 9.5 使用 LLM 生成语义化的文件夹名称并重命名
+    print("\n>> 使用 LLM 生成语义化文件夹名...")
+    new_folder_name = generate_folder_name_with_llm(report_content, video_name)
+    
+    # 如果生成的名称与原始名称不同，则重命名文件夹
+    if new_folder_name != video_name:
+        new_session_dir = output_dir / f"{new_folder_name}_{timestamp}"
+        try:
+            session_dir.rename(new_session_dir)
+            session_dir = new_session_dir  # 更新引用
+            print(f"   ✅ 文件夹已重命名为: {session_dir.name}")
+            
+            # 更新路径引用
+            report_path = session_dir / "report.md"
+            
+        except Exception as e:
+            print(f"   ⚠️  文件夹重命名失败: {e}")
+            print(f"   保持原文件夹名: {session_dir.name}")
     
     # 10. 保存到数据库
     save_to_database(
@@ -1170,6 +1355,7 @@ def process_video(
         video_duration=video_duration,
         source_url=source_url,
         platform_title=platform_title,
+        ocr_engine=ocr_engine,
     )
 
 
@@ -1206,14 +1392,21 @@ def main():
         "--ocr-lang",
         type=str,
         default="ch",
-        help="PaddleOCR 语言（默认: ch）",
+        help="OCR 语言（默认: ch）",
+    )
+    parser.add_argument(
+        "--ocr-engine",
+        type=str,
+        default=None,
+        choices=["vision", "paddle"],
+        help="OCR 引擎选择（默认: 自动选择）",
     )
     parser.add_argument(
         "--ocr-det-model",
         type=str,
         default="server",  # 改为 server 以获得更好的效果
         choices=["server", "mobile"],
-        help="OCR 检测模型类型（默认: server，复杂背景建议使用）",
+        help="PaddleOCR 检测模型类型（默认: server，复杂背景建议使用）",
     )
     parser.add_argument(
         "--ocr-rec-model",
@@ -1276,6 +1469,7 @@ def main():
         output_dir=output_dir,
         with_frames=args.with_frames,
         ocr_lang=args.ocr_lang,
+        ocr_engine=args.ocr_engine,
         ocr_det_model=args.ocr_det_model,
         ocr_rec_model=args.ocr_rec_model,
         use_gpu=args.use_gpu,

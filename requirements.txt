@@ -1,7 +1,16 @@
-paddlepaddle>=3.0.0
-paddleocr>=2.7.0
-opencv-python
-numpy
+# ========== OCR 引擎（二选一） ==========
+# 选项 1: PaddleOCR（跨平台，需下载模型）
+# paddlepaddle>=3.0.0
+# paddleocr>=2.7.0
+# opencv-python
+# numpy
+
+# 选项 2: Apple Vision OCR（macOS 原生，无需依赖）
+# 无需额外安装，仅需 macOS 10.15+ 和系统自带 Swift
+# 💡 推荐 macOS 用户使用 Vision OCR（速度快，零配置）
+
+# ========== 基础依赖 ==========
+numpy 
 groq
 python-dotenv
 yt-dlp
