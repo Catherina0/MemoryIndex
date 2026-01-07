@@ -83,14 +83,14 @@ class DrissionArchiver:
             logging.basicConfig(level=logging.INFO)
     
     def _init_tab(self):
-        """为当前任务创建新标签页"""
+        """为当前任务创建新标签页（带重试机制）"""
         # 获取全局浏览器实例
         browser = self.browser_manager.get_browser(
             browser_data_dir=str(self.browser_data_dir),
             headless=self.headless
         )
         
-        # 创建新标签页
+        # 创建新标签页（带重试机制）
         tab = self.browser_manager.new_tab()
         logger.info("✓ 新标签页已创建")
         return tab
@@ -98,8 +98,12 @@ class DrissionArchiver:
     def _close_tab(self):
         """关闭当前任务的标签页"""
         if self.current_tab is not None:
-            self.browser_manager.close_tab(self.current_tab)
-            self.current_tab = None
+            try:
+                self.browser_manager.close_tab(self.current_tab)
+                self.current_tab = None
+            except Exception as e:
+                logger.debug(f"关闭标签页时出错（可忽略）: {e}")
+                self.current_tab = None
     
     def _deduplicate_twitter_images(self, image_urls: list) -> list:
         """
@@ -292,18 +296,31 @@ class DrissionArchiver:
                 }
                 platform_adapter = adapters.get(platform_name, WordPressAdapter())
             
-            # 访问页面
+            # 访问页面（带重试机制）
             logger.info(f"正在访问: {url}")
             
             # 尝试加载手动配置的 Cookie
             if platform_adapter.name in ['zhihu', 'xiaohongshu', 'bilibili', 'twitter']:
                 self._load_manual_cookies(platform_adapter.name, url)
             
-            self.current_tab.get(url)
-            
-            # 智能等待页面加载
-            self.current_tab.wait.load_start()
-            time.sleep(2)  # 等待 JS 执行
+            # 重试访问页面
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.current_tab.get(url)
+                    # 智能等待页面加载
+                    self.current_tab.wait.load_start()
+                    time.sleep(2)  # 等待 JS 执行
+                    break
+                except Exception as e:
+                    logger.warning(f"访问页面失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+                        # 重新创建标签页
+                        self._close_tab()
+                        self.current_tab = self._init_tab()
+                    else:
+                        raise RuntimeError(f"访问页面失败，已重试 {max_retries} 次: {e}")
             
             # 检查是否需要登录（推特特殊处理）
             if platform_adapter.name == 'twitter':

@@ -4,6 +4,7 @@
 """
 
 import sys
+import argparse
 from pathlib import Path
 from archiver.utils.url_parser import extract_url_from_text, detect_platform
 
@@ -39,19 +40,28 @@ def should_use_drissionpage(platform: str) -> bool:
 
 def main():
     """主函数"""
-    if len(sys.argv) < 2:
-        print("❌ 错误: 请提供URL参数")
-        print("用法: python unified_archive_cli.py <URL>")
-        print("\n💡 支持分享文本格式，会自动提取URL")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="通用网页归档工具 - 智能选择引擎",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例：
+  %(prog)s "https://www.zhihu.com/question/123456789"
+  %(prog)s "https://x.com/user/status/123456789" --mode full
+  %(prog)s "https://www.example.com" --visible  # 显示浏览器界面（调试用）
+        """
+    )
+    parser.add_argument('url', help='要归档的 URL 或分享文本')
+    parser.add_argument('--mode', choices=['default', 'full'], default='default',
+                        help='归档模式：default=只保留正文, full=完整内容')
+    parser.add_argument('--visible', action='store_true',
+                        help='显示浏览器界面（默认为无头模式后台运行）')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='输出详细日志')
     
-    input_text = sys.argv[1]
+    args = parser.parse_args()
     
-    # 解析模式参数
-    mode = "default"
-    for arg in sys.argv:
-        if arg.startswith("--mode="):
-            mode = arg.split("=", 1)[1]
+    input_text = args.url
+    mode = args.mode
     
     # 提取 URL
     url = extract_url_from_text(input_text)
@@ -77,11 +87,22 @@ def main():
     # 执行归档
     if use_drission:
         # 使用 DrissionPage（真实浏览器）
-        # Twitter usually requires headful mode to avoid detection/rendering issues
-        # For local archiving, headful is safer.
         from archiver.core.drission_crawler import DrissionArchiver
         
-        with DrissionArchiver(output_dir='archived', headless=False, verbose=True) as archiver:
+        # 默认使用无头模式（后台运行），除非用户指定 --visible
+        headless = not args.visible
+        
+        if args.visible:
+            print("👁️  浏览器可见模式（供调试使用）")
+        else:
+            print("🔒 无头模式（后台运行）")
+        print()
+        
+        with DrissionArchiver(
+            output_dir='archived',
+            headless=headless,
+            verbose=args.verbose or True
+        ) as archiver:
             result = archiver.archive(url, mode=mode)
             
             if result['success']:

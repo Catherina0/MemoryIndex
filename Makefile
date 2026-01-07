@@ -55,6 +55,7 @@ help:
 	@echo ""
 	@echo "🔧 维护命令："
 	@echo "  make install            安装/更新依赖"
+	@echo "  make install-chromium   安装独立 Chromium 浏览器"
 	@echo "  make check              检查环境配置"
 	@echo "  make selftest           🆕 全功能自检和测试"
 	@echo "  make clean              清理输出文件"
@@ -106,7 +107,8 @@ help:
 	@echo "  make whoosh-search Q=\"美国\" 使用 Whoosh 搜索（中文优化）"
 	@echo ""
 	@echo "🌐 网页归档（Web Archiver）："
-	@echo "  make archive URL=网址               归档网页（智能选择引擎）"
+	@echo "  make archive URL=网址               归档网页（无头模式，后台运行）"
+	@echo "  make archive-visible URL=网址       归档网页（显示浏览器，供调试）"
 	@echo "  make archive-batch FILE=urls.txt    批量归档"
 	@echo "  make login                          浏览器登录辅助"
 	@echo "  make config-drission-cookie         手动配置 Cookie（备选）"
@@ -117,6 +119,7 @@ help:
 	@echo "  make archive URL=https://www.zhihu.com/question/123"
 	@echo "  make archive URL=https://www.xiaohongshu.com/explore/123"
 	@echo "  make archive URL=\"https://www.bilibili.com/read/cv123\""
+	@echo "  make archive-visible URL=...  # 调试模式：显示浏览器界面"
 	@echo ""
 	@echo ""
 	@echo "  自动智能选择："
@@ -193,6 +196,37 @@ test: ensure-venv
 # 全功能自检和测试
 selftest: ensure-venv
 	@$(PYTHON) scripts/selftest.py
+
+# 安装独立 Chromium（用于网页归档）
+install-chromium:
+	@echo "🔧 安装独立 Chromium 浏览器..."
+	@if [ -d "chromium/chrome-mac" ]; then \
+		echo "  ✓ Chromium 已存在: chromium/chrome-mac/Chromium.app"; \
+		exit 0; \
+	fi
+	@echo "  → 创建 chromium 目录..."
+	@mkdir -p chromium
+	@echo "  → 检测系统架构..."
+	@ARCH=$$(uname -m); \
+	if [ "$$ARCH" = "arm64" ]; then \
+		echo "  → 检测到 Apple Silicon (ARM64)"; \
+		DOWNLOAD_URL="https://storage.googleapis.com/chromium-browser-snapshots/Mac_Arm/1355694/chrome-mac.zip"; \
+	else \
+		echo "  → 检测到 Intel (x86_64)"; \
+		DOWNLOAD_URL="https://storage.googleapis.com/chromium-browser-snapshots/Mac/1355694/chrome-mac.zip"; \
+	fi; \
+	echo "  → 下载 Chromium..."; \
+	curl -L "$$DOWNLOAD_URL" -o chromium/chrome-mac.zip || { echo "❌ 下载失败"; exit 1; }; \
+	echo "  → 解压..."; \
+	cd chromium && unzip -q chrome-mac.zip && rm chrome-mac.zip; \
+	echo "  → 清除隔离属性 (Quarantine)..."; \
+	xattr -cr chromium/chrome-mac/Chromium.app; \
+	echo "  → 授权执行权限..."; \
+	chmod -R +x chromium/chrome-mac/Chromium.app/Contents/MacOS/; \
+	echo "  ✓ Chromium 安装完成！"; \
+	echo ""; \
+	echo "📍 安装路径: chromium/chrome-mac/Chromium.app"; \
+	echo "💡 已配置为使用 --headless=new 模式运行"
 
 # 检查环境
 check: ensure-venv
@@ -635,7 +669,7 @@ ls: db-list
 # 网页归档功能 (Web Archiver)
 # ============================================
 
-# 归档单个URL（智能选择引擎）
+# 归档单个URL（智能选择引擎，无头模式）
 archive: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误: 请提供URL参数"; \
@@ -644,6 +678,16 @@ archive: ensure-venv
 		exit 1; \
 	fi
 	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default)
+
+# 归档单个URL（显示浏览器界面，供调试使用）
+archive-visible: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误: 请提供URL参数"; \
+		echo "用法: make archive-visible URL=网址 [MODE=full]"; \
+		echo "💡 此命令会显示浏览器界面，供调试使用"; \
+		exit 1; \
+	fi
+	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default) --visible
 
 # 批量归档（从文件读取URL列表）
 archive-batch: ensure-venv

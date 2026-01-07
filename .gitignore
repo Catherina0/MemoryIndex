@@ -50,6 +50,10 @@ test_archived/
 
 # DrissionPage browser data (浏览器数据 - 包含登录态)
 browser_data/
+browser_data_test/
+
+# Chromium browser (独立 Chromium 浏览器，由 make install 下载)
+chromium/
 
 # Documentation (保留部分重要文档)
 # docs/ - 已改为选择性上传，见下方白名单
