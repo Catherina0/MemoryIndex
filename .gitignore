@@ -44,13 +44,28 @@ temp/
 temp_*/
 *.tmp
 
+# Test directories
+test_archived/
+test_images/
+tests/__pycache__/
+tests/*.pyc
+
+# Debug files
+debug_*.py
+debug_*.html
+
 # Archiver outputs (网页归档输出)
 archived/
 test_archived/
 
+# OCR outputs
+ocr/output/
+ocr/temp/
+
 # DrissionPage browser data (浏览器数据 - 包含登录态)
 browser_data/
 browser_data_test/
+browser_data_debug/
 
 # Chromium browser (独立 Chromium 浏览器，由 make install 下载)
 chromium/

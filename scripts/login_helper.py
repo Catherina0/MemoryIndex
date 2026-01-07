@@ -127,6 +127,59 @@ def login_helper(browser_data_dir: str = "./browser_data"):
         print()
         
         input("✋ 完成登录后，按 Enter 键保存登录态...")
+        
+        # 验证登录状态
+        print("\n🔍 正在验证登录状态...")
+        
+        try:
+            # 简单的验证逻辑：刷新页面或访问首页，看是否跳转回登录页
+            current_url = page.url
+            verified = True
+            platform_name = "未知平台"
+            
+            if "zhihu.com" in current_url:
+                platform_name = "知乎"
+                print(f"   正在检查 {platform_name} 登录状态...")
+                page.get("https://www.zhihu.com/follow")
+                time.sleep(2)
+                if "signin" in page.url or "login" in page.url:
+                    verified = False
+                    
+            elif "bilibili.com" in current_url:
+                platform_name = "哔哩哔哩"
+                print(f"   正在检查 {platform_name} 登录状态...")
+                page.get("https://account.bilibili.com/account/home")
+                time.sleep(2)
+                if "passport.bilibili.com" in page.url:
+                    verified = False
+                    
+            elif "xiaohongshu.com" in current_url:
+                platform_name = "小红书"
+                print(f"   正在检查 {platform_name} 登录状态...")
+                # 小红书主要检查 Cookie
+                cookies = page.cookies(as_dict=True)
+                if not any(k for k in cookies if "session" in k):
+                    print("   ⚠️  Warning: 未检测到 session 相关 Cookie")
+                # 刷新页面确保没弹窗
+                page.refresh()
+                time.sleep(2)
+                
+            elif "twitter.com" in current_url or "x.com" in current_url:
+                platform_name = "Twitter/X"
+                print(f"   正在检查 {platform_name} 登录状态...")
+                page.get("https://twitter.com/home")
+                time.sleep(3)
+                if "login" in page.url or "i/flow/login" in page.url:
+                    verified = False
+            
+            if verified:
+                print(f"✅ 验证通过：{platform_name} 登录状态看似正常")
+            else:
+                print(f"⚠️  警告：检测到可能未成功登录 {platform_name}（页面发生了跳转）")
+                print("   如果确认已登录，请忽略此提示。")
+        except Exception as e:
+            print(f"⚠️  验证过程中出现错误（不影响保存）: {e}")
+            
         print()
         print("✓ 登录数据已保存到: " + browser_data_dir)
         print("✓ 现在可以使用 'make archive URL=...' 归档内容了！")

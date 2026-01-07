@@ -50,7 +50,7 @@ class BrowserManager:
     
     def get_browser(
         self,
-        browser_data_dir: str = "./browser_data",
+        browser_data_dir: Optional[str] = None,
         headless: bool = True,
         **kwargs
     ) -> 'Chromium':
@@ -58,7 +58,7 @@ class BrowserManager:
         获取全局浏览器实例（如果不存在则创建）
         
         Args:
-            browser_data_dir: 浏览器数据目录（存储 Cookies 和登录态）
+            browser_data_dir: 浏览器数据目录（存储 Cookies 和登录态）。如果为 None，默认使用 ~/.memory_index_browser_data以避免iCloud同步锁问题
             headless: 是否使用无头模式
             **kwargs: 其他浏览器配置参数
         
@@ -85,76 +85,31 @@ class BrowserManager:
         # Configure browser options
         options = ChromiumOptions()
         
-        # 设置端口（避免与其他浏览器实例冲突）
-        options.set_local_port(9333)  # 使用不同于默认的 9222 端口
-        
-        # 使用项目内的独立 Chromium（已配置 LSUIElement 隐藏 Dock 图标）
-        # 这样可以：
-        # 1. 避免与用户个人 Chrome 冲突
-        # 2. 避免 UI 弹窗
-        # 3. 通过 Info.plist 配置完全隐藏 Dock 图标 (LSUIElement=1)
+        # 使用项目内的独立 Chromium
         project_chromium = Path(__file__).parent.parent.parent / "chromium/chrome-mac/Chromium.app"
         chromium_executable = project_chromium / "Contents/MacOS/Chromium"
         
-        browser_found = False
         if chromium_executable.exists():
             logger.info(f"使用项目独立 Chromium: {chromium_executable}")
             options.set_browser_path(str(chromium_executable))
-            browser_found = True
-        
-        if not browser_found:
-            logger.warning(f"未找到项目 Chromium ({chromium_executable})，尝试其他选项...")
-            # 优先选项1: Playwright 的 Chromium
-            playwright_path = Path.home() / "Library/Caches/ms-playwright"
-            if playwright_path.exists():
-                chromium_dirs = sorted(list(playwright_path.glob("chromium-*")), reverse=True)
-                for d in chromium_dirs:
-                    for arch in ["arm64", "x64"]:
-                        app_path = d / f"chrome-mac{'-' + arch if arch != 'x64' else ''}/Google Chrome for Testing.app"
-                        exe_path = app_path / "Contents/MacOS/Google Chrome for Testing"
-                        if exe_path.exists():
-                            options.set_browser_path(str(exe_path))
-                            logger.info(f"使用 Playwright Chromium: {exe_path}")
-                            browser_found = True
-                            break
-                    if browser_found:
-                        break
-            
-            # 选项2: 系统 Chrome（最后的选择）
-            if not browser_found:
-                logger.info("使用系统默认浏览器（Chrome）")
-
-        # 设置用户数据目录（保存 Cookies 和登录态）
-        # 使用独立目录，完全隔离
+       
+        # 设置用户数据目录
+        if browser_data_dir is None:
+            browser_data_dir = str(Path.home() / ".memory_index_browser_data")
         browser_data_path = Path(browser_data_dir)
         browser_data_path.mkdir(exist_ok=True, parents=True)
         options.set_user_data_path(str(browser_data_path.absolute()))
-        
+
         # 无头模式配置
-        # DrissionPage 在 macOS 上需要明确设置headless参数，但不使用headless模式
-        # 使用 LSUIElement 隐藏 Dock 图标
-        # 不过，如果完全不能启动，可能需要使用 new headless 模式
         if headless:
-            # 尝试使用新的 headless 模式（Chrome 109+）
-            options.set_argument('--headless=new')
+            options.headless(True)
         
-        # 反爬虫和性能优化配置
+        # 基础反爬虫配置 (参考最初提交)
         options.set_argument('--no-sandbox')
         options.set_argument('--disable-dev-shm-usage')
         options.set_argument('--disable-blink-features=AutomationControlled')
-        options.set_argument('--disable-extensions')
-        options.set_argument('--disable-popup-blocking')
-        options.set_argument('--disable-notifications')
-        options.set_argument('--disable-infobars')
-        options.set_argument('--no-first-run')
-        options.set_argument('--no-default-browser-check')
-        # 移除以下参数，它们可能导致渲染器连接问题：
-        # --disable-gpu (可能导致渲染问题)
-        # --disable-background-timer-throttling (可能影响页面加载)
-        # --disable-backgrounding-occluded-windows
-        # --disable-renderer-backgrounding
         
-        # 其他自定义配置
+         # 其他自定义配置
         for key, value in kwargs.items():
             if hasattr(options, key):
                 getattr(options, key)(value)
