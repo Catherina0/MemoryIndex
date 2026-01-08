@@ -118,12 +118,12 @@ help:
 	@echo "  make whoosh-search Q=\"美国\" 使用 Whoosh 搜索（中文优化）"
 	@echo ""
 	@echo "🌐 网页归档（Web Archiver）："
-	@echo "  make archive URL=网址               归档网页（无头模式，后台运行）"
+	@echo "  make archive URL=网址               归档网页（保存内容+重命名，无AI报告）"
 	@echo "  make archive-visible URL=网址       归档网页（显示浏览器，供调试）"
 	@echo "  make archive-batch FILE=urls.txt    批量归档"
 	@echo "  📊 新增：归档 + 数据库集成"
-	@echo "  make archive-run URL=网址           归档并生成AI报告（存入数据库）"
-	@echo "  make archive-ocr URL=网址           归档+OCR识别+AI报告"
+	@echo "  make archive-run URL=网址           归档+AI报告+重命名（存入数据库）"
+	@echo "  make archive-ocr URL=网址           归档+OCR+AI报告+重命名"
 	@echo "  make archive-run-visible URL=网址   可视化调试模式"
 	@echo "  make login                          浏览器登录辅助"
 	@echo "  make config-drission-cookie         手动配置 Cookie（备选）"
@@ -131,10 +131,11 @@ help:
 	@echo "  make test-archiver                  测试归档功能"
 	@echo ""
 	@echo "💡 归档示例："
-	@echo "  make archive URL=https://www.zhihu.com/question/123"
-	@echo "  make archive-run URL=https://www.xiaohongshu.com/explore/123"
-	@echo "  make archive-ocr URL=\"https://www.bilibili.com/read/cv123\""
-	@echo "  make archive-visible URL=...  # 调试模式：显示浏览器界面"
+	@echo "  make archive URL=https://www.zhihu.com/question/123          # 快速保存"
+	@echo "  make archive URL=... MODE=full                               # 保存完整内容（含评论）"
+	@echo "  make archive-run URL=https://www.xiaohongshu.com/explore/123 # 生成AI报告"
+	@echo "  make archive-ocr URL=\"https://www.bilibili.com/read/cv123\"   # OCR+AI报告"
+	@echo "  make archive-visible URL=...                                 # 调试模式"
 	@echo ""
 	@echo ""
 	@echo "  自动智能选择："
@@ -761,6 +762,7 @@ ls: db-list
 # ============================================
 
 # 归档单个URL（智能选择引擎，无头模式）
+# 默认：只保存内容 + LLM 重命名，不生成 report
 archive: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误: 请提供URL参数"; \
@@ -881,6 +883,7 @@ test-workers:
 # ============================================
 
 # 归档网页并生成AI报告（类似 download-run）
+# 生成 report.md，使用 LLM 重命名
 archive-run: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误：请指定网页URL"; \
@@ -895,12 +898,13 @@ archive-run: ensure-venv
 	@echo "🌐 归档网页并生成报告"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
-	@echo "📝 流程: 归档 → AI分析 → 数据库存储"
+	@echo "📝 流程: 归档 → AI报告 → LLM重命名 → 数据库存储"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)"
 
 # 归档网页并进行OCR识别（类似 download-ocr）
+# 生成 report.md，使用 LLM 重命名
 archive-ocr: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误：请指定网页URL"; \
@@ -916,7 +920,7 @@ archive-ocr: ensure-venv
 	@echo "🌐 归档网页并进行OCR识别"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
-	@echo "🔍 流程: 归档 → OCR识别 → AI分析 → 数据库存储"
+	@echo "🔍 流程: 归档 → OCR识别 → AI报告 → LLM重命名 → 数据库存储"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --with-ocr

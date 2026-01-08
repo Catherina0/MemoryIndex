@@ -616,7 +616,8 @@ async def archive_and_save(
         verbose=True
     )
     
-    archive_result = await archiver.archive(url)
+    # archive-run 和 archive-ocr 都会生成 report
+    archive_result = await archiver.archive(url, generate_report=True)
     
     if not archive_result.get('success'):
         raise Exception(f"归档失败: {archive_result.get('error')}")
