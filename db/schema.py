@@ -139,6 +139,83 @@ def check_database_health(db_path: Optional[str] = None) -> dict:
             # FTS 表可能不存在
             stats['fts_content'] = 0
         
+        # 按来源类型统计
+        cursor = conn.execute("""
+            SELECT source_type, COUNT(*) as count 
+            FROM videos 
+            GROUP BY source_type
+            ORDER BY count DESC
+        """)
+        stats['by_source'] = {row['source_type']: row['count'] for row in cursor.fetchall()}
+        
+        # 按处理状态统计
+        cursor = conn.execute("""
+            SELECT status, COUNT(*) as count 
+            FROM videos 
+            GROUP BY status
+        """)
+        stats['by_status'] = {row['status']: row['count'] for row in cursor.fetchall()}
+        
+        # 网页归档统计（包括 zhihu, reddit, twitter, web_archive）
+        cursor = conn.execute("""
+            SELECT COUNT(*) as count 
+            FROM videos 
+            WHERE source_type IN ('zhihu', 'reddit', 'twitter', 'web_archive')
+        """)
+        stats['web_archives'] = cursor.fetchone()['count']
+        
+        # 视频文件统计（本地视频）
+        cursor = conn.execute("""
+            SELECT COUNT(*) as count 
+            FROM videos 
+            WHERE source_type IN ('local', 'bilibili', 'youtube', 'xiaohongshu')
+        """)
+        stats['video_files'] = cursor.fetchone()['count']
+        
+        # 最近处理记录（最近7天）
+        cursor = conn.execute("""
+            SELECT COUNT(*) as count 
+            FROM videos 
+            WHERE processed_at > datetime('now', '-7 days')
+        """)
+        stats['recent_processed'] = cursor.fetchone()['count']
+        
+        # 统计有OCR的记录
+        cursor = conn.execute("""
+            SELECT COUNT(DISTINCT video_id) as count 
+            FROM artifacts 
+            WHERE artifact_type = 'ocr'
+        """)
+        stats['with_ocr'] = cursor.fetchone()['count']
+        
+        # 统计有AI报告的记录
+        cursor = conn.execute("""
+            SELECT COUNT(DISTINCT video_id) as count 
+            FROM artifacts 
+            WHERE artifact_type = 'report'
+        """)
+        stats['with_report'] = cursor.fetchone()['count']
+        
+        # 统计失败的记录
+        cursor = conn.execute("""
+            SELECT COUNT(*) as count 
+            FROM videos 
+            WHERE status = 'failed'
+        """)
+        stats['failed_count'] = cursor.fetchone()['count']
+        
+        # 平均标签数（每个视频）
+        cursor = conn.execute("""
+            SELECT AVG(tag_count) as avg_tags
+            FROM (
+                SELECT video_id, COUNT(*) as tag_count
+                FROM video_tags
+                GROUP BY video_id
+            )
+        """)
+        result = cursor.fetchone()
+        stats['avg_tags_per_video'] = result['avg_tags'] if result and result['avg_tags'] else 0
+        
         # 数据库文件大小
         if db_path:
             db_file = Path(db_path)
@@ -168,11 +245,72 @@ if __name__ == '__main__':
     
     if args.check:
         stats = check_database_health(args.db)
-        print("\n📊 数据库统计:")
-        for key, value in stats.items():
-            if key == 'db_size_mb':
-                print(f"  {key}: {value:.2f} MB")
-            else:
-                print(f"  {key}: {value}")
+        
+        print("\n" + "─" * 44)
+        print("  🗄️  1. 基础统计")
+        print("─" * 44)
+        print(f"   📊 视频总数: {stats.get('videos', 0)}")
+        print(f"   📊 产物数: {stats.get('artifacts', 0)}")
+        print(f"   📊 标签数: {stats.get('tags', 0)}")
+        print(f"   📊 主题数: {stats.get('topics', 0)}")
+        print(f"   📊 时间线条目: {stats.get('timeline_entries', 0)}")
+        print(f"   📊 FTS索引: {stats.get('fts_content', 0)} 条")
+        print(f"   💾 数据库大小: {stats.get('db_size_mb', 0):.2f} MB")
+        
+        print("\n" + "─" * 44)
+        print("  📁 2. 按来源类型统计")
+        print("─" * 44)
+        by_source = stats.get('by_source', {})
+        source_names = {
+            'local': '本地视频',
+            'bilibili': 'B站',
+            'youtube': 'YouTube',
+            'xiaohongshu': '小红书',
+            'twitter': 'Twitter/X',
+            'zhihu': '知乎',
+            'reddit': 'Reddit',
+            'web_archive': '通用网页'
+        }
+        for source_type, count in sorted(by_source.items(), key=lambda x: x[1], reverse=True):
+            source_name = source_names.get(source_type, source_type)
+            print(f"   • {source_name}: {count} 条")
+        
+        print("\n" + "─" * 44)
+        print("  🔄 3. 处理状态统计")
+        print("─" * 44)
+        by_status = stats.get('by_status', {})
+        status_names = {
+            'completed': '✅ 已完成',
+            'processing': '⏳ 处理中',
+            'failed': '❌ 失败',
+            'pending': '⏸️  待处理'
+        }
+        for status, count in by_status.items():
+            status_name = status_names.get(status, status)
+            print(f"   {status_name}: {count} 条")
+        
+        print("\n" + "─" * 44)
+        print("  📊 4. 内容类型统计")
+        print("─" * 44)
+        print(f"   🎥 视频文件: {stats.get('video_files', 0)} 条")
+        print(f"   🌐 网页归档: {stats.get('web_archives', 0)} 条")
+        print(f"   🔍 含OCR识别: {stats.get('with_ocr', 0)} 条")
+        print(f"   📄 含AI报告: {stats.get('with_report', 0)} 条")
+        avg_tags = stats.get('avg_tags_per_video', 0)
+        print(f"   🏷️  平均标签数: {avg_tags:.1f} 个/条")
+        
+        print("\n" + "─" * 44)
+        print("  ⏰ 5. 活跃度与健康状况")
+        print("─" * 44)
+        print(f"   📅 最近7天处理: {stats.get('recent_processed', 0)} 条")
+        failed = stats.get('failed_count', 0)
+        total = stats.get('videos', 0)
+        if total > 0:
+            success_rate = ((total - failed) / total) * 100
+            print(f"   ✅ 处理成功率: {success_rate:.1f}%")
+        if failed > 0:
+            print(f"   ⚠️  失败记录: {failed} 条")
+        
+        print("\n" + "─" * 44 + "\n")
     else:
         init_database(args.db, args.force)

@@ -105,7 +105,9 @@ help:
 	@echo "🗄️  数据库与搜索："
 	@echo "  make db-init                初始化数据库和搜索索引"
 	@echo "  make db-status              查看数据库和索引状态"
+	@echo "  make db-stats               查看详细统计（归档/视频/标签）"
 	@echo "  make db-show ID=1           查看特定视频详情"
+	@echo "  make db-delete ID=1         删除特定视频记录"
 	@echo "  make search Q=\"关键词\"      搜索视频内容"
 	@echo "  make search-tags TAGS=\"标签1 标签2\"  按标签搜索"
 	@echo "  make db-tags                查看热门标签"
@@ -149,6 +151,10 @@ help:
 	@echo "  make search-topics Q=\"神经网络\""
 	@echo "  make db-show ID=1           # 查看视频详情"
 	@echo "  make db-show ID=1 FLAGS=\"--full\"  # 查看完整内容"
+	@echo "  make db-delete ID=1         # 删除视频记录"
+	@echo "  make db-delete ID=1 FORCE=1 # 强制删除（不确认）"
+	@echo "  make db-stats               # 查看详细统计（归档/视频/标签）"
+	@echo "  make db-stats-archives      # 只看网页归档统计"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -581,6 +587,22 @@ db-status: ensure-venv
 	@echo "🔍 搜索索引状态:"
 	@$(PYTHON) -m db.whoosh_search status
 
+# 数据库详细统计
+db-stats: ensure-venv
+	@$(PYTHON) cli/db_stats.py --all
+
+# 网页归档统计
+db-stats-archives: ensure-venv
+	@$(PYTHON) cli/db_stats.py --archives
+
+# 视频文件统计
+db-stats-videos: ensure-venv
+	@$(PYTHON) cli/db_stats.py --videos
+
+# 标签统计
+db-stats-tags: ensure-venv
+	@$(PYTHON) cli/db_stats.py --tags
+
 # 重建搜索索引（从数据库同步）
 whoosh-rebuild: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -681,6 +703,20 @@ db-show: ensure-venv
 		exit 1; \
 	fi
 	@$(PYTHON) cli/search_cli.py show $(ID) $(FLAGS)
+
+# 删除特定ID的视频记录
+db-delete: ensure-venv
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ 错误：请指定视频ID"; \
+		echo "用法：make db-delete ID=1"; \
+		echo "用法：make db-delete ID=1 FORCE=1  # 强制删除，不提示确认"; \
+		exit 1; \
+	fi
+	@if [ -n "$(FORCE)" ]; then \
+		$(PYTHON) cli/search_cli.py delete $(ID) --force; \
+	else \
+		$(PYTHON) cli/search_cli.py delete $(ID); \
+	fi
 
 # 数据库备份
 db-backup: ensure-venv

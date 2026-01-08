@@ -372,6 +372,54 @@ def show_command(args):
     print(f"\n{'='*60}")
 
 
+def delete_command(args):
+    """删除特定ID的视频记录"""
+    from db import VideoRepository
+    from db.whoosh_search import WhooshSearchIndex
+    
+    video_repo = VideoRepository()
+    whoosh_index = WhooshSearchIndex()
+    
+    # 检查视频是否存在
+    video = video_repo.get_video_by_id(args.id)
+    if not video:
+        print(f"\n❌ 未找到 ID 为 {args.id} 的视频")
+        return
+    
+    # 显示视频信息
+    print(f"\n📹 即将删除以下视频记录：")
+    print(f"   ID: {video.id}")
+    print(f"   标题: {video.title}")
+    print(f"   来源: {video.source_type.value if video.source_type else 'N/A'}")
+    print(f"   URL: {video.source_url}")
+    print(f"   文件: {video.file_path}")
+    
+    # 确认删除（除非使用 --force）
+    if not args.force:
+        confirm = input("\n⚠️  确认删除？此操作不可恢复！(yes/no): ")
+        if confirm.lower() not in ['yes', 'y']:
+            print("❌ 已取消删除")
+            return
+    
+    # 执行删除
+    try:
+        # 1. 从数据库删除
+        success = video_repo.delete_video(args.id)
+        if not success:
+            print(f"❌ 删除失败：视频记录不存在")
+            return
+        
+        # 2. 从Whoosh搜索索引删除
+        whoosh_index.delete_video(args.id)
+        
+        print(f"\n✅ 成功删除视频记录 ID={args.id}")
+        print(f"   ℹ️  注意：文件未被删除，如需删除请手动操作：")
+        print(f"   rm -rf \"{video.file_path}\"")
+        
+    except Exception as e:
+        print(f"\n❌ 删除失败: {e}")
+
+
 def list_command(args):
     """列出所有视频"""
     from db import VideoRepository
@@ -499,6 +547,12 @@ def main():
     show_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     show_parser.add_argument('--full', action='store_true', help='显示完整内容（包含转写、OCR等）')
     show_parser.set_defaults(func=show_command)
+    
+    # 删除视频记录
+    delete_parser = subparsers.add_parser('delete', help='删除特定ID的视频记录')
+    delete_parser.add_argument('id', type=int, help='视频ID')
+    delete_parser.add_argument('--force', action='store_true', help='强制删除，不提示确认')
+    delete_parser.set_defaults(func=delete_command)
     
     args = parser.parse_args()
     

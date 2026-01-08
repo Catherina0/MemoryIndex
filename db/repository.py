@@ -225,6 +225,40 @@ class VideoRepository:
                 sql = f"UPDATE videos SET {', '.join(updates)} WHERE id = ?"
                 conn.execute(sql, params)
     
+    def delete_video(self, video_id: int) -> bool:
+        """
+        删除视频记录及其所有关联数据
+        
+        Args:
+            video_id: 视频ID
+            
+        Returns:
+            bool: 是否成功删除
+        """
+        with self._get_conn() as conn:
+            # 检查视频是否存在
+            cursor = conn.execute("SELECT id FROM videos WHERE id = ?", (video_id,))
+            if not cursor.fetchone():
+                return False
+            
+            # 删除关联数据（由于外键约束，这些会自动级联删除，但我们显式执行以确保）
+            # 1. 删除标签关联
+            conn.execute("DELETE FROM video_tags WHERE video_id = ?", (video_id,))
+            
+            # 2. 删除主题
+            conn.execute("DELETE FROM topics WHERE video_id = ?", (video_id,))
+            
+            # 3. 删除文件（artifacts）
+            conn.execute("DELETE FROM artifacts WHERE video_id = ?", (video_id,))
+            
+            # 4. 删除全文搜索内容
+            conn.execute("DELETE FROM fts_content WHERE video_id = ?", (video_id,))
+            
+            # 5. 最后删除视频记录
+            conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+            
+            return True
+    
     def list_videos(self, status: Optional[ProcessingStatus] = None, 
                    source_type: Optional[SourceType] = None,
                    limit: int = 100, offset: int = 0) -> List[Video]:
