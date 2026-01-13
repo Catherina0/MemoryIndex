@@ -12,6 +12,37 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def run_init(args):
+    """初始化数据库和环境"""
+    print("🚀 初始化 MemoryIndex 环境...")
+    
+    print("\n[1/3] 初始化 SQLite 数据库...")
+    try:
+        from db.schema import init_database
+        init_database(force_recreate=False)
+        print("✅ 数据库已就绪")
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
+        return
+
+    print("\n[2/3] 初始化 Whoosh 索引...")
+    try:
+        from db.whoosh_search import WhooshSearchIndex
+        idx = WhooshSearchIndex()
+        idx.init_index()
+        print("✅ 搜索索引已就绪")
+    except Exception as e:
+        print(f"❌ 索引初始化失败: {e}")
+        
+    print("\n[3/3] 配置 API 环境...")
+    if hasattr(args, 'no_api') and args.no_api:
+        print("⏭️  跳过 API 配置")
+    else:
+        configure_api()
+        
+    print("\n✨ 初始化完成！建议运行 'memidx selftest' 验证。")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog='memidx',
@@ -52,13 +83,15 @@ def main():
 💡 详细帮助：memidx <command> --help
 """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.3')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.4')
     
     subparsers = parser.add_subparsers(dest='command', help='可用命令')
     
     # ============================================================
-    # 🔍 搜索功能（集成现有的 search_cli）
+    # 🆕 初始化功能
     # ============================================================
+    init_parser = subparsers.add_parser('init', help='初始化数据库和环境（首次运行推荐）')
+    init_parser.add_argument('--no-api', action='store_true', help='跳过 API 配置')
     # search_cli 中的 search_command 完整支持的参数
     search_parser = subparsers.add_parser('search', help='全文搜索')
     search_parser.add_argument('query', help='搜索查询（支持空格分隔多个关键词）')
@@ -193,6 +226,9 @@ def main():
             }
             command_map[args.command](args)
             
+        elif args.command == 'init':
+            run_init(args)
+
         elif args.command == 'process':
             # 视频处理
             from core.process_video import process_video_cli
