@@ -22,6 +22,7 @@ install_requires = [
     "tabulate>=0.9.0",
     "Whoosh>=2.7.4",
     "jieba>=0.42.1",
+    "pydantic>=2.0.0",
 ]
 
 # 可选依赖
@@ -52,7 +53,7 @@ extras_require["full"] = (
 
 setup(
     name="memoryindex",
-    version="1.0.4",
+    version="1.0.6",
     description="智能视频知识库系统 - 视频下载、OCR识别、全文搜索一体化解决方案",
     long_description=long_description,
     long_description_content_type="text/markdown",

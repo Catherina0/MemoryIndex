@@ -373,5 +373,5 @@ GPLv3+ - 详见 [LICENSE](LICENSE)
 
 ---
 
-**Version**: 1.0.4  
+**Version**: 1.0.6  
 **Last Updated**: 2026-01-13
