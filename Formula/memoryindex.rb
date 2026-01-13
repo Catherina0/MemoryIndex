@@ -3,8 +3,8 @@ class Memoryindex < Formula
 
   desc "Intelligent video knowledge base system with download, OCR, and full-text search"
   homepage "https://github.com/Catherina0/MemoryIndex"
-  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.4.tar.gz"
-  sha256 "f2f938688cdd9d01a4932239997600e464516c1afd57c5977dc9c47e457e1f4f"
+  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.6.tar.gz"
+  sha256 "ac52004da841c86c4507fc9a812e6dd5eafcaffbf72e16a5bd555f8ff015e756"
   license "GPL-3.0-or-later"
 
   depends_on "ffmpeg"
@@ -122,8 +122,13 @@ class Memoryindex < Formula
   end
 
   resource "pydantic-core" do
-    url "https://files.pythonhosted.org/packages/71/70/23b021c950c2addd24ec408e9ab05d59b035b39d97cdc1130e1bce647bb6/pydantic_core-2.41.5.tar.gz"
-    sha256 "08daa51ea16ad373ffd5e7606252cc32f07bc72b28284b6bc9c6df804816476e"
+    if Hardware::CPU.arm?
+      url "https://files.pythonhosted.org/packages/12/44/37e403fd9455708b3b942949e1d7febc02167662bf1a7da5b78ee1ea2842/pydantic_core-2.41.5-cp311-cp311-macosx_11_0_arm64.whl"
+      sha256 "7f3bf998340c6d4b0c9a2f02d6a400e51f123b59565d74dc60d252ce888c260b"
+    else
+      url "https://files.pythonhosted.org/packages/e8/72/74a989dd9f2084b3d9530b0915fdda64ac48831c30dbf7c72a41a5232db8/pydantic_core-2.41.5-cp311-cp311-macosx_10_12_x86_64.whl"
+      sha256 "a3a52f6156e73e7ccb0f8cced536adccb7042be67cb45f9562e12b319c119da6"
+    end
   end
 
   resource "annotated-types" do
@@ -146,7 +151,7 @@ class Memoryindex < Formula
   end
 
   test do
-    assert_match "memoryindex 1.0.4", shell_output("#{bin}/memidx --version")
+    assert_match "memoryindex 1.0.6", shell_output("#{bin}/memidx --version")
     system "#{bin}/memidx", "selftest"
   end
 end
