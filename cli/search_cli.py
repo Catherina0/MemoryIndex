@@ -149,6 +149,11 @@ def tag_search_command(args):
         print(tabulate(table_data, headers=headers, tablefmt='grid'))
 
 
+def tags_command(args):
+    """兼容主 CLI 的别名，等价于 tag_search_command"""
+    return tag_search_command(args)
+
+
 def topic_search_command(args):
     """主题搜索命令"""
     repo = SearchRepository()
@@ -177,6 +182,11 @@ def topic_search_command(args):
             if topic.get('video_tags'):
                 print(f"  标签: {topic['video_tags']}")
             print()
+
+
+def topics_command(args):
+    """兼容主 CLI 的别名，等价于 topic_search_command"""
+    return topic_search_command(args)
 
 
 def list_tags_command(args):
@@ -221,6 +231,11 @@ def suggest_tags_command(args):
     print(f"\n💡 标签建议 (前缀: '{args.prefix}'):\n")
     for tag in suggestions:
         print(f"  • {tag}")
+
+
+def suggest_command(args):
+    """兼容主 CLI 的别名，等价于 suggest_tags_command"""
+    return suggest_tags_command(args)
 
 
 def show_command(args):
@@ -462,35 +477,52 @@ def list_command(args):
 def main():
     parser = argparse.ArgumentParser(
         prog='memidx',
-        description='MemoryIndex - 智能视频知识库搜索工具',
+        description='MemoryIndex - 智能视频知识库搜索系统',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 快速示例
+🔍 MemoryIndex - 快速使用指南
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📝 搜索内容：
-  memidx search "机器学习"                    # 全文搜索
-  memidx search "人工智能" --field transcript  # 仅在转写中搜索
-  memidx search "深度学习" --match-all         # AND 逻辑（所有关键词）
+🚀 基础搜索：
+  memidx search "关键词"                       # 全文搜索（转写+OCR+摘要）
+  memidx search "人工智能" --field transcript  # 仅搜索语音转写
+  memidx search "机器学习" --field ocr         # 仅搜索 OCR 文字
+  memidx search "深度学习" --match-all         # AND 逻辑（必须包含所有词）
   memidx search "神经网络" --exact             # 精确匹配
 
-🏷️  按标签查找：
-  memidx tags --tags 教育 科技                # 标签过滤（OR 逻辑）
-  memidx tags --tags 教育 科技 --match-all    # 标签过滤（AND 逻辑）
-  memidx list-tags --limit 20                 # 列出热门标签
+🏷️  标签管理：
+  memidx tags --tags 教育 科技                # 按标签查找（OR）
+  memidx tags --tags 教育 科技 --match-all    # 按标签查找（AND）
+  memidx list-tags                            # 列出所有标签
+  memidx list-tags --limit 20                 # 列出热门标签（Top 20）
   memidx suggest "机器"                        # 标签自动补全
 
-🎯 主题和管理：
-  memidx topics "神经网络"                     # 主题搜索
+📂 视频管理：
   memidx list                                 # 列出所有视频
-  memidx show 123                             # 查看特定视频详情
+  memidx list --limit 10                      # 列出最新 10 个视频
+  memidx show 123                             # 查看视频详情（ID=123）
+  memidx topics "AI"                          # 搜索包含特定主题的视频
   memidx delete 123                           # 删除视频记录
 
-💡 更多选项请使用：memidx <command> --help
+💡 高级选项：
+  memidx search "关键词" --sort date          # 按日期排序
+  memidx search "关键词" --limit 50           # 返回 50 条结果
+  memidx search "关键词" --json               # JSON 格式输出
+  memidx search "关键词" --min-relevance 0.5  # 最小相关度 0.5
+
+🎬 视频处理（另见 memidx-process --help）：
+  memidx-process video.mp4                    # 处理本地视频
+  memidx-process video.mp4 --with-frames      # 包含 OCR 识别
+  memidx-download "https://youtu.be/xxx"      # 下载并处理在线视频
+
+🌐 网页归档（另见 memidx-archive --help）：
+  memidx-archive "https://zhihu.com/xxx"      # 归档网页为 Markdown
+
+💡 更多帮助：memidx <command> --help
 """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.2')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.3')
     
     subparsers = parser.add_subparsers(dest='command', help='子命令')
     

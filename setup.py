@@ -52,7 +52,7 @@ extras_require["full"] = (
 
 setup(
     name="memoryindex",
-    version="1.0.0",
+    version="1.0.3",
     description="智能视频知识库系统 - 视频下载、OCR识别、全文搜索一体化解决方案",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -66,15 +66,15 @@ setup(
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
-            # 主命令
-            "memoryindex=cli.search_cli:main",
-            "memidx=cli.search_cli:main",
+            # 主命令：全文搜索
+            "memoryindex=cli.search_cli:main",  # 主命令：memoryindex search "关键词"
+            "memidx=cli.search_cli:main",       # 简写：memidx search "关键词"
             
-            # 视频处理命令
-            "memidx-process=core.process_video:main",
-            "memidx-download=core.video_downloader:main",
+            # 视频处理：下载、转写、OCR、AI摘要
+            "memidx-process=core.process_video:main",    # 处理本地视频
+            "memidx-download=core.video_downloader:main", # 下载在线视频
             
-            # 网页归档命令
+            # 网页归档：知乎、小红书、B站等网页转 Markdown
             "memidx-archive=cli.archive_cli:main",
         ],
     },

@@ -98,6 +98,36 @@ async def archive_batch(args):
                 print(f"  - {urls[i]}")
 
 
+def archive_command(args):
+    """供 memidx 子命令调用的简化封装。
+
+    main_cli 中的 `memidx archive` 目前只支持：
+      memidx archive URL [--output DIR]
+
+    这里直接复用本文件的 archive_single 逻辑，
+    使用无头浏览器、无 Cookie、默认并发等配置。
+    """
+    # 构造与本模块预期兼容的参数对象
+    class SimpleArgs:
+        pass
+
+    simple = SimpleArgs()
+    simple.url = args.url
+    simple.output = args.output or 'archived'
+    simple.show_browser = False
+    simple.verbose = False
+    simple.cookies = None
+    simple.browser = None
+
+    # 运行单 URL 归档
+    setup_logging(simple.verbose)
+    try:
+        asyncio.run(archive_single(simple))
+    except KeyboardInterrupt:
+        print("\n\n用户中断")
+        sys.exit(130)
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
@@ -121,7 +151,7 @@ def main():
   python -m cli.archive_cli https://example.com --show-browser -v
         """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.2')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.3')
     
     # 基本参数
     parser.add_argument('url', nargs='?', help='要归档的URL')

@@ -52,44 +52,71 @@ def main():
 💡 详细帮助：memidx <command> --help
 """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.2')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.3')
     
     subparsers = parser.add_subparsers(dest='command', help='可用命令')
     
     # ============================================================
     # 🔍 搜索功能（集成现有的 search_cli）
     # ============================================================
+    # search_cli 中的 search_command 完整支持的参数
     search_parser = subparsers.add_parser('search', help='全文搜索')
-    search_parser.add_argument('query', help='搜索查询')
+    search_parser.add_argument('query', help='搜索查询（支持空格分隔多个关键词）')
     search_parser.add_argument('--tags', nargs='+', help='标签过滤')
     search_parser.add_argument('--field', choices=['all', 'report', 'transcript', 'ocr', 'topic'],
                               default='all', help='搜索字段')
     search_parser.add_argument('--sort', choices=['relevance', 'date', 'duration', 'title'],
                               default='relevance', help='排序方式')
     search_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
+    search_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
+    search_parser.add_argument('--min-relevance', type=float, default=0.0, help='最小相关性')
+    search_parser.add_argument('--match-all', action='store_true', help='多关键词AND逻辑（默认OR）')
+    search_parser.add_argument('--exact', action='store_true', help='精确搜索（默认模糊搜索）')
+    search_parser.add_argument('--show-all-matches', action='store_true', help='显示所有匹配片段（默认每个视频只显示一次）')
     search_parser.add_argument('--json', action='store_true', help='JSON格式输出')
+    search_parser.add_argument('-v', '--verbose', action='store_true', help='详细输出')
     
+    # 标签搜索，与 tag_search_command 参数保持一致
     tags_parser = subparsers.add_parser('tags', help='按标签搜索')
     tags_parser.add_argument('--tags', nargs='+', required=True, help='标签列表')
-    tags_parser.add_argument('--match-all', action='store_true', help='匹配所有标签（AND）')
+    tags_parser.add_argument('--match-all', action='store_true', help='匹配所有标签（AND逻辑）')
+    tags_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
+    tags_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
+    tags_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     
+    # 主题搜索
     topics_parser = subparsers.add_parser('topics', help='主题搜索')
     topics_parser.add_argument('query', help='主题关键词')
+    topics_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
+    topics_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
+    topics_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     
+    # 列出热门标签
     list_tags_parser = subparsers.add_parser('list-tags', help='列出热门标签')
-    list_tags_parser.add_argument('--limit', type=int, default=20, help='标签数量')
+    list_tags_parser.add_argument('--limit', type=int, default=50, help='返回结果数')
+    list_tags_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     
+    # 标签自动补全
     suggest_parser = subparsers.add_parser('suggest', help='标签自动补全')
     suggest_parser.add_argument('prefix', help='标签前缀')
+    suggest_parser.add_argument('--limit', type=int, default=10, help='返回结果数')
     
+    # 列出视频列表
     list_parser = subparsers.add_parser('list', help='列出所有视频')
-    list_parser.add_argument('--limit', type=int, default=50, help='返回结果数')
+    list_parser.add_argument('--limit', type=int, default=20, help='返回结果数')
+    list_parser.add_argument('--offset', type=int, default=0, help='分页偏移')
+    list_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     
+    # 展示视频详情
     show_parser = subparsers.add_parser('show', help='展示视频详情')
-    show_parser.add_argument('video_id', type=int, help='视频ID')
+    show_parser.add_argument('id', type=int, help='视频ID')
+    show_parser.add_argument('--json', action='store_true', help='JSON格式输出')
+    show_parser.add_argument('--full', action='store_true', help='显示完整内容（包含转写、OCR等）')
     
+    # 删除视频记录
     delete_parser = subparsers.add_parser('delete', help='删除视频记录')
-    delete_parser.add_argument('video_id', type=int, help='视频ID')
+    delete_parser.add_argument('id', type=int, help='视频ID')
+    delete_parser.add_argument('--force', action='store_true', help='强制删除，不提示确认')
     
     # ============================================================
     # 📹 视频处理功能
@@ -148,18 +175,18 @@ def main():
     # 路由到对应的处理函数
     try:
         if args.command in ['search', 'tags', 'topics', 'list-tags', 'suggest', 'list', 'show', 'delete']:
-            # 搜索相关命令
+            # 搜索相关命令，全部委托给 cli.search_cli 中的实现
             from cli.search_cli import (
-                search_command, tags_command, topics_command, 
-                list_tags_command, suggest_command, list_command,
-                show_command, delete_command
+                search_command, tag_search_command, topic_search_command,
+                list_tags_command, suggest_tags_command, list_command,
+                show_command, delete_command,
             )
             command_map = {
                 'search': search_command,
-                'tags': tags_command,
-                'topics': topics_command,
+                'tags': tag_search_command,
+                'topics': topic_search_command,
                 'list-tags': list_tags_command,
-                'suggest': suggest_command,
+                'suggest': suggest_tags_command,
                 'list': list_command,
                 'show': show_command,
                 'delete': delete_command,
@@ -183,7 +210,6 @@ def main():
             
         elif args.command == 'selftest':
             # 系统自检
-            import sys
             sys.argv = ['selftest']  # 重置 argv
             if args.full:
                 sys.argv.append('--full')
