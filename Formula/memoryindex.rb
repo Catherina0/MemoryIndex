@@ -10,6 +10,7 @@ class Memoryindex < Formula
   depends_on "ffmpeg"
   depends_on "python@3.11"
   depends_on "yt-dlp"
+  depends_on "rust" => :build
 
   resource "groq" do
     url "https://files.pythonhosted.org/packages/3f/12/f4099a141677fcd2ed79dcc1fcec431e60c52e0e90c9c5d935f0ffaf8c0e/groq-1.0.0.tar.gz"
@@ -122,13 +123,8 @@ class Memoryindex < Formula
   end
 
   resource "pydantic-core" do
-    if Hardware::CPU.arm?
-      url "https://files.pythonhosted.org/packages/12/44/37e403fd9455708b3b942949e1d7febc02167662bf1a7da5b78ee1ea2842/pydantic_core-2.41.5-cp311-cp311-macosx_11_0_arm64.whl"
-      sha256 "7f3bf998340c6d4b0c9a2f02d6a400e51f123b59565d74dc60d252ce888c260b"
-    else
-      url "https://files.pythonhosted.org/packages/e8/72/74a989dd9f2084b3d9530b0915fdda64ac48831c30dbf7c72a41a5232db8/pydantic_core-2.41.5-cp311-cp311-macosx_10_12_x86_64.whl"
-      sha256 "a3a52f6156e73e7ccb0f8cced536adccb7042be67cb45f9562e12b319c119da6"
-    end
+    url "https://files.pythonhosted.org/packages/71/70/23b021c950c2addd24ec408e9ab05d59b035b39d97cdc1130e1bce647bb6/pydantic_core-2.41.5.tar.gz"
+    sha256 "08daa51ea16ad373ffd5e7606252cc32f07bc72b28284b6bc9c6df804816476e"
   end
 
   resource "annotated-types" do

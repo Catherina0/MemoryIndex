@@ -53,7 +53,7 @@ extras_require["full"] = (
 
 setup(
     name="memoryindex",
-    version="1.0.6",
+    version="1.0.7",
     description="智能视频知识库系统 - 视频下载、OCR识别、全文搜索一体化解决方案",
     long_description=long_description,
     long_description_content_type="text/markdown",
