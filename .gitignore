@@ -70,7 +70,23 @@ browser_data_debug/
 # Cookie 配置文件（包含敏感信息）
 archiver/config/*_cookie.json
 archiver/config/cookies/
+archiver/config/*.json
+!archiver/config/cookie_example.json
+!archiver/config/.gitkeep
 XHS-Downloader/Volume/settings.json
+XHS-Downloader/Volume/
+
+# 实际配置文件（可能包含敏感信息）
+config.py
+*/config.py
+!config_example.py
+
+# 临时凭证和令牌文件
+*.token
+*.secret
+*.credential
+auth.json
+credentials.json
 
 # Chromium browser (独立 Chromium 浏览器，由 make install 下载)
 chromium/
