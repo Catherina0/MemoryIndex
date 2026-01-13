@@ -77,7 +77,7 @@ memidx-archive = "cli.archive_cli:main"
 memidx-search = "cli.search_cli:main"
 
 [tool.setuptools]
-packages = ["cli", "core", "db", "ocr", "archiver", "archiver.core", "archiver.platforms", "archiver.utils"]
+packages = ["cli", "core", "db", "ocr", "scripts", "archiver", "archiver.core", "archiver.platforms", "archiver.utils"]
 
 [tool.setuptools.package-data]
 "*" = ["*.sql", "*.swift"]
