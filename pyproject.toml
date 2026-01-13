@@ -39,12 +39,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PaddleOCR（跨平台 OCR 引擎）
-paddle = [
-    "paddlepaddle>=3.0.0",
-    "paddleocr>=2.7.0",
-    "opencv-python",
-]
+# PaddleOCR - REMOVED: Using Apple Vision OCR instead
+# paddle = [
+#     "paddlepaddle>=3.0.0",
+#     "paddleocr>=2.7.0",
+#     "opencv-python",
+# ]
 # 网页归档支持
 archiver = [
     "crawl4ai>=0.2.0",

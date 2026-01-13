@@ -190,3 +190,4 @@ debug_*.html
 archived/.DS_Store
 archived/debug_*
 HOMEBREW_RELEASE.md
+UPDATE_SHA256.md

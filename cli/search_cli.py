@@ -484,6 +484,7 @@ def main():
   python search_cli.py suggest "机器"
         """
     )
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.0')
     
     subparsers = parser.add_subparsers(dest='command', help='子命令')
     
