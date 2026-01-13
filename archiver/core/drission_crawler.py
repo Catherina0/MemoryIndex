@@ -725,7 +725,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                                     logger.info(f"  - 已移除 {len(profile_links)} 个用户profile链接")
                                     for link in profile_links:
                                         self.current_tab.run_js("arguments[0].remove()", link)
-                            except:
+                            except Exception:
                                 pass
                             
                             # 移除"关注"按钮 - 通过文字内容匹配
@@ -738,7 +738,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                                         follow_count += 1
                                 if follow_count > 0:
                                     logger.info(f"  - 已移除 {follow_count} 个关注按钮")
-                            except:
+                            except Exception:
                                 pass
                     
                     # 重新获取 HTML (移除元素后)

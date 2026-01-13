@@ -425,7 +425,7 @@ def list_command(args):
     from db import VideoRepository
     repo = VideoRepository()
     
-    videos = repo.list_videos(limit=args.limit, offset=args.offset)
+    videos = repo.list_videos_with_summary(limit=args.limit, offset=args.offset)
     
     if not videos:
         print("\n❌ 数据库中没有视频")

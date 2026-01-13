@@ -2,6 +2,9 @@
 """
 MemoryIndex - 智能视频知识库系统
 从视频下载到文本搜索的完整解决方案
+
+注意：此 setup.py 作为 pyproject.toml 的备用方案
+推荐使用 pyproject.toml 进行构建
 """
 from setuptools import setup, find_packages
 from pathlib import Path
@@ -10,15 +13,42 @@ from pathlib import Path
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
 
-# 读取依赖
-requirements_file = Path(__file__).parent / "requirements.txt"
-requirements = []
-if requirements_file.exists():
-    requirements = [
-        line.strip() 
-        for line in requirements_file.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
+# 基础依赖
+install_requires = [
+    "numpy",
+    "groq",
+    "python-dotenv",
+    "yt-dlp",
+    "tabulate>=0.9.0",
+    "Whoosh>=2.7.4",
+    "jieba>=0.42.1",
+]
+
+# 可选依赖
+extras_require = {
+    "paddle": [
+        "paddlepaddle>=3.0.0",
+        "paddleocr>=2.7.0",
+        "opencv-python",
+    ],
+    "archiver": [
+        "crawl4ai>=0.2.0",
+        "playwright>=1.40.0",
+        "beautifulsoup4>=4.12.0",
+        "html2text>=2024.0.0",
+        "DrissionPage>=4.0.0",
+    ],
+}
+extras_require["full"] = (
+    extras_require["paddle"] 
+    + extras_require["archiver"] 
+    + [
+        "browser-cookie3>=0.19.0",
+        "httpx>=0.27.0",
+        "aiosqlite>=0.20.0",
+        "aiofiles>=24.0.0",
     ]
+)
 
 setup(
     name="memoryindex",
@@ -29,9 +59,10 @@ setup(
     author="Catherina",
     author_email="",
     url="https://github.com/Catherina0/MemoryIndex",
-    packages=find_packages(exclude=["tests", "docs", "scripts"]),
+    packages=find_packages(exclude=["tests", "docs", "scripts", "archived", "browser_data", "chromium"]),
     include_package_data=True,
-    install_requires=requirements,
+    install_requires=install_requires,
+    extras_require=extras_require,
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
@@ -42,6 +73,9 @@ setup(
             # 视频处理命令
             "memidx-process=core.process_video:main",
             "memidx-download=core.video_downloader:main",
+            
+            # 网页归档命令
+            "memidx-archive=cli.archive_cli:main",
         ],
     },
     classifiers=[
@@ -54,8 +88,9 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3.12",
+        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
         "Operating System :: OS Independent",
     ],
-    keywords="video ocr search knowledge-base paddleocr",
+    keywords="video ocr search knowledge-base paddleocr web-archiver",
 )

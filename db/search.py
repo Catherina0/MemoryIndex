@@ -432,7 +432,7 @@ class SearchRepository:
                 # 对变体按照重要性排序：原查询通配符 > 前缀匹配 > 其他变体
                 prioritized_queries = []
                 exact_match = f"{original_query}*"
-                prefix_patterns = [q for q in fuzzy_queries if q.endswith('*') and not '*' in q[:-1]]
+                prefix_patterns = [q for q in fuzzy_queries if q.endswith('*') and '*' not in q[:-1]]
                 other_patterns = [q for q in fuzzy_queries if q not in prefix_patterns and q != exact_match]
                 
                 if exact_match in fuzzy_queries:

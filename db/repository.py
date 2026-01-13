@@ -380,7 +380,7 @@ class VideoRepository:
             
             return [row['name'] for row in cursor.fetchall()]
     
-    def list_videos(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+    def list_videos_with_summary(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
         """列出所有视频及其摘要信息
         
         Args:

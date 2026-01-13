@@ -4,12 +4,31 @@ include LICENSE
 include requirements.txt
 include Makefile
 include CHEATSHEET.txt
+include USAGE.md
+
+# 包含配置示例文件
+include config_example.py
+include .env.example
 
 # 包含文档
 recursive-include docs *.md *.txt
 
 # 包含数据库架构
 include db/schema.sql
+
+# 包含 OCR Swift 脚本
+include ocr/vision_ocr.swift
+
+# 包含 archiver 配置文件（仅示例）
+include archiver/config/.gitkeep
+include archiver/config/cookie_example.json
+recursive-include archiver *.py *.md
+
+# 排除敏感的 cookie 配置文件
+exclude archiver/config/*_cookie.json
+exclude archiver/config/twitter_cookie.json
+exclude archiver/config/xiaohongshu_cookie.json
+exclude archiver/config/zhihu_cookie.json
 
 # 排除不需要的文件
 recursive-exclude tests *
@@ -19,5 +38,10 @@ recursive-exclude output *
 recursive-exclude videos *
 recursive-exclude storage *
 recursive-exclude .venv *
+recursive-exclude browser_data *
+recursive-exclude archived *
+recursive-exclude chromium *
 
 global-exclude .DS_Store
+global-exclude *.pyc
+global-exclude __pycache__
