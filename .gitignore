@@ -189,3 +189,4 @@ debug_*.html
 # 归档目录中的临时文件
 archived/.DS_Store
 archived/debug_*
+HOMEBREW_RELEASE.md
