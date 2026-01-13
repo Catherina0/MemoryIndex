@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memoryindex"
-version = "1.0.1"
+version = "1.0.2"
 description = "智能视频知识库系统 - 视频下载、OCR识别、全文搜索一体化解决方案"
 readme = "README.md"
 requires-python = ">=3.8"

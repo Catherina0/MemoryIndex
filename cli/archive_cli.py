@@ -121,7 +121,7 @@ def main():
   python -m cli.archive_cli https://example.com --show-browser -v
         """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.1')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.2')
     
     # 基本参数
     parser.add_argument('url', nargs='?', help='要归档的URL')

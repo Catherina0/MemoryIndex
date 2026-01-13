@@ -52,7 +52,7 @@ def main():
 💡 详细帮助：memidx <command> --help
 """
     )
-    parser.add_argument('--version', action='version', version='memoryindex 1.0.1')
+    parser.add_argument('--version', action='version', version='memoryindex 1.0.2')
     
     subparsers = parser.add_subparsers(dest='command', help='可用命令')
     
