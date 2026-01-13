@@ -902,7 +902,7 @@ def main():
         
         if 'database' in all_errors:
             print("   • 数据库问题:")
-            print("     - 初始化: make db-init")
+            print("     - 初始化: memidx init")
         
         print("\n请修复以上问题后重新运行 make selftest")
         print("━" * 50)
