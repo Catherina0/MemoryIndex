@@ -192,3 +192,4 @@ archived/debug_*
 HOMEBREW_RELEASE.md
 UPDATE_SHA256.md
 HOMEBREW_SETUP.md
+check_formula_deps.sh
