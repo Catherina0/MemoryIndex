@@ -3,8 +3,8 @@ class Memoryindex < Formula
 
   desc "Intelligent video knowledge base system with download, OCR, and full-text search"
   homepage "https://github.com/Catherina0/MemoryIndex"
-  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "909ffaab38c51b41e55cea09b983d06af56b5af39b72693ffabd987b1276f60e"
+  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.1.tar.gz"
+  sha256 "652c47c56917de976a3b537420fa7b05136601cd8deec0f0f50c615f7a15afd1"
   license "GPL-3.0-or-later"
   head "https://github.com/Catherina0/MemoryIndex.git", branch: "main"
 
@@ -78,7 +78,7 @@ class Memoryindex < Formula
   end
 
   test do
-    assert_match "memoryindex 1.0.0", shell_output("#{bin}/memidx --version")
+    assert_match "memoryindex 1.0.1", shell_output("#{bin}/memidx --version")
     system "#{bin}/memidx", "--help"
     system "#{bin}/memidx", "selftest"
     system "#{bin}/memidx-process", "--help"
