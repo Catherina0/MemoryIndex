@@ -669,6 +669,64 @@ def main():
             }
             print(json.dumps(output, ensure_ascii=False))
         
+        # 如果需要自动处理
+        if hasattr(args, 'process') and args.process:
+            print(f"\n📹 开始处理视频...")
+            from core.process_video import process_video
+            process_video(
+                video_path=file_info.file_path,
+                output_dir=Path("output"),
+                with_frames=getattr(args, 'ocr', False),
+                ocr_lang="ch",
+                ocr_engine="vision",
+                source_url=url,
+                platform_title=file_info.title,
+            )
+        
+    except Exception as e:
+        print(f"\n❌ 下载失败: {e}")
+        exit(1)
+
+
+def download_cli(args):
+    """统一CLI适配函数"""
+    # 从输入中提取URL
+    url = extract_url_from_text(args.url)
+    if not url:
+        print(f"❌ 错误：无法从输入中提取有效的视频URL: {args.url}")
+        exit(1)
+    
+    # 创建下载器并下载
+    output_dir = args.output if hasattr(args, 'output') and args.output else "videos"
+    downloader = VideoDownloader(download_dir=output_dir)
+    
+    try:
+        file_info = downloader.download_video(url, force_redownload=getattr(args, 'force', False))
+        
+        print("\n" + "="*50)
+        print("✅ 下载完成")
+        print("="*50)
+        print(f"文件路径: {file_info.file_path}")
+        print(f"平台:     {file_info.platform}")
+        print(f"标题:     {file_info.title}")
+        if file_info.duration:
+            print(f"时长:     {file_info.duration:.1f} 秒")
+        print("="*50)
+        
+        # 如果需要自动处理
+        if args.process:
+            print(f"\n📹 开始处理视频...")
+            from core.process_video import process_video
+            process_video(
+                video_path=file_info.file_path,
+                output_dir=Path("output"),
+                with_frames=args.ocr,
+                ocr_lang="ch",
+                ocr_engine="vision",
+                source_url=url,
+                platform_title=file_info.title,
+            )
+        
     except Exception as e:
         print(f"\n❌ 下载失败: {e}")
         exit(1)

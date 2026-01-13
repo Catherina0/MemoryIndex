@@ -168,6 +168,47 @@ def format_size(bytes: float) -> str:
     return f"{mb:.2f} MB"
 
 
+def show_stats(args):
+    """统一CLI适配函数"""
+    # 如果没有指定参数，默认显示所有
+    show_all = not (hasattr(args, 'archives') or hasattr(args, 'videos') or hasattr(args, 'tags'))
+    
+    if show_all or getattr(args, 'archives', False):
+        print("\n" + "=" * 60)
+        print("🌐 网页归档详细统计")
+        print("=" * 60)
+        
+        archive_stats = get_archive_stats()
+        
+        # 按平台统计
+        if archive_stats['by_platform']:
+            print("\n📊 按平台统计:")
+            table = []
+            for item in archive_stats['by_platform']:
+                platform_names = {
+                    'twitter': 'Twitter/X',
+                    'zhihu': '知乎',
+                    'reddit': 'Reddit',
+                    'web_archive': '通用网页'
+                }
+                platform = platform_names.get(item['source_type'], item['source_type'])
+                table.append([
+                    platform,
+                    item['count'],
+                    format_size(item['avg_size'])
+                ])
+            from tabulate import tabulate
+            print(tabulate(table, headers=['平台', '数量', '平均大小'], tablefmt='simple'))
+    
+    if show_all or getattr(args, 'videos', False):
+        # TODO: 添加视频统计
+        pass
+    
+    if show_all or getattr(args, 'tags', False):
+        # TODO: 添加标签统计
+        pass
+
+
 def main():
     """主函数"""
     import argparse

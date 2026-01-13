@@ -69,11 +69,12 @@ Issues = "https://github.com/Catherina0/MemoryIndex/issues"
 Documentation = "https://github.com/Catherina0/MemoryIndex#readme"
 
 [project.scripts]
-memoryindex = "cli.search_cli:main"
-memidx = "cli.search_cli:main"
+memoryindex = "cli.main_cli:main"
+memidx = "cli.main_cli:main"
 memidx-process = "core.process_video:main"
 memidx-download = "core.video_downloader:main"
 memidx-archive = "cli.archive_cli:main"
+memidx-search = "cli.search_cli:main"
 
 [tool.setuptools]
 packages = ["cli", "core", "db", "ocr", "archiver", "archiver.core", "archiver.platforms", "archiver.utils"]

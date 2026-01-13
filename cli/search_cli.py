@@ -461,28 +461,34 @@ def list_command(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='知识库搜索工具',
+        prog='memidx',
+        description='MemoryIndex - 智能视频知识库搜索工具',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 全文搜索
-  python search_cli.py search "机器学习"
-  
-  # 在转写中搜索
-  python search_cli.py search "人工智能" --field transcript
-  
-  # 按标签搜索
-  python search_cli.py tags --tags 教育 科技 --match-all
-  
-  # 搜索主题
-  python search_cli.py topics "神经网络"
-  
-  # 列出热门标签
-  python search_cli.py list-tags --limit 20
-  
-  # 标签自动补全
-  python search_cli.py suggest "机器"
-        """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 快速示例
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 搜索内容：
+  memidx search "机器学习"                    # 全文搜索
+  memidx search "人工智能" --field transcript  # 仅在转写中搜索
+  memidx search "深度学习" --match-all         # AND 逻辑（所有关键词）
+  memidx search "神经网络" --exact             # 精确匹配
+
+🏷️  按标签查找：
+  memidx tags --tags 教育 科技                # 标签过滤（OR 逻辑）
+  memidx tags --tags 教育 科技 --match-all    # 标签过滤（AND 逻辑）
+  memidx list-tags --limit 20                 # 列出热门标签
+  memidx suggest "机器"                        # 标签自动补全
+
+🎯 主题和管理：
+  memidx topics "神经网络"                     # 主题搜索
+  memidx list                                 # 列出所有视频
+  memidx show 123                             # 查看特定视频详情
+  memidx delete 123                           # 删除视频记录
+
+💡 更多选项请使用：memidx <command> --help
+"""
     )
     parser.add_argument('--version', action='version', version='memoryindex 1.0.1')
     
