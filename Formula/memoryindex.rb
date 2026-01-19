@@ -3,8 +3,8 @@ class Memoryindex < Formula
 
   desc "Intelligent video knowledge base system with download, OCR, and full-text search"
   homepage "https://github.com/Catherina0/MemoryIndex"
-  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.6.tar.gz"
-  sha256 "ac52004da841c86c4507fc9a812e6dd5eafcaffbf72e16a5bd555f8ff015e756"
+  url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.8.tar.gz"
+  sha256 "" # 待发布后生成
   license "GPL-3.0-or-later"
 
   depends_on "ffmpeg"
@@ -35,26 +35,6 @@ class Memoryindex < Formula
   resource "jieba" do
     url "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz"
     sha256 "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2"
-  end
-
-  resource "crawl4ai" do
-    url "https://files.pythonhosted.org/packages/d6/8f/08133fcf6f4ae41aff02af8c5353af831e81bf925bc667ef2f8653abd7d2/crawl4ai-0.7.8.tar.gz"
-    sha256 "ed0189ca19ccc1dad349a37565d9dcbfed7897650e44d7c6ae25a37eef5ab44b"
-  end
-
-  resource "beautifulsoup4" do
-    url "https://files.pythonhosted.org/packages/c3/b0/1c6a16426d389813b48d95e26898aff79abbde42ad353958ad95cc8c9b21/beautifulsoup4-4.14.3.tar.gz"
-    sha256 "6292b1c5186d356bba669ef9f7f051757099565ad9ada5dd630bd9de5fa7fb86"
-  end
-
-  resource "html2text" do
-    url "https://files.pythonhosted.org/packages/f8/27/e158d86ba1e82967cc2f790b0cb02030d4a8bef58e0c79a8590e9678107f/html2text-2025.4.15.tar.gz"
-    sha256 "948a645f8f0bc3abe7fd587019a2197a12436cd73d0d4908af95bfc8da337588"
-  end
-
-  resource "browser-cookie3" do
-    url "https://files.pythonhosted.org/packages/e0/e1/652adea0ce25948e613ef78294c8ceaf4b32844aae00680d3a1712dde444/browser_cookie3-0.20.1.tar.gz"
-    sha256 "6d8d0744bf42a5327c951bdbcf77741db3455b8b4e840e18bab266d598368a12"
   end
 
   resource "distro" do
@@ -131,6 +111,26 @@ class Memoryindex < Formula
     url "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz"
     sha256 "aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"
   end
+
+  resource "aiosqlite" do
+    url "https://files.pythonhosted.org/packages/cf/2c/92fe44d4a932a5a9b2392820596f20d8e2439d63087539403f5e5d94eb68/aiosqlite-0.9.0.tar.gz"
+    sha256 "af4fed9e778756fa0ffffc7a8b14c4d7b1a57155dc5669f18e45107313f6019e"
+  end
+
+  resource "aiofiles" do
+    url "https://files.pythonhosted.org/packages/41/c3/534eac40372d8ee36ef40df62ec129bee4fdb5ad9706e58a29be53b2c970/aiofiles-25.1.0.tar.gz"
+    sha256 "a8d728f0a29de45dc521f18f07297428d56992a742f0cd2701ba86e44d23d5b2"
+  end
+
+  resource "greenlet" do
+    url "https://files.pythonhosted.org/packages/c7/e5/40dbda2736893e3e53d25838e0f19a2b417dfc122b9989c91918db30b5d3/greenlet-3.3.0.tar.gz"
+    sha256 "a82bb225a4e9e4d653dd2fb7b8b2d36e4fb25bc0165422a11e48b88e9e6f78fb"
+  end
+
+  resource "pyee" do
+    url "https://files.pythonhosted.org/packages/eb/2c/ebe4fd8213b3d720b193a62f07169607e945dd02a08edc45b28ca52fbe07/pyee-9.1.1.tar.gz"
+    sha256 "a1ebcd38d92e7d780635ab3442c0f6ce49840d9bfe0b0549921a6188860af0db"
+  end
  
   def install
     virtualenv_install_with_resources
@@ -138,16 +138,13 @@ class Memoryindex < Formula
 
   def caveats
     <<~EOS
-      To use speech recognition and AI summary features, configure Groq API:
-        echo "GROQ_API_KEY=your_key_here" > ~/.memoryindex.env
-        export GROQ_ENV_FILE=~/.memoryindex.env
-
-      Get API key from: https://console.groq.com/keys
+      1. Initialize database and configure API keys (Run this first):
+        memidx init
     EOS
   end
 
   test do
-    assert_match "memoryindex 1.0.6", shell_output("#{bin}/memidx --version")
+    assert_match "memoryindex 1.0.8", shell_output("#{bin}/memidx --version")
     system "#{bin}/memidx", "selftest"
   end
 end
