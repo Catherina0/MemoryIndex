@@ -4,7 +4,7 @@ class Memoryindex < Formula
   desc "Intelligent video knowledge base system with download, OCR, and full-text search"
   homepage "https://github.com/Catherina0/MemoryIndex"
   url "https://github.com/Catherina0/MemoryIndex/archive/refs/tags/v1.0.8.tar.gz"
-  sha256 "" # 待发布后生成
+  sha256 "a531adcdbadb1d7739cf18e1a8af508c3f85135970dc19694e0113881802f1a4"
   license "GPL-3.0-or-later"
 
   depends_on "ffmpeg"
