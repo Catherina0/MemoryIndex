@@ -12,14 +12,14 @@
 ### Homebrew（推荐普通用户）
 
 ```bash
-brew tap Catherina0/memoryindex
+brew tap Catherina0/MemoryIndex
 brew install memoryindex
 ```
 
 或一步完成：
 
 ```bash
-brew install Catherina0/memoryindex/memoryindex
+brew install Catherina0/MemoryIndex/memoryindex
 ```
 
 ### 源码安装（开发者）
