@@ -48,6 +48,7 @@ AUDIO_CODEC = "pcm_s16le"
 GROQ_API_KEY = ""  # TODO: 从环境变量或密钥管理器读取
 GROQ_ASR_MODEL = "whisper-large-v3-turbo"
 GROQ_LLM_MODEL = "mixtral-8x7b-32768"  # 或其他 Groq 支持的模型
+GROQ_NAMING_MODEL = "llama-3.1-8b-instant"  # 专门用于命名的模型
 GROQ_NAMING_MODEL = "openai/gpt-oss-20b"  # 专门用于命名的模型
 
 # 摘要 prompt 模板

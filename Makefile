@@ -297,11 +297,15 @@ run: ensure-venv
 # 处理视频：音频 + OCR + AI总结（完整流程）
 # 可选参数：
 #   DET_MODEL=mobile|server  - 检测模型（默认 mobile）
-#   REC_MODEL=mobile|server  - 识别模型（默认 mobile）
 #   USE_GPU=1                - 启用 GPU 加速
 #   OCR_WORKERS=N            - 并行进程数（默认=CPU核心数/2）
 #   LLM=oss|gemini         - 指定总结模型 (默认自动)
 #   ASR=v3|turbo           - 指定语音识别模型 (默认 v3)
+#   LEGACY=1                 - 使用传统 1FPS 抽帧（禁用智能抽帧）
+
+ocr-legacy:
+	@$(MAKE) ocr LEGACY=1
+
 ocr: ensure-venv
 	@if [ -z "$(VIDEO)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
@@ -319,12 +323,15 @@ ocr: ensure-venv
 	fi; \
 	GPU_FLAG=""; \
 	if [ "$(USE_GPU)" = "1" ]; then GPU_FLAG="--use-gpu"; fi; \
+	LEGACY_FLAG=""; \
+	if [ "$(LEGACY)" = "1" ]; then LEGACY_FLAG="--legacy-ocr"; fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "🎬 处理视频（完整模式：OCR + 音频）"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 视频: $(VIDEO)"; \
 	if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi; \
 	if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi; \
+	if [ "$(LEGACY)" = "1" ]; then echo "📷 抽帧模式: 传统固定 1 FPS"; else echo "🚀 抽帧模式: 智能变化触发 & 融合"; fi; \
 	echo "🔍 流程: 1️⃣  OCR识别 → 2️⃣  音频转写 → 3️⃣  AI总结"; \
 	echo "🤖 OCR模型: det=$$DET, rec=$$REC"; \
 	if [ "$$WORKERS" != "auto" ]; then \
@@ -337,7 +344,7 @@ ocr: ensure-venv
 	echo ""; \
 	export LLM_PROVIDER=$(LLM) && \
 	export ASR_MODEL_TYPE=$(ASR) && \
-	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
+	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG $$LEGACY_FLAG; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "✅ 处理完成！"; \
@@ -453,13 +460,16 @@ download-ocr: ensure-venv
 		echo "用法：make download-ocr URL=https://example.com/video"; \
 		exit 1; \
 	fi
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@LEGACY_FLAG=""; \
+	if [ "$(LEGACY)" = "1" ]; then LEGACY_FLAG="--legacy-ocr"; fi; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "📥 下载并处理视频（完整模式）"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
-	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi
-	@if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi
-	@echo "📺 流程: 下载 → 抽帧 → OCR → ASR → AI总结"
+	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi; \
+	if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi; \
+	if [ "$(LEGACY)" = "1" ]; then echo "📷 抽帧模式: 传统固定 1 FPS"; else echo "🚀 抽帧模式: 智能变化触发 & 融合"; fi; \
+	echo "📺 流程: 下载 → 抽帧 → OCR → ASR → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@# 先下载视频（所有输出正常显示，包括进度条）
@@ -479,7 +489,7 @@ download-ocr: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	cd $(PWD) && PYTHONPATH=$(PWD) DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
 	LLM_PROVIDER=$(LLM) ASR_MODEL_TYPE=$(ASR) \
-	$(PYTHON) core/process_video.py "$$VIDEO_PATH" --with-frames
+	$(PYTHON) core/process_video.py "$$VIDEO_PATH" --with-frames $$LEGACY_FLAG
 
 # 查看所有报告列表
 list-reports:

@@ -57,6 +57,14 @@ except ImportError:
     PARALLEL_OCR_AVAILABLE = False
     print("⚠️  多进程OCR模块不可用，将使用单进程模式")
 
+# 导入智能抽帧（新增）
+try:
+    from core.smart_frame_extractor import SmartFrameExtractor
+    SMART_EXTRACT_AVAILABLE = True
+except ImportError:
+    SMART_EXTRACT_AVAILABLE = False
+    print("⚠️  智能抽帧模块加载失败")
+
 # 导入数据库模块
 from db import VideoRepository
 from db.models import Video, Artifact, Topic, TimelineEntry, SourceType, ArtifactType, ProcessingStatus
@@ -202,6 +210,7 @@ def split_audio(audio_path: Path, max_size_mb: float = MAX_AUDIO_SIZE_MB) -> lis
     return chunks
 
 
+
 def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
     """
     用 ffmpeg 抽帧：默认 1 fps（每秒一帧）。
@@ -220,14 +229,16 @@ def extract_frames(video_path: Path, frames_dir: Path, fps: int = 1):
     subprocess.run(cmd, check=True)
 
 
-def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: int = 1) -> list:
+def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: float = 1, duration: float = 0) -> list:
     """
     音画匹配：将音频转写片段与视频帧关联。
+    支持稀疏抽帧（Smart Extract）和连续抽帧。
     
     Args:
         transcript_data: 包含 segments 的转写数据
         frames_dir: 视频帧目录
         fps: 抽帧频率（每秒帧数）
+        duration: 视频总时长（秒），用于确定最后一帧的结束时间
     
     Returns:
         list: [{'second': 0, 'frame': 'frame_00001.png', 'text': '对应的文本'}, ...]
@@ -235,30 +246,93 @@ def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: int = 
     import glob
     
     # 获取所有帧文件
-    frame_files = sorted(glob.glob(str(frames_dir / "frame_*.png")))
-    frame_count = len(frame_files)
+    # 支持 frame_XXXXX.png (普通模式) 和 keyframe_XXXXXXXX.png (智能模式)
+    frame_files_all = sorted(glob.glob(str(frames_dir / "*.png")))
+    # 过滤掉非预期文件
+    frame_files = [f for f in frame_files_all if "frame_" in Path(f).name or "keyframe_" in Path(f).name]
     
-    # 为每一秒建立文本索引
+    if not frame_files:
+        return []
+    
     timeline = []
     
-    for i in range(frame_count):
-        second = i  # 帧编号从1开始，对应第 i 秒
-        frame_name = f"frame_{i+1:05d}.png"
+    # 构建帧的时间段：(filename, start_time, end_time)
+    intervals = []
+    
+    # 预编译正则
+    re_legacy = re.compile(r"frame_(\d+)")
+    re_smart = re.compile(r"keyframe_(\d+)")
+    
+    for i in range(len(frame_files)):
+        fname = Path(frame_files[i]).name
         
-        # 查找这一秒对应的文本
-        texts_in_second = []
+        t_start = 0.0
+        
+        # 尝试解析智能模式 (keyframe_毫秒)
+        match_smart = re_smart.search(fname)
+        if match_smart:
+            t_start = int(match_smart.group(1)) / 1000.0
+        else:
+            # 尝试解析普通模式 (frame_序号)
+            match_legacy = re_legacy.search(fname)
+            if match_legacy:
+                idx = int(match_legacy.group(1))
+                t_start = (idx - 1) / fps
+        
+        # 确定结束时间 (下一帧的开始时间)
+        if i < len(frame_files) - 1:
+            next_fname = Path(frame_files[i+1]).name
+            t_end = t_start + 1.0 # 默认 fallback
+            
+            # 解析下一帧
+            match_smart_next = re_smart.search(next_fname)
+            if match_smart_next:
+                 t_end = int(match_smart_next.group(1)) / 1000.0
+            else:
+                 match_legacy_next = re_legacy.search(next_fname)
+                 if match_legacy_next:
+                     idx_next = int(match_legacy_next.group(1))
+                     t_end = (idx_next - 1) / fps
+        else:
+            # 最后一帧
+            t_end = duration if duration > 0 else t_start + 5.0
+        
+        # 修正：如果 t_end < t_start (比如排序乱了)，强制调整
+        if t_end < t_start: t_end = t_start + 2.0
+            
+        intervals.append((fname, t_start, t_end))
+
+    # 为每一帧查找对应的文本
+    for fname, start, end in intervals:
+        texts_in_interval = []
         if 'segments' in transcript_data:
             for seg in transcript_data['segments']:
-                seg_start = int(seg['start'])
-                seg_end = int(seg['end'])
-                # 如果片段覆盖当前秒
-                if seg_start <= second < seg_end:
-                    texts_in_second.append(seg['text'].strip())
+                seg_s = seg['start']
+                seg_e = seg['end']
+                
+                # 判断重叠: max(start, seg_s) < min(end, seg_e)
+                # 且重叠长度超过一定阈值? 或者只要有重叠?
+                # 简单起见：只要有重叠
+                if max(start, seg_s) < min(end, seg_e):
+                    texts_in_interval.append(seg['text'].strip())
+        
+        # 去重并拼接
+        # texts_in_interval might have duplicates if segment spans multiple frames? 
+        # No, we just append content.
+        
+        unique_texts = []
+        seen = set()
+        for t in texts_in_interval:
+            if t not in seen:
+                unique_texts.append(t)
+                seen.add(t)
         
         timeline.append({
-            'second': second,
-            'frame': frame_name,
-            'text': ' '.join(texts_in_second) if texts_in_second else ''
+            'second': int(start), # 兼容旧字段
+            'timestamp': start,
+            'duration': end - start,
+            'frame': fname,
+            'text': ' '.join(unique_texts)
         })
     
     return timeline
@@ -872,8 +946,10 @@ def generate_folder_name_with_llm(report_content: str, video_name: str) -> str:
 请直接返回文件夹名称："""
 
         # 命名任务使用轻量级模型，不占用主模型的配额
-        # 优先使用 GROQ_NAMING_MODEL，默认为 openai/gpt-oss-20b
-        model_name = os.getenv("GROQ_NAMING_MODEL", "openai/gpt-oss-20b")
+        # 优先使用 GROQ_NAMING_MODEL
+        model_name = os.getenv("GROQ_NAMING_MODEL", "llama-3.1-8b-instant")
+        
+        print(f"  🧠 使用 LLM 生成文件夹名 (模型: {model_name})...")
         
         response = client.chat.completions.create(
             model=model_name,
@@ -886,6 +962,7 @@ def generate_folder_name_with_llm(report_content: str, video_name: str) -> str:
         )
         
         folder_name = response.choices[0].message.content.strip()
+
         
         # 清理文件夹名称：移除特殊字符，限制长度
         import re
@@ -1341,6 +1418,7 @@ def process_video(
     source_url: str = None,
     platform_title: str = None,
     ocr_engine: str = None,  # 新增：'vision' 或 'paddle'，None=自动选择
+    smart_ocr: bool = True,  # 新增：是否启用智能抽帧
 ):
     ensure_dir(output_dir)
 
@@ -1367,6 +1445,7 @@ def process_video(
 
     ocr_text = ""
     transcript_text = ""
+    current_fps = 1
     
     # 2. 如果是OCR模式，先处理视频帧和OCR
     if with_frames:
@@ -1374,8 +1453,35 @@ def process_video(
         print("📹 第一步：处理视频帧 OCR")
         print("="*60)
         
-        print(">> 抽帧中...")
-        extract_frames(video_path, frames_dir, fps=1)
+        if smart_ocr and SMART_EXTRACT_AVAILABLE:
+            print(">> 🚀 智能抽帧处理中（变化触发 & 稳定等待 & 双阈值）...")
+            try:
+                # 使用双阈值迟滞 + 稳定等待 + 图像融合
+                extractor = SmartFrameExtractor(
+                    fps=5.0,                  # 采样率 5 FPS (每秒5帧)
+                    diff_threshold=2.0,       # T_enter: 降低变化阈值 (更敏感，2.0)
+                    static_threshold=3.0,     # T_exit:  放宽稳定阈值 (更容易判定稳定，3.0)
+                    static_duration_frames=2, # M: 连续 2 帧稳定即可捕获
+                    enable_fusion=True        # 启用多帧融合增强
+                )
+                import tempfile
+                with tempfile.TemporaryDirectory() as temp_dir_str:
+                    extractor.extract(
+                        video_path=video_path, 
+                        output_dir=frames_dir, 
+                        temp_dir=Path(temp_dir_str)
+                    )
+                current_fps = extractor.fps
+            except Exception as e:
+                print(f"❌ 智能抽帧失败，回退到普通抽帧: {e}")
+                import traceback
+                traceback.print_exc()
+                extract_frames(video_path, frames_dir, fps=1)
+                current_fps = 1
+        else:
+            print(">> 抽帧中（固定 1 FPS）...")
+            extract_frames(video_path, frames_dir, fps=1)
+            current_fps = 1
 
         print("\n>> OCR 处理中...")
         
@@ -1502,7 +1608,7 @@ def process_video(
     timeline = None
     if with_frames and transcript_data.get('segments'):
         print(">> 生成音画时间轴匹配...")
-        timeline = match_audio_with_frames(transcript_data, frames_dir, fps=1)
+        timeline = match_audio_with_frames(transcript_data, frames_dir, fps=current_fps, duration=video_duration)
         timeline_path = session_dir / "timeline.md"
         generate_timeline_report(timeline, timeline_path)
         print(f"   💾 保存音画时间轴: {timeline_path.name}")
@@ -1661,6 +1767,11 @@ def main():
         help="是否使用 GPU 加速",
     )
     parser.add_argument(
+        "--legacy-ocr",
+        action="store_true",
+        help="是否使用传统固定 1 FPS 抽帧（禁用智能抽帧）",
+    )
+    parser.add_argument(
         "--download-dir",
         type=str,
         default="videos",
@@ -1715,6 +1826,7 @@ def main():
         use_gpu=args.use_gpu,
         source_url=source_url,
         platform_title=platform_title,
+        smart_ocr=not args.legacy_ocr,
     )
 
 
@@ -1734,6 +1846,7 @@ def process_video_cli(args):
     use_gpu = args.use_gpu if hasattr(args, 'use_gpu') else False
     skip_audio = args.skip_audio if hasattr(args, 'skip_audio') else False
     skip_llm = args.skip_llm if hasattr(args, 'skip_llm') else False
+    smart_ocr = not args.legacy_ocr if hasattr(args, 'legacy_ocr') else True
     
     process_video(
         video_path=video_path,
@@ -1746,6 +1859,7 @@ def process_video_cli(args):
         use_gpu=use_gpu,
         source_url=None,
         platform_title=None,
+        smart_ocr=smart_ocr,
     )
 
 

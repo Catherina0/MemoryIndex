@@ -524,7 +524,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 文件夹名称："""
 
             # 使用专门的命名模型
-            model_name = os.getenv("GROQ_NAMING_MODEL", "openai/gpt-oss-20b")
+            model_name = os.getenv("GROQ_NAMING_MODEL", "llama-3.1-8b-instant")
 
             response = client.chat.completions.create(
                 model=model_name,

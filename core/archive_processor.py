@@ -117,7 +117,7 @@ URL：{url}
 请直接返回文件夹名称："""
 
         # 使用环境变量中的模型，如果未设置则使用默认的 Groq 模型
-        model_name = os.getenv("GROQ_NAMING_MODEL", "openai/gpt-oss-20b")
+        model_name = os.getenv("GROQ_NAMING_MODEL", "llama-3.1-8b-instant")
 
         response = client.chat.completions.create(
             model=model_name,
