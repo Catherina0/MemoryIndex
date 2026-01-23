@@ -78,7 +78,7 @@ def _generate_folder_name_with_llm_for_archive(
         actual_content = '\\n'.join(content_lines[content_start:])
         # \u79fb\u9664\u56fe\u7247\u94fe\u63a5
         import re
-        actual_content = re.sub(r'!\\[.*?\\]\\(.*?\\)', '', actual_content)
+        actual_content = re.sub(r'!\[.*?\]\(.*?\)', '', actual_content)
         # \u9650\u5236\u957f\u5ea6\u5230\u524d800\u5b57\u7b26
         content_summary = actual_content[:800].strip()
         
@@ -90,7 +90,9 @@ def _generate_folder_name_with_llm_for_archive(
         platform = archive_result.get('platform', 'web')
         url = archive_result.get('url', '')
         
-        prompt = f"""\u6839\u636e\u4ee5\u4e0b\u7f51\u9875\u5185\u5bb9\uff0c\u751f\u6210\u4e00\u4e2a\u7b80\u6d01\u3001\u63cf\u8ff0\u6027\u7684\u6587\u4ef6\u5939\u540d\u79f0\u3002
+            # Build prompt without backslashes in f-string
+            newline = '\n'
+            prompt = f"""\u6839\u636e\u4ee5\u4e0b\u7f51\u9875\u5185\u5bb9\uff0c\u751f\u6210\u4e00\u4e2a\u7b80\u6d01\u3001\u63cf\u8ff0\u6027\u7684\u6587\u4ef6\u5939\u540d\u79f0\u3002
 
 \u7f51\u9875\u6807\u9898\uff1a{title}
 \u5e73\u53f0\uff1a{platform}
@@ -150,6 +152,11 @@ URL\uff1a{url}
 
 class ArchiveProcessor:
     """网页归档处理与数据库集成"""
+    
+    # OSS-120b 模型限制
+    MAX_CONTEXT_TOKENS = 131072  # 最大上下文窗口
+    MAX_OUTPUT_TOKENS = 65536    # 最大输出 tokens
+    LONG_TEXT_THRESHOLD = 100000  # 启动长文本模式的阈值
     
     def __init__(self, db_path: Optional[str] = None):
         self.repo = VideoRepository(db_path)
@@ -410,6 +417,59 @@ class ArchiveProcessor:
             'combined_text': '\n\n'.join([f"[{r['image']}]\n{r['text']}" for r in ocr_results])
         }
     
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        估算文本的 token 数量
+        使用简单规则：中文字符约1.5 tokens，英文单词约1 token
+        """
+        chinese_chars = len([c for c in text if '\u4e00' <= c <= '\u9fff'])
+        other_chars = len(text) - chinese_chars
+        # 粗略估算：中文 1.5 tokens/char，英文 4 chars/token
+        return int(chinese_chars * 1.5 + other_chars / 4)
+    
+    def _split_content_by_tokens(self, content: str, max_tokens: int) -> list:
+        """
+        将内容按 token 限制分割成多个片段
+        尽量保持段落完整性
+        """
+        paragraphs = content.split('\n\n')
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+        
+        for para in paragraphs:
+            para_tokens = self._estimate_tokens(para)
+            
+            # 如果单个段落就超过限制，强制分割
+            if para_tokens > max_tokens:
+                if current_chunk:
+                    chunks.append('\n\n'.join(current_chunk))
+                    current_chunk = []
+                    current_tokens = 0
+                
+                # 按字符强制分割超长段落
+                chars_per_token = len(para) / para_tokens if para_tokens > 0 else 1
+                chunk_size = int(max_tokens * chars_per_token * 0.9)  # 保留10%余量
+                for i in range(0, len(para), chunk_size):
+                    chunks.append(para[i:i + chunk_size])
+                continue
+            
+            # 如果加上当前段落会超过限制，保存当前chunk
+            if current_tokens + para_tokens > max_tokens:
+                if current_chunk:
+                    chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [para]
+                current_tokens = para_tokens
+            else:
+                current_chunk.append(para)
+                current_tokens += para_tokens
+        
+        # 保存最后一个chunk
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+        
+        return chunks
+    
     def _generate_report_for_archive(
         self,
         content: str,
@@ -418,7 +478,7 @@ class ArchiveProcessor:
     ) -> Optional[Dict]:
         """
         使用AI生成网页内容报告
-        调用与视频处理相同的LLM
+        支持长文本分段处理
         """
         import os
         try:
@@ -438,6 +498,19 @@ class ArchiveProcessor:
             max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "8192"))
             temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
             
+            # 估算 token 数量
+            content_tokens = self._estimate_tokens(content)
+            print(f"  📊 内容估算 tokens: {content_tokens:,}")
+            
+            # 如果超过阈值，启动长文本模式
+            if content_tokens > self.LONG_TEXT_THRESHOLD:
+                print(f"  🔄 启动长文本分段处理模式")
+                return self._generate_report_long_text(
+                    client, model, content, output_dir, 
+                    max_tokens, temperature
+                )
+            
+            # 短文本模式：直接处理
             prompt = f"""
 请将以下网页内容整理成一份**结构化 Markdown 知识档案**。
 
@@ -466,7 +539,7 @@ class ArchiveProcessor:
 格式：标签: 标签1, 标签2, 标签3
 
 以下是网页内容：
-{content[:30000]}
+{content}
 """
 
             response = client.chat.completions.create(
@@ -503,6 +576,131 @@ class ArchiveProcessor:
         except Exception as e:
             print(f"  ✗ AI报告生成失败: {e}")
             return None
+    
+    def _generate_report_long_text(
+        self,
+        client,
+        model: str,
+        content: str,
+        output_dir: Path,
+        max_tokens: int,
+        temperature: float
+    ) -> Optional[Dict]:
+        """
+        长文本分段处理模式
+        将内容分段，逐段生成报告，并将前一段的报告作为背景
+        """
+        # 分割内容（每段约 80,000 tokens，保留余量）
+        chunks = self._split_content_by_tokens(content, 80000)
+        print(f"  📄 分割为 {len(chunks)} 个片段")
+        
+        previous_summary = ""
+        all_reports = []
+        
+        for i, chunk in enumerate(chunks, 1):
+            chunk_tokens = self._estimate_tokens(chunk)
+            print(f"\n  🔹 处理片段 {i}/{len(chunks)} ({chunk_tokens:,} tokens)...")
+            
+            # 构建提示词
+            if previous_summary:
+                context_info = f"""
+**前文背景总结：**
+{previous_summary}
+
+---
+
+"""
+            else:
+                context_info = ""
+            
+            last_segment_instruction = ""
+            if i == len(chunks):
+                last_segment_instruction = "6. **这是最后一部分**，请生成最终的标签和摘要"
+            
+            prompt = f"""{context_info}请将以下网页内容片段（第 {i}/{len(chunks)} 部分）整理成**结构化 Markdown 知识档案**。
+
+**⚠️ 重要要求：**
+1. 识别并修正同音字/词错误，使用准确专业的术语
+2. 使用 Markdown 格式（标题、列表、引用、表格等）
+3. 提取主要观点和核心内容
+4. 识别主题/章节并结构化总结
+5. 提取重要数据：数字、规则、引用、日期等
+{last_segment_instruction}
+
+推荐结构：
+## 片段 {i} - 核心内容
+（本片段的主要内容）
+
+## 关键观点
+## 重要信息
+{"## 标签\n格式：标签: 标签1, 标签2, 标签3\n\n## 全文摘要\n（不超过100字的整体概括）" if i == len(chunks) else ""}
+
+以下是内容片段：
+{chunk}
+"""
+
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """你是一个专业的内容整理助手，具备智能纠错能力和上下文整合能力。
+                            你的任务是处理长文本的片段，并结合前文背景生成连贯的知识档案。"""
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                
+                segment_report = response.choices[0].message.content
+                all_reports.append(f"\n\n---\n\n{segment_report}")
+                
+                # 提取本段的核心内容作为下一段的背景
+                # 简单截取前500字符作为摘要
+                lines = segment_report.split('\n')
+                summary_lines = []
+                char_count = 0
+                for line in lines:
+                    if char_count > 500:
+                        break
+                    summary_lines.append(line)
+                    char_count += len(line)
+                previous_summary = '\n'.join(summary_lines)
+                
+                print(f"  ✅ 片段 {i} 处理完成")
+                
+            except Exception as e:
+                print(f"  ✗ 片段 {i} 处理失败: {e}")
+                all_reports.append(f"\n\n---\n\n## 片段 {i}\n（处理失败：{e}）\n\n")
+        
+        # 合并所有报告
+        final_report = f"""# 长文本知识档案
+
+> 本文档由 {len(chunks)} 个片段分段处理生成
+> 总计约 {self._estimate_tokens(content):,} tokens
+
+{''.join(all_reports)}
+"""
+        
+        # 保存报告到文件
+        report_path = output_dir / 'report.md'
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(final_report)
+        
+        print(f"\n  ✅ 长文本报告生成完成")
+        
+        return {
+            'content': final_report,
+            'model': model,
+            'tags': self._parse_tags_from_content(final_report),
+            'topics': [],
+            'segments': len(chunks)
+        }
     
     def _read_archived_content(self, output_path: str) -> str:
         """读取归档的原始内容（从archive_raw.md）"""
