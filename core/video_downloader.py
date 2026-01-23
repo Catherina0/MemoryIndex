@@ -42,15 +42,17 @@ class LocalFileInfo:
 class VideoDownloader:
     """统一视频下载器"""
     
-    def __init__(self, download_dir: str = "videos"):
+    def __init__(self, download_dir: str = "videos", json_mode: bool = False):
         """
         初始化下载器
         
         Args:
             download_dir: 视频下载目录，默认为 videos/
+            json_mode: 是否为 JSON 模式（所有提示信息输出到 stderr）
         """
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.json_mode = json_mode
         
         # 查找系统中的工具路径
         self.ytdlp_path = self._find_executable("yt-dlp")
@@ -157,7 +159,7 @@ class VideoDownloader:
             return None
         except Exception as e:
             # 数据库不可用时不影响下载
-            print(f"⚠️  检查数据库时出错: {e}")
+            print(f"⚠️  检查数据库时出错: {e}", file=sys.stderr)
             return None
     
     def download_video(self, url: str, force_redownload: bool = False) -> LocalFileInfo:
@@ -174,11 +176,14 @@ class VideoDownloader:
         Raises:
             Exception: 下载失败时抛出异常
         """
-        print(f"📥 准备下载视频: {url}")
+        # 在 JSON 模式下，所有提示信息输出到 stderr
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        
+        print(f"📥 准备下载视频: {url}", file=output_stream)
         
         # 检测平台
         platform = self._detect_platform(url)
-        print(f"🔍 检测到平台: {platform}")
+        print(f"🔍 检测到平台: {platform}", file=output_stream)
         
         # 检查数据库中是否已存在
         if not force_redownload:
@@ -339,8 +344,11 @@ class VideoDownloader:
         if not self.ytdlp_path:
             raise Exception("yt-dlp 未安装或未找到在 PATH 中")
         
+        # 在 JSON 模式下，所有提示信息输出到 stderr
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        
         # 先获取视频信息（不下载）
-        print("📋 获取视频信息...")
+        print("📋 获取视频信息...", file=output_stream)
         info_cmd = [self.ytdlp_path, "--dump-json", "--no-playlist", url]
         result = subprocess.run(info_cmd, capture_output=True, text=True, check=True)
         info = json.loads(result.stdout)
@@ -356,7 +364,7 @@ class VideoDownloader:
         # 显示视频信息
         if filesize:
             filesize_mb = filesize / (1024 * 1024)
-            print(f"📦 文件大小: {filesize_mb:.1f} MB")
+            print(f"📦 文件大小: {filesize_mb:.1f} MB", file=output_stream)
         
         # 构造文件名：标题_平台_视频ID.mp4
         filename = f"{title}_{platform}_{video_id}.mp4"
@@ -364,7 +372,7 @@ class VideoDownloader:
         
         # 检查文件是否已存在
         if output_path.exists() and not force_redownload:
-            print(f"✅ 文件已存在，跳过下载: {output_path}")
+            print(f"✅ 文件已存在，跳过下载: {output_path}", file=output_stream)
             return LocalFileInfo(
                 file_path=output_path,
                 platform=platform,
@@ -377,7 +385,7 @@ class VideoDownloader:
             )
         
         # 下载视频（限制1080p，节省空间和带宽）
-        print(f"⬇️  开始下载（1080p）...")
+        print(f"⬇️  开始下载（1080p）...", file=output_stream)
         download_cmd = [
             self.ytdlp_path,
             "--no-playlist",
@@ -398,7 +406,7 @@ class VideoDownloader:
         else:
             subprocess.run(download_cmd, check=True)
         
-        print(f"✅ 下载完成: {output_path}")
+        print(f"✅ 下载完成: {output_path}", file=output_stream)
         
         return LocalFileInfo(
             file_path=output_path,
@@ -693,7 +701,7 @@ def main():
         exit(1)
     
     # 创建下载器并下载
-    downloader = VideoDownloader(download_dir=args.dir)
+    downloader = VideoDownloader(download_dir=args.dir, json_mode=args.json)
     
     try:
         file_info = downloader.download_video(url, force_redownload=args.force)
