@@ -299,7 +299,9 @@ def main():
     print("║        数据库导入测试 - 使用真实 output 数据              ║")
     print("╚════════════════════════════════════════════════════════════╝")
     
-    output_dir = Path("/Users/catherina/Documents/GitHub/knowledge/output")
+    # Use relative path for output directory
+    project_root = Path(__file__).parent.parent
+    output_dir = project_root / "output"
     
     # 要导入的目录列表（选择有完整数据的）
     target_dirs = [

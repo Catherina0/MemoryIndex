@@ -114,7 +114,8 @@ def test_file_structure():
     print("\n🔍 测试文件结构...")
     
     # 获取实际的项目根目录
-    actual_root = Path("/Users/catherina/Documents/GitHub/knowledge")
+    # Use relative path for project root
+    actual_root = Path(__file__).resolve().parent.parent
     
     required_files = [
         "archiver/__init__.py",
