@@ -400,18 +400,18 @@ download-run: ensure-venv
 	@echo "🔊 流程: 下载 → 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@# 下载视频并获取文件路径
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
-	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
-	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
-		cat /tmp/download_output.txt | tail -20; \
+	@# 先下载视频（所有输出正常显示，包括进度条）
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"; \
+	if [ $$? -ne 0 ]; then \
 		echo "❌ 下载失败"; \
-		rm /tmp/download_output.txt; \
 		exit 1; \
 	fi; \
-	rm /tmp/download_output.txt; \
-	echo "✅ 下载完成: $$VIDEO_PATH"; \
 	echo ""; \
+	VIDEO_PATH=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --json 2>/dev/null | $(PYTHON) -c "import json, sys; data = json.load(sys.stdin); print(data['file_path'])"); \
+	if [ -z "$$VIDEO_PATH" ]; then \
+		echo "❌ 无法获取下载文件路径"; \
+		exit 1; \
+	fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
@@ -431,18 +431,18 @@ download-ocr: ensure-venv
 	@echo "📺 流程: 下载 → 抽帧 → OCR → ASR → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@# 下载视频并获取文件路径
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" > /tmp/download_output.txt 2>&1; \
-	VIDEO_PATH=$$($(PYTHON) -c "import json,sys; line = open('/tmp/download_output.txt').readlines()[-1]; data = json.loads(line) if line.strip().startswith('{') else {}; print(data.get('file_path', ''))" 2>/dev/null); \
-	if [ -z "$$VIDEO_PATH" ] || [ "$$VIDEO_PATH" = "null" ]; then \
-		cat /tmp/download_output.txt | tail -20; \
+	@# 先下载视频（所有输出正常显示，包括进度条）
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"; \
+	if [ $$? -ne 0 ]; then \
 		echo "❌ 下载失败"; \
-		rm /tmp/download_output.txt; \
 		exit 1; \
 	fi; \
-	rm /tmp/download_output.txt; \
-	echo "✅ 下载完成: $$VIDEO_PATH"; \
 	echo ""; \
+	VIDEO_PATH=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --json 2>/dev/null | $(PYTHON) -c "import json, sys; data = json.load(sys.stdin); print(data['file_path'])"); \
+	if [ -z "$$VIDEO_PATH" ]; then \
+		echo "❌ 无法获取下载文件路径"; \
+		exit 1; \
+	fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \

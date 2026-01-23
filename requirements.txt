@@ -14,6 +14,7 @@ numpy
 groq
 python-dotenv
 yt-dlp
+tqdm  # 进度条显示
 
 # 数据库与搜索（新增）
 tabulate>=0.9.0          # 命令行表格输出

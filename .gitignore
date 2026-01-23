@@ -193,3 +193,6 @@ HOMEBREW_RELEASE.md
 UPDATE_SHA256.md
 HOMEBREW_SETUP.md
 check_formula_deps.sh
+demo_progress.py
+test_makefile_progress.py
+test_download_progress.py

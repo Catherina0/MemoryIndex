@@ -18,6 +18,13 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    print("⚠️  提示：安装 tqdm 可显示下载进度条 (pip install tqdm)")
+
 
 @dataclass
 class LocalFileInfo:
@@ -245,6 +252,56 @@ class VideoDownloader:
         else:
             return "unknown"
     
+    def _download_with_progress(self, cmd: list, total_size: Optional[int] = None):
+        """
+        使用进度条执行下载命令
+        
+        Args:
+            cmd: 下载命令列表
+            total_size: 文件总大小（字节），如果已知
+        """
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        pbar = None
+        if total_size:
+            # 进度条输出到 stderr，这样即使 stdout 被重定向也能看到
+            pbar = tqdm(total=total_size, unit='B', unit_scale=True, desc='下载进度', file=sys.stderr)
+        
+        # 用于解析 yt-dlp 的进度输出
+        last_downloaded = 0
+        
+        for line in process.stdout:
+            # yt-dlp 进度格式: [download]  45.8% of 123.45MiB at 1.23MiB/s ETA 00:23
+            if '[download]' in line and '%' in line:
+                # 尝试提取百分比
+                match = re.search(r'(\d+\.\d+)%', line)
+                if match and pbar:
+                    percent = float(match.group(1))
+                    downloaded = int(total_size * percent / 100)
+                    if downloaded > last_downloaded:
+                        pbar.update(downloaded - last_downloaded)
+                        last_downloaded = downloaded
+                elif not pbar:
+                    # 如果没有总大小，至少显示进度信息到 stderr
+                    print(line.strip(), file=sys.stderr)
+            elif '[download] Destination:' in line or '[download] ' in line:
+                # 显示其他重要信息到 stderr
+                if not pbar:
+                    print(line.strip(), file=sys.stderr)
+        
+        if pbar:
+            pbar.close()
+        
+        process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, cmd)
+    
     def _sanitize_filename(self, filename: str, max_length: int = 100) -> str:
         """
         清洗文件名，移除非法字符
@@ -294,6 +351,12 @@ class VideoDownloader:
         duration = info.get("duration")
         uploader = info.get("uploader")
         upload_date = info.get("upload_date")
+        filesize = info.get("filesize") or info.get("filesize_approx")
+        
+        # 显示视频信息
+        if filesize:
+            filesize_mb = filesize / (1024 * 1024)
+            print(f"📦 文件大小: {filesize_mb:.1f} MB")
         
         # 构造文件名：标题_平台_视频ID.mp4
         filename = f"{title}_{platform}_{video_id}.mp4"
@@ -321,10 +384,19 @@ class VideoDownloader:
             "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "--merge-output-format", "mp4",
             "-o", str(output_path),
-            url
         ]
         
-        subprocess.run(download_cmd, check=True)
+        # 添加进度条支持
+        if TQDM_AVAILABLE:
+            download_cmd.extend(["--newline", "--progress"])
+        
+        download_cmd.append(url)
+        
+        # 使用 Popen 实时捕获输出并显示进度
+        if TQDM_AVAILABLE:
+            self._download_with_progress(download_cmd, filesize)
+        else:
+            subprocess.run(download_cmd, check=True)
         
         print(f"✅ 下载完成: {output_path}")
         
