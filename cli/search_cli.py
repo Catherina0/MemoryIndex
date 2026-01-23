@@ -4,11 +4,16 @@
 提供便捷的搜索界面
 """
 import sys
+import warnings
 import argparse
 import json
 from pathlib import Path
 from typing import List
 from tabulate import tabulate
+
+# 过滤第三方库的已知警告
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+warnings.filterwarnings('ignore', category=SyntaxWarning, module='whoosh')
 
 # 添加项目根目录到路径
 PROJECT_ROOT = Path(__file__).parent.parent

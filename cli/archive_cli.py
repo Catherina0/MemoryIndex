@@ -5,8 +5,13 @@
 import asyncio
 import argparse
 import sys
+import warnings
 from pathlib import Path
 import logging
+
+# 过滤第三方库的已知警告
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+warnings.filterwarnings('ignore', category=SyntaxWarning, module='whoosh')
 
 from archiver import UniversalArchiver, detect_platform
 from archiver.utils.cookie_manager import CookieManager

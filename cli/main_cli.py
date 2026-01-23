@@ -4,8 +4,13 @@ MemoryIndex 统一命令行入口
 整合所有功能：视频处理、下载、搜索、归档等
 """
 import sys
+import warnings
 import argparse
 from pathlib import Path
+
+# 过滤第三方库的已知警告
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+warnings.filterwarnings('ignore', category=SyntaxWarning, module='whoosh')
 
 # 添加项目根目录到路径
 PROJECT_ROOT = Path(__file__).parent.parent
