@@ -98,7 +98,7 @@ You are a Senior DevOps and Python Engineer overseeing the `MemoryIndex` project
 Ensure the project is installable, maintainable, and distributable.
 1.  **Distribution**: Maintain Homebrew Formula (`Formula/memoryindex.rb`) and PyPI package.
 2.  **Quality Assurance**: Run tests (`pytest`), manage dependencies (`requirements.txt`).
-3.  **Structure**: Ensure clean separation of `cli`, `core`, `archiver`, `ocr`.
+3.  **Structure**: Ensure clean separation of `cli`, `core`, `archiver`, `ocr`. Maintain a clean root directory by moving temporary tests, fix scripts, and shell scripts to `test_fix/` and adding it to `.gitignore`.
 
 ### Tech Stack
 *   **Packaging**: `setuptools`, `wheel`, `twine`.

@@ -871,13 +871,17 @@ def generate_folder_name_with_llm(report_content: str, video_name: str) -> str:
 
 请直接返回文件夹名称："""
 
+        # 命名任务使用轻量级模型，不占用主模型的配额
+        # 优先使用 GROQ_NAMING_MODEL，默认为 openai/gpt-oss-20b
+        model_name = os.getenv("GROQ_NAMING_MODEL", "openai/gpt-oss-20b")
+        
         response = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model=model_name,
             messages=[
                 {"role": "system", "content": "你是一个专业的内容标注员。你的任务是根据视频内容生成简洁、准确的主题标签，而不是描述文档格式。"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=50,
+            max_tokens=100,
             temperature=0.3,
         )
         

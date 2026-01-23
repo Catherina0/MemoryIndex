@@ -523,13 +523,16 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 文件夹名称："""
 
+            # 使用专门的命名模型
+            model_name = os.getenv("GROQ_NAMING_MODEL", "openai/gpt-oss-20b")
+
             response = client.chat.completions.create(
-                model="openai/gpt-oss-20b",
+                model=model_name,
                 messages=[
                     {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁、描述性的文件夹名称。"},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=50,
+                max_tokens=60,
                 temperature=0.3,
             )
             

@@ -43,6 +43,12 @@ def run_init(args):
     if hasattr(args, 'no_api') and args.no_api:
         print("⏭️  跳过 API 配置")
     else:
+        # Check for config
+        try:
+            from core.config import cfg
+            cfg.print_summary()
+        except ImportError:
+            pass
         configure_api()
         
     print("\n✨ 初始化完成！建议运行 'memidx selftest' 验证。")
