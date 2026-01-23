@@ -1426,40 +1426,8 @@ def main():
         default="videos",
         help="视频下载目录（默认: videos/）",
     )
-
-
-def process_video_cli(args):
-    """统一CLI适配函数"""
-    # 将统一CLI的参数映射到 process_video 函数
-    video_path = Path(args.video).resolve()
-    if not video_path.exists():
-        print(f"❌ 错误：视频文件不存在: {video_path}")
-        exit(1)
     
-    output_dir = Path("output").resolve()
-    
-    # 参数映射
-    with_frames = args.ocr
-    ocr_engine = args.ocr_engine if hasattr(args, 'ocr_engine') else 'vision'
-    use_gpu = args.use_gpu if hasattr(args, 'use_gpu') else False
-    skip_audio = args.skip_audio if hasattr(args, 'skip_audio') else False
-    skip_llm = args.skip_llm if hasattr(args, 'skip_llm') else False
-    
-    process_video(
-        video_path=video_path,
-        output_dir=output_dir,
-        with_frames=with_frames,
-        ocr_lang="ch",
-        ocr_engine=ocr_engine,
-        ocr_det_model="server",
-        ocr_rec_model="server",
-        use_gpu=use_gpu,
-        source_url=None,
-        platform_title=None,
-    )
-
-
-def main():
+    args = parser.parse_args()
 
     # 检测输入是URL还是文件路径
     input_str = args.video
@@ -1507,6 +1475,37 @@ def main():
         use_gpu=args.use_gpu,
         source_url=source_url,
         platform_title=platform_title,
+    )
+
+
+def process_video_cli(args):
+    """统一CLI适配函数"""
+    # 将统一CLI的参数映射到 process_video 函数
+    video_path = Path(args.video).resolve()
+    if not video_path.exists():
+        print(f"❌ 错误：视频文件不存在: {video_path}")
+        exit(1)
+    
+    output_dir = Path("output").resolve()
+    
+    # 参数映射
+    with_frames = args.ocr
+    ocr_engine = args.ocr_engine if hasattr(args, 'ocr_engine') else 'vision'
+    use_gpu = args.use_gpu if hasattr(args, 'use_gpu') else False
+    skip_audio = args.skip_audio if hasattr(args, 'skip_audio') else False
+    skip_llm = args.skip_llm if hasattr(args, 'skip_llm') else False
+    
+    process_video(
+        video_path=video_path,
+        output_dir=output_dir,
+        with_frames=with_frames,
+        ocr_lang="ch",
+        ocr_engine=ocr_engine,
+        ocr_det_model="server",
+        ocr_rec_model="server",
+        use_gpu=use_gpu,
+        source_url=None,
+        platform_title=None,
     )
 
 

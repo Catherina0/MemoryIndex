@@ -250,7 +250,8 @@ class DrissionArchiver:
         url: str,
         platform_adapter: Optional[PlatformAdapter] = None,
         mode: str = "default",
-        generate_report: bool = False
+        generate_report: bool = False,
+        with_ocr: bool = False
     ) -> Dict[str, Any]:
         """
         归档指定URL的网页内容
@@ -260,6 +261,7 @@ class DrissionArchiver:
             platform_adapter: 平台适配器（如果为None则自动检测）
             mode: 归档模式 (default=只提取正文/full=完整内容含评论)
             generate_report: 是否生成 LLM 结构化报告
+            with_ocr: 是否对下载的图片进行OCR识别
         
         Returns:
             包含归档结果的字典
@@ -454,9 +456,9 @@ class DrissionArchiver:
                         markdown_content = markdown_content.replace(orig_url, rel_path)
                     logger.info(f"已更新 {len(url_mapping)} 个图片链接")
             
-            # 1. 保存 ocr_raw.md（纯OCR数据，不含元信息）
-            ocr_raw_path = folder_path / "ocr_raw.md"
-            with open(ocr_raw_path, "w", encoding="utf-8") as f:
+            # 1. 保存 archive_raw.md（网页内容+图片引用，不含元信息）
+            archive_raw_path = folder_path / "archive_raw.md"
+            with open(archive_raw_path, "w", encoding="utf-8") as f:
                 # 更新图片链接后的纯内容
                 updated_pure_content = pure_ocr_content
                 if url_mapping:
@@ -464,7 +466,27 @@ class DrissionArchiver:
                         rel_path = f"images/{local_path}"
                         updated_pure_content = updated_pure_content.replace(orig_url, rel_path)
                 f.write(updated_pure_content)
-            logger.info(f"✅ 保存OCR原始数据: {ocr_raw_path.name}")
+            logger.info(f"✅ 保存网页归档原始数据: {archive_raw_path.name}")
+            
+            # 1.5 如果启用OCR，对图片进行识别
+            ocr_text = ""
+            if with_ocr and image_urls and url_mapping:
+                logger.info(">> 开始OCR识别图片...")
+                ocr_text = self._perform_ocr_on_images(folder_path / "images")
+                
+                if ocr_text.strip():
+                    ocr_raw_path = folder_path / "ocr_raw.md"
+                    with open(ocr_raw_path, "w", encoding="utf-8") as f:
+                        ocr_content = f"# 🔍 图片OCR识别结果\n\n"
+                        ocr_content += f"**识别时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n"
+                        ocr_content += f"**图片数量**: {len(url_mapping)}  \n"
+                        ocr_content += f"**识别字符数**: {len(ocr_text)}  \n\n"
+                        ocr_content += "---\n\n"
+                        ocr_content += ocr_text
+                        f.write(ocr_content)
+                    logger.info(f"✅ 保存OCR识别结果: {ocr_raw_path.name} ({len(ocr_text)} 字符)")
+                else:
+                    logger.info("ℹ️  未识别到文字")
             
             # 2. 保存 README.md（元信息 + 引用）
             readme_content = f"""---
@@ -484,7 +506,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## 📄 原始内容
 
-详见 [ocr_raw.md](ocr_raw.md)
+详见 [archive_raw.md](archive_raw.md)（网页内容+图片）
 
 ---
 
@@ -498,7 +520,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             
             logger.info(f"归档成功: {folder_path}")
             logger.info(f"  - README: {md_path.name}")
-            logger.info(f"  - OCR原始: {ocr_raw_path.name}")
+            logger.info(f"  - 归档原始: {archive_raw_path.name}")
             if image_urls:
                 logger.info(f"  - 图片: {len(url_mapping)}/{len(image_urls)} 张")
             
@@ -506,7 +528,7 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             if generate_report:
                 logger.info(">> 使用 LLM 生成结构化报告...")
                 report_content = self._generate_report_with_llm(
-                    ocr_content=updated_pure_content,
+                    archive_content=updated_pure_content,
                     title=page_title,
                     url=url,
                     platform=platform_adapter.name
@@ -556,7 +578,9 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 "title": page_title,
                 "content_length": len(markdown_content),
                 "images_downloaded": len(url_mapping) if image_urls else 0,
-                "images_total": len(image_urls) if image_urls else 0
+                "images_total": len(image_urls) if image_urls else 0,
+                "ocr_enabled": with_ocr,
+                "ocr_text_length": len(ocr_text) if with_ocr else 0
             }
             
         except Exception as e:
@@ -978,16 +1002,16 @@ archived_at: {timestamp}
     
     def _generate_report_with_llm(
         self,
-        ocr_content: str,
+        archive_content: str,
         title: str,
         url: str,
         platform: str
     ) -> Optional[str]:
         """
-        使用 LLM 将 OCR 原始数据转换为结构化报告
+        使用 LLM 将网页归档内容转换为结构化报告
         
         Args:
-            ocr_content: OCR 原始内容（来自 ocr_raw.md）
+            archive_content: 网页归档原始内容（来自 archive_raw.md）
             title: 网页标题
             url: 原始 URL
             platform: 平台名称
@@ -1009,10 +1033,10 @@ archived_at: {timestamp}
             
             # 限制输入长度
             content_limit = 3000
-            if len(ocr_content) > content_limit:
-                ocr_content = ocr_content[:content_limit] + "\n\n...(内容已截断)"
+            if len(archive_content) > content_limit:
+                archive_content = archive_content[:content_limit] + "\n\n...(内容已截断)"
             
-            prompt = f"""请将以下网页的 OCR 提取内容整理成一份**结构化 Markdown 知识档案**。
+            prompt = f"""请将以下网页的归档内容整理成一份**结构化 Markdown 知识档案**。
 
 ## 输入信息
 
@@ -1081,10 +1105,10 @@ OCR 文本可能存在识别错误，你必须根据上下文**主动识别并�
 
 ---
 
-## OCR 原始内容
+## 原始归档内容
 
 ```
-{ocr_content}
+{archive_content}
 ```
 
 ---
@@ -1124,6 +1148,86 @@ OCR 文本可能存在识别错误，你必须根据上下文**主动识别并�
         except Exception as e:
             logger.warning(f"LLM 报告生成失败: {e}")
             return None
+    
+    def _perform_ocr_on_images(self, images_dir: Path) -> str:
+        """
+        对指定目录中的所有图片进行OCR识别
+        
+        Args:
+            images_dir: 图片目录路径
+        
+        Returns:
+            合并后的OCR文本
+        """
+        if not images_dir.exists() or not images_dir.is_dir():
+            logger.warning(f"图片目录不存在: {images_dir}")
+            return ""
+        
+        try:
+            # 尝试导入OCR模块
+            try:
+                from ocr.ocr_vision import init_vision_ocr, ocr_image_vision
+                ocr_engine = "vision"
+            except ImportError:
+                logger.warning("Vision OCR 不可用，尝试使用 PaddleOCR")
+                try:
+                    from ocr.ocr_paddle import init_paddleocr, ocr_image_paddle
+                    ocr_engine = "paddle"
+                except ImportError:
+                    logger.error("未找到可用的OCR引擎")
+                    return ""
+            
+            # 初始化OCR
+            if ocr_engine == "vision":
+                ocr = init_vision_ocr(lang="ch", recognition_level="accurate")
+                logger.info("使用 Apple Vision OCR")
+            else:
+                ocr = init_paddleocr(lang="ch", use_gpu=False)
+                logger.info("使用 PaddleOCR")
+            
+            # 获取所有图片文件
+            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+            image_files = [
+                f for f in images_dir.iterdir() 
+                if f.is_file() and f.suffix.lower() in image_extensions
+            ]
+            
+            if not image_files:
+                logger.warning(f"在 {images_dir} 中未找到图片文件")
+                return ""
+            
+            logger.info(f"找到 {len(image_files)} 张图片，开始识别...")
+            
+            # 对每张图片进行OCR
+            all_text = []
+            for i, image_file in enumerate(image_files, 1):
+                try:
+                    if ocr_engine == "vision":
+                        result = ocr_image_vision(ocr, str(image_file))
+                    else:
+                        result = ocr_image_paddle(ocr, str(image_file))
+                    
+                    if result and result.strip():
+                        all_text.append(f"## 图片 {i}: {image_file.name}\n\n{result}\n")
+                        logger.debug(f"  [{i}/{len(image_files)}] {image_file.name}: {len(result)} 字符")
+                    else:
+                        logger.debug(f"  [{i}/{len(image_files)}] {image_file.name}: 未识别到文字")
+                        
+                except Exception as e:
+                    logger.warning(f"  [{i}/{len(image_files)}] {image_file.name}: OCR失败 - {e}")
+                    continue
+            
+            if all_text:
+                combined_text = "\n\n".join(all_text)
+                logger.info(f"✅ OCR完成：共识别 {len(combined_text)} 字符")
+                return combined_text
+            else:
+                logger.warning("所有图片均未识别到文字")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"OCR处理失败: {e}")
+            return ""
     
     def close(self):
         """

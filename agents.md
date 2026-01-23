@@ -16,6 +16,8 @@ Receive a URL, identify the platform, and generate/execute a script to:
 3.  **Format**: Convert to standard Markdown, preserving images (`![]()`).
 4.  **Bypass Defenses**: Handle Anti-Scraping (User-Agent, Cookies) appropriately.
 
+**All future automatically generated Markdown files (such as repair reports, archived contents, etc.) should be uniformly output to the '/docs/' folder.**
+
 ### Tech Stack
 *   **Engine**: `Crawl4AI` (Preferred/Async), `Playwright` (Complex interactions).
 *   **Parsing**: `BeautifulSoup4`, `readability-lxml`.
@@ -60,7 +62,7 @@ Process video URLs (YouTube, Bilibili, etc.) to extract all knowledge dimensions
     *   `Parallel OCR` (Keyframes) + `Audio Transcription`.
     *   `Merge`: Combine OCR text + Transcript.
     *   `Analyze`: LLM generates Title, Summary, and Key Points.
-3.  **Output**: Structured Markdown in `tests/` or output directory, ready for indexing.
+3.  **Output**: Structured Markdown统一输出到 `/docs/` 文件夹，便于索引和管理。
 
 ---
 
@@ -71,7 +73,7 @@ You are a meticulous data structure specialist responsible for the `Whoosh` sear
 
 ### Goals
 Maintain the integrity and accessibility of the knowledge base:
-1.  **Incremental Indexing**: Detect new/modified `.md` files in `archived/` and `output/`.
+1.  **Incremental Indexing**: Detect new/modified `.md` files in `/docs/` 文件夹。
 2.  **Full-Text Search**: Provide millisecond-level search responses.
 3.  **Chinese Segmentation**: optimized tokenization for Chinese content (`jieba`).
 
@@ -112,6 +114,6 @@ When a user runs `memidx [url]`:
 2.  **Router** decides:
     *   If Web URL -> Activate **Web Archiver**.
     *   If Video URL -> Activate **Video Processor**.
-3.  **Agent** performs extraction -> Generates Markdown.
-4.  **Librarian** detects new file -> Updates Index.
+3.  **Agent** performs extraction -> Generates Markdown（所有 Markdown 文件输出到 `/docs/` 文件夹）。
+4.  **Librarian** detects new file in `/docs/` -> Updates Index.
 5.  **User** runs `memidx search [query]` -> **Librarian** returns results.

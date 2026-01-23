@@ -300,11 +300,19 @@ class ArchiveProcessor:
                     self.repo.save_topics(db_id, topics)
                     print(f"✅ 保存 {len(topics)} 个主题")
             
-            # 9. 更新全文搜索索引
+            # 9. 保存到 archived/ 文件夹（用于全文搜索）
+            self._save_to_archived_folder(
+                output_dir=output_dir,
+                url=url,
+                title=archive_result.get('title', '未命名网页'),
+                platform=archive_result.get('platform', 'web')
+            )
+            
+            # 10. 更新全文搜索索引
             self.repo.update_fts_index(db_id)
             print("✅ 更新搜索索引")
             
-            # 10. 标记处理完成
+            # 11. 标记处理完成
             self.repo.update_video_status(db_id, ProcessingStatus.COMPLETED)
             print(f"🎉 归档处理完成: ID={db_id}")
             
@@ -497,30 +505,37 @@ class ArchiveProcessor:
             return None
     
     def _read_archived_content(self, output_path: str) -> str:
-        """读取归档的Markdown内容"""
+        """读取归档的原始内容（从archive_raw.md）"""
         if not output_path:
             return ""
         
         try:
             output_path_obj = Path(output_path)
             
-            # 如果是目录，递归查找 README.md
+            # 如果是目录，查找 archive_raw.md
             if output_path_obj.is_dir():
                 # 先检查当前目录
-                readme_path = output_path_obj / "README.md"
-                if readme_path.exists():
-                    with open(readme_path, 'r', encoding='utf-8') as f:
+                archive_raw_path = output_path_obj / "archive_raw.md"
+                if archive_raw_path.exists():
+                    with open(archive_raw_path, 'r', encoding='utf-8') as f:
                         return f.read()
                 
-                # 查找子目录中的 README.md
-                for readme in output_path_obj.rglob("README.md"):
+                # 查找子目录中的 archive_raw.md
+                for archive_raw in output_path_obj.rglob("archive_raw.md"):
                     try:
-                        with open(readme, 'r', encoding='utf-8') as f:
+                        with open(archive_raw, 'r', encoding='utf-8') as f:
                             return f.read()
                     except Exception:
                         continue
                 
-                print(f"  ⚠️  未找到 README.md 在: {output_path}")
+                # 兼容旧版本：如果找不到 archive_raw.md，尝试读取 README.md
+                readme_path = output_path_obj / "README.md"
+                if readme_path.exists():
+                    print(f"  ⚠️  未找到 archive_raw.md，使用 README.md")
+                    with open(readme_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                
+                print(f"  ⚠️  未找到 archive_raw.md 或 README.md 在: {output_path}")
             # 如果是文件，直接读取
             elif output_path_obj.is_file():
                 with open(output_path_obj, 'r', encoding='utf-8') as f:
@@ -531,6 +546,94 @@ class ArchiveProcessor:
             print(f"  ⚠️  读取归档内容失败: {e}")
         
         return ""
+    
+    def _save_to_archived_folder(
+        self, 
+        output_dir: Path,
+        url: str,
+        title: str,
+        platform: str
+    ) -> Optional[str]:
+        """
+        将归档的markdown保存到 archived/ 文件夹
+        使用与archiver相同的命名规则
+        
+        Args:
+            output_dir: 输出目录（包含archive_raw.md的文件夹）
+            url: 原始URL
+            title: 网页标题
+            platform: 平台名称
+        
+        Returns:
+            保存的文件路径，失败返回None
+        """
+        try:
+            # 确定archived目录
+            project_root = Path(__file__).parent.parent
+            archived_dir = project_root / "archived"
+            archived_dir.mkdir(exist_ok=True)
+            
+            # 查找archive_raw.md
+            archive_raw_path = None
+            if output_dir.is_dir():
+                # 先检查当前目录
+                temp_path = output_dir / "archive_raw.md"
+                if temp_path.exists():
+                    archive_raw_path = temp_path
+                else:
+                    # 查找子目录
+                    for item in output_dir.rglob("archive_raw.md"):
+                        archive_raw_path = item
+                        break
+            
+            if not archive_raw_path or not archive_raw_path.exists():
+                print(f"  ⚠️  未找到 archive_raw.md，跳过保存到 archived/")
+                return None
+            
+            # 读取内容
+            with open(archive_raw_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 生成文件名（与archiver保持一致）
+            # 格式: platform_hash_timestamp.md
+            url_hash = hashlib.md5(url.encode()).hexdigest()[:4]
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # 平台名称映射
+            platform_map = {
+                'twitter': 'twitter',
+                'x.com': 'twitter',
+                'zhihu': 'zhihu',
+                'xiaohongshu': 'xhs',
+                'bilibili': 'bilibili',
+                'reddit': 'reddit'
+            }
+            platform_short = platform_map.get(platform.lower(), platform[:10].lower())
+            
+            filename = f"{platform_short}_{url_hash}_{timestamp}.md"
+            archived_path = archived_dir / filename
+            
+            # 添加元信息头部
+            archived_content = f"""---
+title: {title}
+url: {url}
+platform: {platform}
+archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+---
+
+{content}
+"""
+            
+            # 保存文件
+            with open(archived_path, 'w', encoding='utf-8') as f:
+                f.write(archived_content)
+            
+            print(f"✅ 保存到 archived/: {filename}")
+            return str(archived_path)
+            
+        except Exception as e:
+            print(f"  ⚠️  保存到 archived/ 失败: {e}")
+            return None
     
     def _extract_plain_text(self, data: Dict) -> str:
         """从结构化数据提取纯文本"""
