@@ -94,6 +94,20 @@ setup: ensure-venv
 	@$(PIP) install --upgrade pip setuptools wheel
 	@echo "  → 安装/更新依赖..."
 	@$(PIP) install -r requirements.txt
+	@echo "  → 检查关键依赖包..."
+	@echo "    必需依赖："
+	@$(PYTHON) -c "import numpy" 2>/dev/null && echo "      ✅ numpy" || (echo "      ⚠️  numpy 未安装，正在安装..." && $(PIP) install numpy)
+	@$(PYTHON) -c "import groq" 2>/dev/null && echo "      ✅ groq" || (echo "      ⚠️  groq 未安装，正在安装..." && $(PIP) install groq)
+	@$(PYTHON) -c "import dotenv" 2>/dev/null && echo "      ✅ python-dotenv" || (echo "      ⚠️  python-dotenv 未安装，正在安装..." && $(PIP) install python-dotenv)
+	@$(PYTHON) -c "import tqdm" 2>/dev/null && echo "      ✅ tqdm" || (echo "      ⚠️  tqdm 未安装，正在安装..." && $(PIP) install tqdm)
+	@$(PYTHON) -c "import tabulate" 2>/dev/null && echo "      ✅ tabulate" || (echo "      ⚠️  tabulate 未安装，正在安装..." && $(PIP) install tabulate)
+	@echo "    可选依赖："
+	@$(PYTHON) -c "import google.genai" 2>/dev/null && echo "      ✅ google-genai (长文本处理)" || (echo "      ⚠️  google-genai 未安装，正在安装..." && $(PIP) install google-genai)
+	@$(PYTHON) -c "import yt_dlp" 2>/dev/null && echo "      ✅ yt-dlp (视频下载)" || echo "      ℹ️  yt-dlp 未安装 (视频下载功能需要)"
+	@$(PYTHON) -c "import whoosh" 2>/dev/null && echo "      ✅ Whoosh (全文搜索)" || echo "      ℹ️  Whoosh 未安装 (搜索功能需要)"
+	@$(PYTHON) -c "import jieba" 2>/dev/null && echo "      ✅ jieba (中文分词)" || echo "      ℹ️  jieba 未安装 (中文搜索需要)"
+	@$(PYTHON) -c "import bs4" 2>/dev/null && echo "      ✅ beautifulsoup4 (HTML解析)" || echo "      ℹ️  beautifulsoup4 未安装 (网页归档需要)"
+	@$(PYTHON) -c "import html2text" 2>/dev/null && echo "      ✅ html2text (HTML转换)" || echo "      ℹ️  html2text 未安装 (网页归档需要)"
 	@echo "  → 检查配置文件..."
 	@if [ ! -f ".env" ]; then \
 		echo "  ⚠️  .env 文件不存在，从模板创建..."; \
@@ -250,20 +264,27 @@ check: ensure-venv
 	fi
 
 # 处理视频：仅音频转文字 + AI总结（不含OCR）
+# 可选参数：
+#   LLM=oss|gemini         - 指定总结模型 (默认自动)
+#   ASR=v3|turbo           - 指定语音识别模型 (默认 v3)
 run: ensure-venv
 	@if [ -z "$(VIDEO)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
-		echo "用法：make run VIDEO=/path/to/video.mp4"; \
+		echo "用法：make run VIDEO=/path/to/video.mp4 [LLM=oss|gemini] [ASR=v3|turbo]"; \
 		exit 1; \
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🎬 处理视频（音频模式）"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "📹 视频: $(VIDEO)"
+	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi
+	@if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi
 	@echo "🔊 流程: 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@$(PYTHON) core/process_video.py "$(VIDEO)"
+	@export LLM_PROVIDER=$(LLM) && \
+	 export ASR_MODEL_TYPE=$(ASR) && \
+	 $(PYTHON) core/process_video.py "$(VIDEO)"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ 处理完成！"
@@ -279,6 +300,8 @@ run: ensure-venv
 #   REC_MODEL=mobile|server  - 识别模型（默认 mobile）
 #   USE_GPU=1                - 启用 GPU 加速
 #   OCR_WORKERS=N            - 并行进程数（默认=CPU核心数/2）
+#   LLM=oss|gemini         - 指定总结模型 (默认自动)
+#   ASR=v3|turbo           - 指定语音识别模型 (默认 v3)
 ocr: ensure-venv
 	@if [ -z "$(VIDEO)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
@@ -300,6 +323,8 @@ ocr: ensure-venv
 	echo "🎬 处理视频（完整模式：OCR + 音频）"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 视频: $(VIDEO)"; \
+	if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi; \
+	if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi; \
 	echo "🔍 流程: 1️⃣  OCR识别 → 2️⃣  音频转写 → 3️⃣  AI总结"; \
 	echo "🤖 OCR模型: det=$$DET, rec=$$REC"; \
 	if [ "$$WORKERS" != "auto" ]; then \
@@ -310,6 +335,8 @@ ocr: ensure-venv
 	echo "⏱️  注意：OCR 处理较慢，带进度条显示"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo ""; \
+	export LLM_PROVIDER=$(LLM) && \
+	export ASR_MODEL_TYPE=$(ASR) && \
 	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
@@ -397,6 +424,8 @@ download-run: ensure-venv
 	@echo "📥 下载并处理视频（音频模式）"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
+	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi
+	@if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi
 	@echo "🔊 流程: 下载 → 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
@@ -415,7 +444,7 @@ download-run: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/process_video.py "$$VIDEO_PATH"
+	cd $(PWD) && PYTHONPATH=$(PWD) LLM_PROVIDER=$(LLM) ASR_MODEL_TYPE=$(ASR) $(PYTHON) core/process_video.py "$$VIDEO_PATH"
 
 # 下载视频后自动处理（完整OCR模式）
 download-ocr: ensure-venv
@@ -428,6 +457,8 @@ download-ocr: ensure-venv
 	@echo "📥 下载并处理视频（完整模式）"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
+	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi
+	@if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi
 	@echo "📺 流程: 下载 → 抽帧 → OCR → ASR → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
@@ -447,6 +478,7 @@ download-ocr: ensure-venv
 	echo "📹 开始处理视频"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	cd $(PWD) && PYTHONPATH=$(PWD) DET_MODEL=$(DET_MODEL) REC_MODEL=$(REC_MODEL) USE_GPU=$(USE_GPU) \
+	LLM_PROVIDER=$(LLM) ASR_MODEL_TYPE=$(ASR) \
 	$(PYTHON) core/process_video.py "$$VIDEO_PATH" --with-frames
 
 # 查看所有报告列表

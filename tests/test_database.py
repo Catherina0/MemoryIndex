@@ -145,7 +145,7 @@ def test_artifacts(video_id: int):
 ## 总结
 本视频系统介绍了深度学习的核心概念。
 """,
-        model_name='llama-3.3-70b'
+        model_name='openai/gpt-oss-20b'
     )
     report_id = repo.save_artifact(report)
     print(f"✅ 保存报告: artifact_id={report_id}")

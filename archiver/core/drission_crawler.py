@@ -874,7 +874,7 @@ archived_at: {timestamp}
     
     def _generate_folder_name_with_llm(self, markdown_content: str, title: str, platform: str, url: str) -> str:
         """
-        使用 llama-3.1-8b-instant 模型根据网页内容生成简洁的文件夹名称
+        使用 openai/gpt-oss-20b 模型根据网页内容生成简洁的文件夹名称
         
         Args:
             markdown_content: 保存的 Markdown 内容
@@ -968,7 +968,7 @@ archived_at: {timestamp}
 文件夹名称："""
 
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁、描述性的文件夹名称。"},
                     {"role": "user", "content": prompt}
@@ -1116,7 +1116,7 @@ OCR 文本可能存在识别错误，你必须根据上下文**主动识别并�
 **请直接输出 Markdown 内容，不要任何包裹或额外说明。**"""
 
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-20b",
                 messages=[
                     {
                         "role": "system",

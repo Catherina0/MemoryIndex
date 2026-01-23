@@ -116,7 +116,7 @@ class VideoProcessor:
                     content_text=report_data.get('content', ''),
                     content_json=report_data,
                     file_path=str(output_dir / 'report.md'),
-                    model_name='llama-3.3-70b'
+                    model_name='openai/gpt-oss-20b'
                 )
                 self.repo.save_artifact(report_artifact)
                 print("✅ 保存最终报告")

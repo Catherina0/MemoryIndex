@@ -27,99 +27,99 @@ def _generate_folder_name_with_llm_for_archive(
     original_folder: Path
 ) -> Optional[str]:
     """
-    \u4f7f\u7528 llama-3.1-8b-instant \u6a21\u578b\u6839\u636e\u5f52\u6863\u5185\u5bb9\u751f\u6210\u7b80\u6d01\u7684\u6587\u4ef6\u5939\u540d\u79f0
+    使用 openai/gpt-oss-20b 模型根据归档内容生成简洁的文件夹名称
     
     Args:
-        archive_result: \u5f52\u6863\u7ed3\u679c\u5b57\u5178
-        original_folder: \u539f\u59cb\u6587\u4ef6\u5939\u8def\u5f84
+        archive_result: 归档结果字典
+        original_folder: 原始文件夹路径
     
     Returns:
-        \u751f\u6210\u7684\u6587\u4ef6\u5939\u540d\u79f0\uff08\u4e0d\u5305\u542b\u65f6\u95f4\u6233\uff09
+        生成的文件夹名称（不包含时间戳）
     """
     import os
     try:
         from groq import Groq
     except ImportError:
-        print("  \u26a0\ufe0f  Groq SDK \u672a\u5b89\u88c5\uff0c\u4f7f\u7528\u9ed8\u8ba4\u6587\u4ef6\u5939\u540d")
+        print("  ⚠️  Groq SDK 未安装，使用默认文件夹名")
         return None
     
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("  \u26a0\ufe0f  GROQ_API_KEY \u672a\u8bbe\u7f6e\uff0c\u4f7f\u7528\u9ed8\u8ba4\u6587\u4ef6\u5939\u540d")
+        print("  ⚠️  GROQ_API_KEY 未设置，使用默认文件夹名")
         return None
     
     try:
-        # \u8bfb\u53d6\u5f52\u6863\u7684 README.md \u5185\u5bb9
+        # 读取归档的 README.md 内容
         readme_path = Path(archive_result.get('markdown_path', ''))
         if not readme_path.exists():
-            # \u5c1d\u8bd5\u67e5\u627e output_path \u4e0b\u7684 README.md
+            # 尝试查找 output_path 下的 README.md
             output_path = Path(archive_result.get('output_path', ''))
             readme_path = output_path / 'README.md'
             if not readme_path.exists():
-                print("  \u26a0\ufe0f  \u672a\u627e\u5230 README.md\uff0c\u4f7f\u7528\u9ed8\u8ba4\u6587\u4ef6\u5939\u540d")
+                print("  ⚠️  未找到 README.md，使用默认文件夹名")
                 return None
         
         markdown_content = readme_path.read_text(encoding='utf-8')
         
         client = Groq(api_key=api_key)
         
-        # \u63d0\u53d6\u5185\u5bb9\u6458\u8981
+        # 提取内容摘要
         content_lines = markdown_content.split('\\n')
         content_start = 0
         
-        # \u8df3\u8fc7 YAML frontmatter
+        # 跳过 YAML frontmatter
         if content_lines and content_lines[0].strip() == '---':
             for i, line in enumerate(content_lines[1:], 1):
                 if line.strip() == '---':
                     content_start = i + 1
                     break
         
-        # \u83b7\u53d6\u5b9e\u9645\u5185\u5bb9
+        # 获取实际内容
         actual_content = '\\n'.join(content_lines[content_start:])
-        # \u79fb\u9664\u56fe\u7247\u94fe\u63a5
+        # 移除图片链接
         import re
         actual_content = re.sub(r'!\[.*?\]\(.*?\)', '', actual_content)
-        # \u9650\u5236\u957f\u5ea6\u5230\u524d800\u5b57\u7b26
+        # 限制长度到前800字符
         content_summary = actual_content[:800].strip()
         
         if not content_summary or len(content_summary) < 20:
-            print("  \u26a0\ufe0f  \u5185\u5bb9\u592a\u77ed\uff0c\u4f7f\u7528\u9ed8\u8ba4\u6587\u4ef6\u5939\u540d")
+            print("  ⚠️  内容太短，使用默认文件夹名")
             return None
         
-        title = archive_result.get('title', '\u672a\u547d\u540d')
+        title = archive_result.get('title', '未命名')
         platform = archive_result.get('platform', 'web')
         url = archive_result.get('url', '')
         
             # Build prompt without backslashes in f-string
             newline = '\n'
-            prompt = f"""\u6839\u636e\u4ee5\u4e0b\u7f51\u9875\u5185\u5bb9\uff0c\u751f\u6210\u4e00\u4e2a\u7b80\u6d01\u3001\u63cf\u8ff0\u6027\u7684\u6587\u4ef6\u5939\u540d\u79f0\u3002
+            prompt = f"""根据以下网页内容，生成一个简洁、描述性的文件夹名称。
 
-\u7f51\u9875\u6807\u9898\uff1a{title}
-\u5e73\u53f0\uff1a{platform}
-URL\uff1a{url}
+网页标题：{title}
+平台：{platform}
+URL：{url}
 
-\u5185\u5bb9\u6458\u8981\uff1a
+内容摘要：
 {content_summary}
 
-\u8981\u6c42\uff1a
-1. \u6587\u4ef6\u5939\u540d\u79f0\u5e94\u8be5\u7b80\u6d01\u660e\u4e86\uff0c\u80fd\u591f\u53cd\u6620\u5185\u5bb9\u7684\u6838\u5fc3\u4e3b\u9898
-2. \u4f7f\u7528\u4e0b\u5212\u7ebf(_)\u5206\u9694\u5355\u8bcd\uff0c\u4e0d\u8981\u4f7f\u7528\u7a7a\u683c\u6216\u7279\u6b8a\u5b57\u7b26
-3. \u957f\u5ea6\u4e0d\u8d85\u8fc730\u4e2a\u5b57\u7b26\uff08\u4e2d\u6587\u63092\u4e2a\u5b57\u7b26\u8ba1\u7b97\uff09
-4. \u53ea\u8fd4\u56de\u6587\u4ef6\u5939\u540d\u79f0\uff0c\u4e0d\u8981\u6709\u4efb\u4f55\u89e3\u91ca\u6216\u6807\u70b9\u7b26\u53f7
-5. \u4f7f\u7528\u4e2d\u6587\u6216\u82f1\u6587\u5747\u53ef\uff0c\u4f46\u8981\u786e\u4fdd\u6587\u4ef6\u7cfb\u7edf\u517c\u5bb9
-6. \u4e0d\u9700\u8981\u5305\u542b\u5e73\u53f0\u540d\u79f0
+要求：
+1. 文件夹名称应该简洁明了，能够反映内容的核心主题
+2. 使用下划线(_)分隔单词，不要使用空格或特殊字符
+3. 长度不超过30个字符（中文按2个字符计算）
+4. 只返回文件夹名称，不要有任何解释或标点符号
+5. 使用中文或英文均可，但要确保文件系统兼容
+6. 不需要包含平台名称
 
-\u793a\u4f8b\u683c\u5f0f\uff1a
-- \u673a\u5668\u5b66\u4e60\u5165\u95e8\u6307\u5357
-- Python\u6570\u636e\u5206\u6790\u6280\u5de7
-- \u6df1\u5ea6\u5b66\u4e60\u56fe\u50cf\u5206\u7c7b
+示例格式：
+- 机器学习入门指南
+- Python数据分析技巧
+- 深度学习图像分类
 
-\u8bf7\u76f4\u63a5\u8fd4\u56de\u6587\u4ef6\u5939\u540d\u79f0\uff1a"""
+请直接返回文件夹名称："""
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[
-                {"role": "system", "content": "\u4f60\u662f\u4e00\u4e2a\u6587\u4ef6\u547d\u540d\u52a9\u624b\uff0c\u64c5\u957f\u6839\u636e\u7f51\u9875\u5185\u5bb9\u751f\u6210\u7b80\u6d01\u3001\u63cf\u8ff0\u6027\u7684\u6587\u4ef6\u5939\u540d\u79f0\u3002"},
+                {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁、描述性的文件夹名称。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=50,
@@ -137,16 +137,16 @@ URL\uff1a{url}
         if len(folder_name) > 50:
             folder_name = folder_name[:50]
         
-        # \u5982\u679c\u751f\u6210\u5931\u8d25\u6216\u4e3a\u7a7a\uff0c\u8fd4\u56de None
+        # 如果生成失败或为空，返回 None
         if not folder_name or len(folder_name) < 3:
-            print("  \u26a0\ufe0f  LLM \u751f\u6210\u7684\u6587\u4ef6\u5939\u540d\u65e0\u6548")
+            print("  ⚠️  LLM 生成的文件夹名无效")
             return None
         
-        print(f"  \u2705 LLM \u751f\u6210\u7684\u6587\u4ef6\u5939\u540d: {folder_name}")
+        print(f"  ✅ LLM 生成的文件夹名: {folder_name}")
         return folder_name
         
     except Exception as e:
-        print(f"  \u26a0\ufe0f  LLM \u6587\u4ef6\u5939\u547d\u540d\u5931\u8d25: {e}")
+        print(f"  ⚠️  LLM 文件夹命名失败: {e}")
         return None
 
 
@@ -290,7 +290,7 @@ class ArchiveProcessor:
                     content_text=report_data.get('content', ''),
                     content_json=report_data,
                     file_path=str(output_dir / 'report.md'),
-                    model_name=report_data.get('model', 'llama-3.3-70b')
+                    model_name=report_data.get('model', 'openai/gpt-oss-20b')
                 )
                 self.repo.save_artifact(report_artifact)
                 print("✅ 保存AI报告")
@@ -422,7 +422,7 @@ class ArchiveProcessor:
         估算文本的 token 数量
         使用简单规则：中文字符约1.5 tokens，英文单词约1 token
         """
-        chinese_chars = len([c for c in text if '\u4e00' <= c <= '\u9fff'])
+        chinese_chars = len([c for c in text if '一' <= c <= '鿿'])
         other_chars = len(text) - chinese_chars
         # 粗略估算：中文 1.5 tokens/char，英文 4 chars/token
         return int(chinese_chars * 1.5 + other_chars / 4)

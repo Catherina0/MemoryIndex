@@ -187,6 +187,7 @@ debug_*.html
 /test_*.py
 
 # 归档目录中的临时文件
+scripts
 archived/.DS_Store
 archived/debug_*
 HOMEBREW_RELEASE.md
@@ -196,3 +197,4 @@ check_formula_deps.sh
 demo_progress.py
 test_makefile_progress.py
 test_download_progress.py
+scripts/fix_and_verify.sh

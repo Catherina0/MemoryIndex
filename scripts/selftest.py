@@ -59,14 +59,90 @@ def check_dependencies():
     errors = []
     
     # 必需依赖
-    required = ['groq', 'tabulate']
-    for dep in required:
+    required = [
+        ('numpy', '数据处理'),
+        ('groq', 'Groq API'),
+        ('dotenv', '环境变量'),
+        ('tqdm', '进度条'),
+        ('tabulate', '表格输出'),
+    ]
+    for dep, desc in required:
         try:
-            __import__(dep)
-            print(f"   ✅ {dep}")
+            if dep == 'dotenv':
+                __import__('dotenv')
+            else:
+                __import__(dep)
+            print(f"   ✅ {dep} ({desc})")
         except ImportError:
-            print(f"   ❌ {dep} 未安装")
+            print(f"   ❌ {dep} ({desc}) 未安装")
             errors.append(dep)
+    
+    # Gemini API（可选，用于超长文本）
+    try:
+        from google import genai
+        print("   ✅ google-genai（可选，长文本处理）")
+    except ImportError:
+        print("   ⚠️  google-genai 未安装（可选，用于处理超过 13 万 token 的长文本）")
+        print("      安装: pip install google-genai")
+    
+    # 视频下载
+    try:
+        import yt_dlp
+        print("   ✅ yt-dlp（视频下载）")
+    except ImportError:
+        print("   ⚠️  yt-dlp 未安装（视频下载功能将不可用）")
+        print("      安装: pip install yt-dlp")
+    
+    # 全文搜索
+    try:
+        import whoosh
+        print("   ✅ Whoosh（全文搜索引擎）")
+    except ImportError:
+        print("   ⚠️  Whoosh 未安装（搜索功能将不可用）")
+        print("      安装: pip install Whoosh")
+    
+    try:
+        import jieba
+        print("   ✅ jieba（中文分词）")
+    except ImportError:
+        print("   ⚠️  jieba 未安装（中文搜索将受影响）")
+        print("      安装: pip install jieba")
+    
+    # 网页归档
+    try:
+        import crawl4ai
+        print("   ✅ crawl4ai（网页爬虫）")
+    except ImportError:
+        print("   ⚠️  crawl4ai 未安装（网页归档功能将不可用）")
+        print("      安装: pip install crawl4ai")
+    
+    try:
+        import playwright
+        print("   ✅ playwright（浏览器自动化）")
+    except ImportError:
+        print("   ⚠️  playwright 未安装（部分网页归档功能将不可用）")
+        print("      安装: pip install playwright && playwright install")
+    
+    try:
+        import bs4
+        print("   ✅ beautifulsoup4（HTML解析）")
+    except ImportError:
+        print("   ⚠️  beautifulsoup4 未安装（HTML解析功能将不可用）")
+        print("      安装: pip install beautifulsoup4")
+    
+    try:
+        import html2text
+        print("   ✅ html2text（HTML转Markdown）")
+    except ImportError:
+        print("   ⚠️  html2text 未安装（HTML转换功能将不可用）")
+        print("      安装: pip install html2text")
+    
+    # 小红书相关（可选）
+    try:
+        import httpx
+        print("   ✅ httpx（HTTP客户端，小红书下载需要）")
+    except ImportError:
+        print("   ⚠️  httpx 未安装（小红书下载功能将不可用）")
     
     # OCR 引擎（至少需要一个）
     ocr_available = False
@@ -94,58 +170,6 @@ def check_dependencies():
         print("   ⚠️  未找到可用的 OCR 引擎")
         print("      macOS: 应自动使用 Vision OCR")
         print("      其他平台: 运行 'make install-paddle-ocr'")
-    
-    # dotenv 特殊处理
-    try:
-        import dotenv
-        print("   ✅ python-dotenv")
-    except ImportError:
-        print("   ❌ python-dotenv 未安装")
-        errors.append('python-dotenv')
-    
-    # 可选依赖 - 搜索
-    try:
-        import whoosh
-        print("   ✅ whoosh")
-    except ImportError:
-        print("   ⚠️  whoosh 未安装（可选，用于中文搜索）")
-    
-    try:
-        import jieba
-        print("   ✅ jieba")
-    except ImportError:
-        print("   ⚠️  jieba 未安装（可选，用于中文分词）")
-    
-    # 可选依赖 - 网页归档
-    try:
-        import crawl4ai
-        print("   ✅ crawl4ai（归档）")
-    except ImportError:
-        print("   ⚠️  crawl4ai 未安装（网页归档需要）")
-    
-    try:
-        import playwright
-        print("   ✅ playwright（归档）")
-    except ImportError:
-        print("   ⚠️  playwright 未安装（网页归档需要）")
-    
-    try:
-        import bs4
-        print("   ✅ beautifulsoup4（归档）")
-    except ImportError:
-        print("   ⚠️  beautifulsoup4 未安装（网页归档需要）")
-    
-    try:
-        import html2text
-        print("   ✅ html2text（归档）")
-    except ImportError:
-        print("   ⚠️  html2text 未安装（网页归档需要）")
-    
-    try:
-        import browser_cookie3
-        print("   ✅ browser-cookie3（Cookie管理）")
-    except ImportError:
-        print("   ⚠️  browser-cookie3 未安装（可选，用于浏览器Cookie）")
     
     return errors
 
@@ -401,6 +425,20 @@ def check_api_config():
                 print("   ⚠️  GROQ_API_KEY 被注释")
         else:
             print("   ⚠️  GROQ_API_KEY 未配置")
+        
+        # 检查 GEMINI_API_KEY
+        if 'GEMINI_API_KEY' in content:
+            lines = [l for l in content.split('\n') if 'GEMINI_API_KEY' in l and not l.strip().startswith('#')]
+            if lines:
+                value = lines[0].split('=', 1)[1].strip() if '=' in lines[0] else ''
+                if value and 'your' not in value.lower() and value != '':
+                    print("   ✅ GEMINI_API_KEY 已配置（用于超长文本处理）")
+                else:
+                    print("   ⚠️  GEMINI_API_KEY 未设置或为占位符（可选，仅处理超长文本时需要）")
+            else:
+                print("   ⚠️  GEMINI_API_KEY 被注释（可选）")
+        else:
+            print("   ℹ️  GEMINI_API_KEY 未配置（可选，仅在处理超过 13 万 token 的长文本时需要）")
     else:
         print("   ❌ .env 文件不存在")
         print("      请复制 config_example.py 创建 .env 文件")

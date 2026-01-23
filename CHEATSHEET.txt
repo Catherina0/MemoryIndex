@@ -7,7 +7,14 @@
 ───────────────────────────────────────────────────────────────
 /Users/catherina/Documents/GitHub/knowledge/
 
-✨ 新特性（2026-01-08）🆕
+✨ 新特性（2026-01-24）🆕
+───────────────────────────────────────────────────────────────
+• 🧠 双 LLM 灵活切换 - 本地 OSS 与 Gemini 自动或强制切换
+• 🎤 双 ASR 模型支持 - Whisper Large V3 (默认高质量) 与 Turbo (高速低成本)
+• 📏 智能 Token 估算 - 中文 1:1 / 英文 2:1 精准触发长文本模式
+• 📝 报告升级 - 显示实际使用的模型名称 (摘要+详细)
+
+✨ 新特性（2026-01-08）
 ───────────────────────────────────────────────────────────────
 • 📊 增强的数据库状态查看 - 5大类详细统计（基础/来源/状态/类型/健康）
 • 📈 新增详细统计命令 - db-stats（归档/视频/标签专项统计）
@@ -96,6 +103,11 @@
   make run VIDEO=~/Downloads/meeting.mp4
   make ocr VIDEO=~/Desktop/tutorial.mp4
 
+模型参数选择（新功能）：
+  make run VIDEO=x.mp4 LLM=gemini       # 强制使用 Gemini
+  make run VIDEO=x.mp4 ASR=turbo        # 使用 Whisper Turbo
+  make ocr VIDEO=x.mp4 LLM=oss ASR=v3   # 组合使用
+
 URL下载处理 - 直接链接：
   make download-run URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
   make download-ocr URL="https://www.bilibili.com/video/BV1xx411c7mD"
@@ -161,10 +173,19 @@ URL下载处理 - 直接链接：
      ✅ Cookie统一管理
   
   💡 快速开始:
-     • 处理视频: make run VIDEO=video.mp4
+     • 处理视频: make run VIDEO=video.mp4 [参数]
      • 下载视频: make download-run URL=视频链接
      • 归档网页: make archive URL=网页链接
      • 搜索内容: make search Q='关键词'
+
+  💡 高级视频处理参数:
+     • LLM选择: LLM=gemini (强制使用) 或 LLM=oss (强制本地模型)
+     • ASR选择: ASR=turbo (更快) 或 ASR=v3 (更准, 默认)
+     
+     示例:
+       make run VIDEO=x.mp4 LLM=gemini       # 强制使用 Gemini
+       make run VIDEO=x.mp4 ASR=turbo        # 使用 Turbo 加速转写
+       make ocr VIDEO=x.mp4 LLM=oss ASR=v3   # 强制本地LLM + 精准ASR
 
 常见问题修复：
   • 依赖缺失：make install

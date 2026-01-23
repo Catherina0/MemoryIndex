@@ -12,6 +12,7 @@
 # ========== 基础依赖 ==========
 numpy 
 groq
+google-genai>=0.2.0      # Gemini API (用于处理超长文本)
 python-dotenv
 yt-dlp
 tqdm  # 进度条显示

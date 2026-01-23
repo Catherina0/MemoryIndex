@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
+from google import genai
 import re
 import json
 import warnings
@@ -264,14 +265,14 @@ def match_audio_with_frames(transcript_data: dict, frames_dir: Path, fps: int = 
 
 
 # ========== Groq API 集成 ==========
-def _transcribe_single_audio(client, model: str, audio_path: Path) -> dict:
+def _transcribe_single_audio(client, model_name: str, audio_path: Path) -> dict:
     """
     转写单个音频文件（内部函数）。
     """
     with open(audio_path, "rb") as audio_file:
         transcription = client.audio.transcriptions.create(
             file=(audio_path.name, audio_file.read()),
-            model=model,
+            model=model_name,
             response_format="verbose_json",
             timestamp_granularities=["segment"]
         )
@@ -313,21 +314,36 @@ def transcribe_audio_with_groq(audio_path: Path) -> dict:
     
     try:
         client = Groq(api_key=api_key)
-        model = os.getenv("GROQ_ASR_MODEL", "whisper-large-v3-turbo")
+        
+        # 确定 ASR 模型
+        asr_type = os.getenv("ASR_MODEL_TYPE", "").lower()
+        if asr_type == "v3":
+            model = "whisper-large-v3"
+            print("  🎤 使用模型: Whisper Large V3")
+        elif asr_type == "turbo":
+            model = "whisper-large-v3-turbo"
+            print("  🎤 使用模型: Whisper Large V3 Turbo")
+        else:
+            # 默认 fallback 到环境变量配置
+            model = os.getenv("GROQ_ASR_MODEL", "whisper-large-v3")
         
         # 检查文件大小，决定是否需要拆分
         file_size = audio_path.stat().st_size
         
         if file_size <= MAX_AUDIO_SIZE_BYTES:
             # 文件足够小，直接转写
-            return _transcribe_single_audio(client, model, audio_path)
+            result = _transcribe_single_audio(client, model, audio_path)
+            result['asr_model'] = model
+            return result
         
         # 文件过大，需要拆分
         chunks = split_audio(audio_path)
         
         if len(chunks) == 1:
             # 拆分失败或不需要拆分，尝试直接上传
-            return _transcribe_single_audio(client, model, audio_path)
+            result = _transcribe_single_audio(client, model, audio_path)
+            result['asr_model'] = model
+            return result
         
         # 分段转写并合并结果
         all_text = []
@@ -364,29 +380,158 @@ def transcribe_audio_with_groq(audio_path: Path) -> dict:
         
         return {
             'text': ' '.join(all_text),
-            'segments': all_segments
+            'segments': all_segments,
+            'asr_model': model
         }
         
     except Exception as e:
         print(f"  ✗ Groq 转写失败: {e}")
         return {
             'text': f"[转写失败: {str(e)}]",
-            'segments': []
+            'segments': [],
+            'asr_model': f"{model} (失败)"
         }
 
 
-def summarize_with_gpt_oss_120b(full_text: str) -> str:
+def estimate_token_count(text: str) -> int:
+    """
+    估算文本的 token 数量
+    规则：
+    - 中文字符：1:1 (1个字符 = 1 token)
+    - 其他字符（主要是英文）：2:1 (2个字符 = 1 token，即 count / 2)
+    """
+    import re
+    # 统计中文字符数 (基本汉字范围)
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fa5]', text))
+    # 统计其他字符数
+    other_chars = len(text) - chinese_chars
+    
+    # 计算 token
+    token_count = chinese_chars + int(other_chars / 2)
+    return token_count
+
+
+def summarize_with_gemini(full_text: str, custom_prompt: str = None) -> tuple:
+    """
+    使用 Gemini API 处理文本
+    Args:
+        full_text: 输入文本
+        custom_prompt: 可选的自定义提示词。如果未提供，使用默认的"知识档案"提示词。
+    
+    Returns: 
+        (summary_text, model_name)
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    
+    if not api_key:
+        print("  ⚠️  GEMINI_API_KEY 未设置，无法处理长文本")
+        return (f"[ERROR: GEMINI_API_KEY 未设置]\n\n{full_text[:1000]}...(文本过长已截断)", f"{model_name} (失败)")
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        # 如果提供了自定义提示词，直接使用它
+        if custom_prompt:
+            prompt = f"{custom_prompt}\n\n以下是内容：\n{full_text}"
+        else:
+            # 默认提示词（生成的摘要/知识档案）
+            prompt = f"""
+
+请将以下"带时间戳的音频转写 + OCR 文本"整理成一份**结构化 Markdown 知识档案和内容概要**。
+
+
+**⚠️ 重要：识别错误修正**
+- 语音识别(ASR)和OCR都可能存在**同音字/词的识别错误**，特别是专业术语
+- 你必须根据上下文**主动识别并修正**这些错误
+- 常见错误类型：
+  * 专业术语："机器学习"被识别为"鸡器学习"、"神经网络"识别为"神经往罗"
+  * 人名地名："张三"识别为"章三"、"北京"识别为"背景"
+  * 英文术语："API"识别为"哎批爱"、"Python"识别为"派森"
+  * 数字单位："3千克"识别为"3千客"、"2米"识别为"2密"
+- 修正时请使用专业、准确的术语
+
+**⚠️ 内容清洗：忽略广告干扰**
+- 请识别并**完全忽略**视频中的插播广告、赞助商口播或跑马灯信息
+- 典型例子：转转二手机、拼多多、某某科技企业宣传、"点击关注"、"一键三连"等
+- 确保输出内容仅关于视频的核心主题知识，不要包含任何推广信息
+
+你需要：
+1. **使用 Markdown** 输出（标题、列表、引用、表格等）
+2. 按时间顺序梳理主要片段，并为关键内容标注对应时间戳
+3. 合并音频与 OCR 内容：  
+   - 如果 OCR 文字不完整，请根据上下文**推断合理含义**  
+   - 如果某些屏幕文字重要（如 PPT、界面按钮、参数、代码），请单独提取并解释
+   - **不要编造不存在的OCR信息**：如果无法确认屏幕上有具体文字，请不要在"OCR信息与推断"中强行编造。仅在确有依据（时间戳对应的OCR文本）时才列出。
+   - **主动修正识别错误**：同音字替换、术语纠正、拼写修复
+4. 自动识别"主题/章节"并结构化总结：概念、步骤、场景、结论
+5. 提取重要数据：数字、阈值、规则、引用、命令、日期等
+6. 生成标签和摘要：
+   - **标签（tags）**：3-6个高度概括的主题标签，如"情感"、"告白"、"人生意义"、"科技"、"教育"等。避免使用"语音转写"、"OCR推断"等技术性描述词。标签应简短（1-4个字），概括性强，便于数据库搜索。
+   - **摘要**：不超过50个字的系统性内容概括，提炼核心主题和要点。
+7. 稍微详细一些，但不要写废话（重点是**可回溯、可搜索、可理解**）
+
+推荐结构：
+## 摘要
+（不超过50字的核心内容概括）
+
+## 主要内容概括
+## 主题总结（自动生成主题名）
+## 详细说明（合并音频与 OCR）
+## 关键信息（数字、规则、参数）
+## OCR 信息与推断（仅列出确凿的屏幕关键文字，不要编造）
+## 时间线（关键片段 + 时间戳）
+## 关键句（含时间戳）
+## 标签
+格式：标签: 标签1, 标签2, 标签3
+
+以下是内容：
+{full_text}
+
+"""
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+        )
+        
+        return (response.text, model_name)
+    except Exception as e:
+        print(f"  ✗ Gemini 总结失败: {e}")
+        return (f"[总结失败: {str(e)}]\n\n原始内容:\n{full_text[:1000]}...(已截断)", f"{model_name} (失败)")
+
+
+def summarize_with_gpt_oss_120b(full_text: str) -> tuple:
     """
     使用 Groq 的 LLM 进行文本总结。
+    支持自动切换或强制使用 Gemini。
+    返回: (summary_text, model_name)
     """
+    # 检查是否强制使用 Gemini
+    llm_provider = os.getenv("LLM_PROVIDER", "").lower()
+    if llm_provider == "gemini":
+        print("  🔄 用户强制选择: 使用 Gemini API")
+        return summarize_with_gemini(full_text)
+
+    # 估算 token 数量
+    estimated_tokens = estimate_token_count(full_text)
+    print(f"  📊 估算文本长度: ~{estimated_tokens:,} tokens ({len(full_text):,} 字符)")
+    
+    # 如果超过 5 万 token，使用 Gemini (且没强制指定 oss)
+    if estimated_tokens > 50000 and llm_provider != "oss":
+        print(f"  🔄 文本过长 (>{50000:,} tokens)，切换到 Gemini API")
+        return summarize_with_gemini(full_text)
+    
+    # 否则使用 Groq
     api_key = os.getenv("GROQ_API_KEY")
+    model_name = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
+    
     if not api_key:
         print("  ⚠️  GROQ_API_KEY 未设置，返回原文")
-        return f"[FAKE SUMMARY - 请在 .env 中设置 GROQ_API_KEY]\n\n{full_text}"
+        return (f"[FAKE SUMMARY - 请在 .env 中设置 GROQ_API_KEY]\n\n{full_text}", f"{model_name} (失败)")
     
     try:
         client = Groq(api_key=api_key)
-        model = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
         # 增加 token 限制以支持更长的输出
         max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "8192"))  # 从 4096 提升到 8192
         temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
@@ -406,12 +551,18 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
   * 数字单位："3千克"识别为"3千客"、"2米"识别为"2密"
 - 修正时请使用专业、准确的术语
 
+**⚠️ 内容清洗：忽略广告干扰**
+- 请识别并**完全忽略**视频中的插播广告、赞助商口播或跑马灯信息
+- 典型例子：转转二手机、拼多多、某某科技企业宣传、"点击关注"、"一键三连"等
+- 确保输出内容仅关于视频的核心主题知识
+
 你需要：
 1. **使用 Markdown** 输出（标题、列表、引用、表格等）
 2. 按时间顺序梳理主要片段，并为关键内容标注对应时间戳
 3. 合并音频与 OCR 内容：  
    - 如果 OCR 文字不完整，请根据上下文**推断合理含义**  
    - 如果某些屏幕文字重要（如 PPT、界面按钮、参数、代码），请单独提取并解释
+   - **不要编造不存在的OCR信息**：如果无法确认屏幕上有具体文字，请不要在"OCR信息与推断"中强行编造。仅在确有依据（时间戳对应的OCR文本）时才列出。
    - **主动修正识别错误**：同音字替换、术语纠正、拼写修复
 4. 自动识别“主题/章节”并结构化总结：概念、步骤、场景、结论
 5. 提取重要数据：数字、阈值、规则、引用、命令、日期等
@@ -428,21 +579,21 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
 ## 主题总结（自动生成主题名）
 ## 详细说明（合并音频与 OCR）
 ## 关键信息（数字、规则、参数）
-## OCR 信息与推断（列出重要屏幕文字并解释）
+## OCR 信息与推断（仅列出确凿的屏幕关键文字，不要编造）
 ## 时间线（关键片段 + 时间戳）
 ## 关键句（含时间戳）
 ## 标签
 格式：标签: 标签1, 标签2, 标签3
 
 以下是内容：
-{full_text[:40000]}  
+{full_text}  
 
 
 
 """
 
         response = client.chat.completions.create(
-            model=model,
+            model=model_name,
             messages=[
                 {
                     "role": "system",
@@ -470,31 +621,21 @@ def summarize_with_gpt_oss_120b(full_text: str) -> str:
             temperature=temperature,
         )
         
-        return response.choices[0].message.content
+        return (response.choices[0].message.content, model_name)
     except Exception as e:
         print(f"  ✗ Groq 总结失败: {e}")
-        return f"[总结失败: {str(e)}]\n\n原始内容:\n{full_text}"
+        return (f"[总结失败: {str(e)}]\n\n原始内容:\n{full_text}", f"{model_name} (失败)")
 
 
-def generate_detailed_content(full_text: str) -> str:
+def generate_detailed_content(full_text: str) -> tuple:
     """
     生成详细的内容概括，包含更多细节。
-    使用更大的token限制（12000）以产出更完整的内容。
+    支持自动切换或强制使用 Gemini。
+    返回: (detailed_content, model_name)
     """
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        print("  ⚠️  GROQ_API_KEY 未设置，跳过详细内容生成")
-        return ""
-    
-    try:
-        client = Groq(api_key=api_key)
-        model = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
-        # 详细内容使用更大的token限制
-        max_tokens = int(os.getenv("GROQ_DETAIL_MAX_TOKENS", "12000"))
-        temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
-        
-        prompt = f"""
-请基于以下视频的音频转写和OCR文本，生成一份**详细的内容概括**。
+    # 构造 OSS (Groq) 和一般情况的详细内容提示词
+    default_prompt_text = f"""
+请基于以下视频的音频转写和OCR文本(如果有），生成一份**详细的内容概括**。
 
 **⚠️ 识别错误修正**：
 - 音频转写和OCR文本可能存在同音字/词识别错误
@@ -504,6 +645,11 @@ def generate_detailed_content(full_text: str) -> str:
   * 英文缩写和术语
   * 数字、单位、参数
 - 修正后使用准确、规范的表达
+
+**⚠️ 内容清洗：忽略广告干扰**
+- 请识别并**完全忽略**视频中的插播广告、赞助商口播或跑马灯信息
+- 典型例子：转转二手机、拼多多、某某科技企业宣传、"点击关注"、"一键三连"等
+- 确保输出内容仅关于视频的核心主题知识
 
 要求：
 1. **逐段详细展开**：按视频的时间顺序，详细描述每个主要部分的内容
@@ -535,12 +681,83 @@ def generate_detailed_content(full_text: str) -> str:
 > "原句1..." —— [时间戳]
 > "原句2..." —— [时间戳]
 
-以下是原始内容：
-{full_text[:50000]}
 """
 
+    # 构造 Gemini 专用的详细内容提示词 (鼓励更长输出)
+    gemini_prompt_text = f"""
+请基于以下视频的音频转写和 OCR 文本(如果有），生成一份**极致详细、内容全面**的深度内容概括。
+
+**⚠️ 我们的目标是：生成一份无需观看原视频就能获取所有细节的完整档案。不要在意长度，尽可能多地保留信息。**
+
+**🔍 1. 深度内容解析**
+- **逐字逐句的细节保留**：不仅要概括大意，更要还原讲者的具体论述逻辑、举例说明、数据支撑。
+- **所有关键信息**：任何数字、年份、人名、书名、工具名、代码片段、配置参数，都必须准确记录。
+- **情感与语境**：如果讲者表达了强烈观点、幽默、反讽或情绪变化，请在描述中体现。
+- **不要省略**：不要使用"..."或"略过"等简写，把内容如实写出来。
+
+**⚠️ 2. 识别错误修正与清洗**
+- **智能纠错**：根据上下文主动修正 ASR/OCR 的同音字错误（如 "Python" 误识为 "派森"）。
+- **屏蔽广告**：完全忽略视频中的口播广告（如“转转二手机”、“拼多多”）、求关注拉票等无关内容。
+- **术语规范**：将口语化的表达转换为专业、规范的书面术语。
+
+**📝 3. 输出结构要求**
+请按照视频的时间线性流程，将内容划分为多个详细的章节。对于每个章节：
+- **小标题**：清晰的主题。
+- **详细段落**：使用长段落详细阐述，而不是简短的 bullet points。
+- **引用原话**：对于金句或核心观点，请直接引用（修正错别字后）。
+- **时间戳**：频繁标注时间戳，方便回溯。
+
+**📊 4. 专项信息提取**
+在文末请单独整理：
+- **数据汇总**：所有出现的统计数据、价格、参数。
+- **知识图谱**：提到的所有概念、理论、法则。
+- **行动指南**：如果视频包含教程，列出一步步的操作指南。
+
+请忽略 Token 限制，尽可能详尽地输出。
+
+以下是输出格式参考：
+## 📖 深度详细内容概括（完整版）
+
+### [00:00 - 05:30] 章节一：背景与核心论点
+（这里需要非常详细的描述，解释讲者的出发点，引用的背景故事，提出的核心矛盾...）
+
+### [05:31 - 12:45] 章节二：深度解析技术原理
+（详细解释原理的每一个步骤，不要遗漏任何技术细节...）
+...
+
+### 💡 核心知识点与数据汇总
+...
+"""
+
+    # 检查是否强制使用 Gemini
+    llm_provider = os.getenv("LLM_PROVIDER", "").lower()
+    if llm_provider == "gemini":
+        print("  🔄 用户强制选择: 详细内容生成使用 Gemini API (使用增强提示词)")
+        return summarize_with_gemini(full_text, custom_prompt=gemini_prompt_text)
+
+    # 估算 token 数量
+    estimated_tokens = estimate_token_count(full_text)
+    
+    # 如果超过 5 万 token，使用 Gemini (且没强制指定 oss)
+    if estimated_tokens > 50000 and llm_provider != "oss":
+        print(f"  🔄 详细内容文本过长 (>{50000:,} tokens)，使用 Gemini API (使用增强提示词)")
+        # 使用Gemini处理长文本，使用详细提示词
+        return summarize_with_gemini(full_text, custom_prompt=gemini_prompt_text)
+    
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print("  ⚠️  GROQ_API_KEY 未设置，跳过详细内容生成")
+        return ("", "N/A")
+    
+    try:
+        client = Groq(api_key=api_key)
+        model_name = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
+        # 详细内容使用更大的token限制
+        max_tokens = int(os.getenv("GROQ_DETAIL_MAX_TOKENS", "12000"))
+        temperature = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
+        
         response = client.chat.completions.create(
-            model=model,
+            model=model_name,
             messages=[
                 {
                     "role": "system",
@@ -555,24 +772,25 @@ def generate_detailed_content(full_text: str) -> str:
                 },
                 {
                     "role": "user",
-                    "content": prompt
+                    "content": f"{default_prompt_text}\n\n以下是原始内容：\n{full_text}"
                 }
             ],
             max_tokens=max_tokens,
             temperature=temperature,
         )
         
-        return response.choices[0].message.content
+        return (response.choices[0].message.content, model_name)
     except Exception as e:
         print(f"  ⚠️  详细内容生成失败: {e}")
-        return ""
+        return ("", "N/A")
 
 
-def merge_summary_with_details(summary: str, detailed_content: str) -> str:
+def merge_summary_with_details(summary: str, detailed_content_tuple: tuple) -> str:
     """
     将详细内容概括追加到报告末尾。
     保持原有报告内容不变。
     """
+    detailed_content, _ = detailed_content_tuple  # 解包tuple，忽略model_name
     if not detailed_content:
         return summary
     
@@ -654,7 +872,7 @@ def generate_folder_name_with_llm(report_content: str, video_name: str) -> str:
 请直接返回文件夹名称："""
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": "你是一个专业的内容标注员。你的任务是根据视频内容生成简洁、准确的主题标签，而不是描述文档格式。"},
                 {"role": "user", "content": prompt}
@@ -741,7 +959,10 @@ def generate_formatted_report(
     with_frames: bool,
     session_dir: Path,
     timeline: list = None,
-    video_path: Path = None
+    video_path: Path = None,
+    model_name: str = None,
+    detail_model_name: str = None,
+    asr_model_name: str = None
 ) -> str:
     """
     生成格式化的报告，包含元信息、AI总结和原始数据
@@ -768,8 +989,19 @@ def generate_formatted_report(
     report.append("\n---\n")
     report.append("## 📊 数据统计\n")
     report.append(f"- **语音识别**: {transcript_chars} 字符, {transcript_lines} 行")
+    if asr_model_name:
+        report.append(f"- **ASR 模型**: {asr_model_name}")
     if with_frames:
         report.append(f"- **OCR识别**: {ocr_chars} 字符, {ocr_lines} 行")
+    if model_name:
+        # 显示第一次AI调用的模型
+        report.append(f"- **AI 模型 (摘要)**: {model_name}")
+        # 如果第二次调用使用了不同的模型，也显示
+        if detail_model_name and detail_model_name != "N/A" and detail_model_name != model_name:
+            report.append(f"- **AI 模型 (详细)**: {detail_model_name}")
+        elif detail_model_name and detail_model_name != "N/A":
+            # 如果两次使用相同模型，只显示一次但注明
+            report[-1] = f"- **AI 模型**: {model_name} (摘要 + 详细)"
     report.append("\n---\n")
     
     # AI 总结（已经是 markdown 格式）
@@ -1237,6 +1469,7 @@ def process_video(
     print(">> 调用 Groq 语音转写（带时间戳）...")
     transcript_data = transcribe_audio_with_groq(audio_path)
     transcript_text = transcript_data.get('text', '')
+    asr_model_name = transcript_data.get('asr_model', 'Groq Whisper')
     
     # 保存语音识别原始结果（Markdown 格式，包含时间戳）
     if transcript_text.strip():
@@ -1244,7 +1477,7 @@ def process_video(
         transcript_markdown = f"# 🎤 语音识别原始数据\n\n"
         transcript_markdown += f"**识别时间**: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}  \n"
         transcript_markdown += f"**总字符数**: {len(transcript_text)}  \n"
-        transcript_markdown += f"**识别模型**: Groq Whisper  \n"
+        transcript_markdown += f"**识别模型**: {asr_model_name}  \n"
         transcript_markdown += f"**片段数量**: {len(transcript_data.get('segments', []))}  \n\n"
         transcript_markdown += "---\n\n"
         transcript_markdown += "## 📝 完整转写\n\n"
@@ -1270,8 +1503,18 @@ def process_video(
         generate_timeline_report(timeline, timeline_path)
         print(f"   💾 保存音画时间轴: {timeline_path.name}")
 
-    # 5. 合并文本：音频文字 + OCR 结果
-    combined_text_parts = [f"=== Audio Transcript ===\n{transcript_text}\n"]
+    # 5. 合并文本：构建带时间戳的转写文本（用于所有 AI 任务）
+    # 用户要求：启动第一轮和第二轮总结的时候，只输入时间戳片段，不额外重复包含完整转写
+    combined_text_parts = ["=== Audio Transcript with Timestamps ===\n"]
+    if transcript_data.get('segments'):
+        for seg in transcript_data['segments']:
+            start_time = f"{int(seg['start']//60):02d}:{int(seg['start']%60):02d}"
+            end_time = f"{int(seg['end']//60):02d}:{int(seg['end']%60):02d}"
+            combined_text_parts.append(f"[{start_time} - {end_time}] {seg['text']}")
+    else:
+        # 如果没有 segments（例如纯音频且未拆分），则使用纯文本
+        combined_text_parts.append(transcript_text)
+
     if with_frames:
         combined_text_parts.append(f"\n\n=== OCR from Frames ===\n{ocr_text}\n")
 
@@ -1279,30 +1522,20 @@ def process_video(
 
     # 6. 第一次AI调用：生成结构化摘要报告
     print("\n>> 第一次AI调用：生成结构化摘要...")
-    summary = summarize_with_gpt_oss_120b(combined_text)
+    # 使用带时间戳的文本进行摘要（符合用户要求：只输入时间戳片段）
+    summary, model_name = summarize_with_gpt_oss_120b(combined_text)
     
-    # 7. 第二次AI调用：生成详细内容概括（使用带时间戳的完整文本）
+    # 7. 第二次AI调用：生成详细内容概括
     print(">> 第二次AI调用：生成详细内容概括...")
-    # 构建带时间戳的转写文本
-    timestamped_text_parts = ["=== Audio Transcript with Timestamps ===\n"]
-    if transcript_data.get('segments'):
-        for seg in transcript_data['segments']:
-            start_time = f"{int(seg['start']//60):02d}:{int(seg['start']%60):02d}"
-            end_time = f"{int(seg['end']//60):02d}:{int(seg['end']%60):02d}"
-            timestamped_text_parts.append(f"[{start_time} - {end_time}] {seg['text']}")
-    else:
-        timestamped_text_parts.append(transcript_text)
-    
-    if with_frames:
-        timestamped_text_parts.append(f"\n\n=== OCR from Frames ===\n{ocr_text}\n")
-    
-    timestamped_combined_text = "\n".join(timestamped_text_parts)
-    detailed_content = generate_detailed_content(timestamped_combined_text)
+    # 使用同一份文本
+    detailed_content_tuple = generate_detailed_content(combined_text)
+    detailed_content, detail_model_name = detailed_content_tuple  # 解包 tuple，保存第二次调用的 model_name
+
     
     # 8. 合并摘要和详细内容
     if detailed_content:
         print(">> 合并摘要与详细内容...")
-        summary = merge_summary_with_details(summary, detailed_content)
+        summary = merge_summary_with_details(summary, detailed_content_tuple)
         print(f"   ✅ 详细内容已添加 ({len(detailed_content)} 字符)")
 
     # 9. 生成格式化报告
@@ -1315,7 +1548,10 @@ def process_video(
         with_frames=with_frames,
         session_dir=session_dir,
         timeline=timeline,
-        video_path=video_path
+        video_path=video_path,
+        model_name=model_name,
+        detail_model_name=detail_model_name,
+        asr_model_name=asr_model_name
     )
     
     report_path.write_text(report_content, encoding="utf-8")
