@@ -90,9 +90,9 @@ def _generate_folder_name_with_llm_for_archive(
         platform = archive_result.get('platform', 'web')
         url = archive_result.get('url', '')
         
-            # Build prompt without backslashes in f-string
-            newline = '\n'
-            prompt = f"""根据以下网页内容，生成一个简洁、描述性的文件夹名称。
+        # Build prompt without backslashes in f-string
+        newline = '\n'
+        prompt = f"""根据以下网页内容，生成一个简洁、描述性的文件夹名称。
 
 网页标题：{title}
 平台：{platform}
@@ -620,6 +620,10 @@ class ArchiveProcessor:
             if i == len(chunks):
                 last_segment_instruction = "6. **这是最后一部分**，请生成最终的标签和摘要"
             
+            # Build the final section string outside f-string to avoid backslash issues
+            newline = '\n'
+            final_section = f"## 标签{newline}格式：标签: 标签1, 标签2, 标签3{newline}{newline}## 全文摘要{newline}（不超过100字的整体概括）" if i == len(chunks) else ""
+            
             prompt = f"""{context_info}请将以下网页内容片段（第 {i}/{len(chunks)} 部分）整理成**结构化 Markdown 知识档案**。
 
 **⚠️ 重要要求：**
@@ -636,7 +640,7 @@ class ArchiveProcessor:
 
 ## 关键观点
 ## 重要信息
-{"## 标签\n格式：标签: 标签1, 标签2, 标签3\n\n## 全文摘要\n（不超过100字的整体概括）" if i == len(chunks) else ""}
+{final_section}
 
 以下是内容片段：
 {chunk}

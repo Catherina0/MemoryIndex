@@ -196,3 +196,14 @@ def get_cookies_for_domain(domain: str, browser: str = 'chrome') -> Optional[Dic
     """Helper function to get cookies"""
     manager = CookieManager()
     return manager.load_from_browser(domain, browser)
+
+
+def get_xiaohongshu_cookies() -> Optional[Dict[str, str]]:
+    """Convenience function to get XiaohongShu (XHS) cookies."""
+    manager = CookieManager()
+    # Try cookies.txt / browser first
+    cookies = manager.load_from_browser('xiaohongshu.com')
+    if cookies:
+        return cookies
+    # Fall back to platform-specific config
+    return manager.load_from_xhs_config()

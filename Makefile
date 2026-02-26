@@ -8,10 +8,19 @@ VENV_DIR := .venv
 PYTHON := $(VENV_DIR)/bin/python
 PIP := $(VENV_DIR)/bin/pip
 
-# 确保虚拟环境存在（首次运行时自动创建）
+# 确保虚拟环境存在且可用（首次运行或损坏时自动创建）
 ensure-venv:
-	@if [ ! -d "$(VENV_DIR)" ]; then \
-		echo "🔧 首次运行：创建虚拟环境..."; \
+	@VENV_OK=0; \
+	if [ -d "$(VENV_DIR)" ] && [ -f "$(PYTHON)" ]; then \
+		$(PYTHON) -c "import sys; sys.exit(0)" 2>/dev/null && VENV_OK=1; \
+	fi; \
+	if [ "$$VENV_OK" = "0" ]; then \
+		if [ -d "$(VENV_DIR)" ]; then \
+			echo "⚠️  检测到虚拟环境已损坏（解释器失效），正在重建..."; \
+			rm -rf "$(VENV_DIR)"; \
+		else \
+			echo "🔧 首次运行：创建虚拟环境..."; \
+		fi; \
 		python3 -m venv $(VENV_DIR); \
 		echo "  ✅ 虚拟环境已创建: $(VENV_DIR)"; \
 		echo ""; \
@@ -25,9 +34,6 @@ ensure-venv:
 			cp .env.example .env 2>/dev/null || touch .env; \
 			echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY"; \
 		fi; \
-		echo ""; \
-		echo "🧪 运行环境自检..."; \
-		$(PYTHON) test_env.py; \
 		echo ""; \
 		echo "✅ 环境初始化完成！"; \
 	fi
@@ -153,6 +159,13 @@ install: ensure-venv
 	@echo "💡 提示："
 	@echo "  • macOS 用户：默认使用 Vision OCR（系统自带，零配置）"
 	@echo "  • 跨平台支持：运行 'make install-paddle-ocr' 安装 PaddleOCR"
+
+# 安装 Playwright 浏览器（网页归档需要）
+install-playwright: ensure-venv
+	@echo "📦 安装 Playwright Chromium 浏览器..."
+	@$(VENV_DIR)/bin/playwright install chromium
+	@echo "✅ Playwright Chromium 安装完成"
+	@echo "💡 使用方法：make archive URL=https://example.com"
 
 # 安装 PaddleOCR（可选）
 install-paddle-ocr: ensure-venv

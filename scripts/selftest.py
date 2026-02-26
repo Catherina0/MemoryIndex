@@ -114,14 +114,14 @@ def check_dependencies():
         print("   ✅ crawl4ai（网页爬虫）")
     except ImportError:
         print("   ⚠️  crawl4ai 未安装（网页归档功能将不可用）")
-        print("      安装: pip install crawl4ai")
+        print("      安装: make install")
     
     try:
         import playwright
         print("   ✅ playwright（浏览器自动化）")
     except ImportError:
         print("   ⚠️  playwright 未安装（部分网页归档功能将不可用）")
-        print("      安装: pip install playwright && playwright install")
+        print("      安装: make install && make install-playwright")
     
     try:
         import bs4
@@ -920,13 +920,13 @@ def main():
         if 'archiver' in all_errors or any('archiver' in e for e in all_errors):
             print("   • 网页归档功能问题:")
             print("     - 安装依赖: make install")
-            print("     - 安装浏览器: playwright install chromium")
+            print("     - 安装浏览器: make install-playwright")
             print("     - 运行测试: make test-archiver")
         
         if 'cookie-management' in all_errors:
             print("   • Cookie管理问题:")
             print("     - 配置小红书Cookie: make config-xhs-cookie")
-            print("     - 测试Cookie: python scripts/test_cookie_unified.py")
+            print("     - 测试Cookie: make list-cookies")
         
         if 'ffmpeg' in all_errors:
             print("   • FFmpeg问题:")
