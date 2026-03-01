@@ -1,0 +1,13 @@
+{
+  null: {
+    comments: {
+      list: [],
+      cursor: '',
+      hasMore: true,
+      loading: false,
+      firstRequestFinish: false
+    },
+    currentTime: 0,
+    note: {}
+  }
+}

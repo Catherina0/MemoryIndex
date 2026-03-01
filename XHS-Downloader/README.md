@@ -17,7 +17,7 @@
 <img alt="GitHub all releases" src="https://img.shields.io/github/downloads/JoeanAmier/XHS-Downloader/total?style=flat-square&color=ffdd59">
 </div>
 <br>
-<p>🔥 <b>小红书链接提取/作品采集工具</b>：提取账号发布、收藏、点赞、专辑作品链接；提取搜索结果作品链接、用户链接；采集小红书作品信息；提取小红书作品下载地址；下载小红书作品文件！</p>
+<p>🔥 <b>小红书链接提取/作品采集工具</b>：提取账号发布、收藏、点赞、专辑作品链接；提取搜索结果作品链接、用户链接；采集小红书作品信息；提取小红书作品下载地址；下载小红书无水印作品文件！</p>
 <p>🔥 “小红书”、“XiaoHongShu”、“RedNote” 含义相同，本项目统称为 “小红书”</p>
 <h1>📑 项目功能</h1>
 <details>
@@ -25,8 +25,8 @@
 <ul><b>程序功能</b>
 <li>✅ 采集小红书作品信息</li>
 <li>✅ 提取小红书作品下载地址</li>
-<li>✅ 下载小红书作品文件</li>
-<li>✅ 下载小红书 livePhoto 文件</li>
+<li>✅ 下载小红书无水印作品文件</li>
+<li>✅ 下载小红书 livePhoto 文件(含水印)</li>
 <li>✅ 自动跳过已下载的作品文件</li>
 <li>✅ 作品文件完整性处理机制</li>
 <li>✅ 自定义图文作品文件下载格式</li>
@@ -35,7 +35,7 @@
 <li>✅ 后台监听剪贴板下载作品</li>
 <li>✅ 记录已下载作品 ID</li>
 <li>✅ 支持命令行下载作品文件</li>
-<li>☑️ 从浏览器读取 Cookie</li> 
+<li>✅ 从浏览器读取 Cookie</li> 
 <li>✅ 自定义文件名称格式</li> 
 <li>✅ 支持 API 调用功能</li>
 <li>✅ 支持 MCP 调用功能</li>
@@ -45,7 +45,7 @@
 <li>✅ 自动更新作者昵称</li>
 </ul>
 <ul><a href="#user-scripts"><b>脚本功能</b></a>
-<li>✅ 下载小红书作品文件</li>
+<li>✅ 下载小红书无水印作品文件</li>
 <li>✅ 提取推荐页面作品链接</li>
 <li>✅ 提取账号发布作品链接</li>
 <li>✅ 提取账号收藏作品链接</li>
@@ -74,8 +74,8 @@
 <h1>🪟 关于终端</h1>
 <p>⭐ 推荐使用 <a href="https://learn.microsoft.com/zh-cn/windows/terminal/install">Windows 终端</a> （Windows 11 默认终端）运行程序以便获得最佳显示效果！</p>
 <h1>🥣 使用方法</h1>
-<p>如果仅需下载作品文件，建议选择 <b>程序运行</b> 或 <b>Docker 运行</b>；如果有其他需求，建议选择 <b>源码运行</b>！</p>
-<p>⚠️ 未设置 Cookie 时，视频作品只能下载低分辨率文件；建议配置 Cookie 以获取更高画质（无需登录账号）！</p>
+<p>如果仅需下载无水印作品文件，建议选择 <b>程序运行</b> 或 <b>Docker 运行</b>；如果有其他需求，建议选择 <b>源码运行</b>！</p>
+<p><code>2.2</code> 版本开始，项目功能无异常的情况下，无需额外处理 Cookie！</p>
 <h2>🖱 程序运行</h2>
 <p>⭐ Mac OS、Windows 10 及以上用户可前往 <a href="https://github.com/JoeanAmier/XHS-Downloader/releases/latest">Releases</a> 或者 <a href="https://github.com/JoeanAmier/XHS-Downloader/actions">Actions</a> 下载程序压缩包，解压后打开程序文件夹，双击运行 <code>main</code> 即可使用。</p>
 <p>⭐ 本项目包含自动构建可执行文件的 GitHub Actions，使用者可以随时使用 GitHub Actions 将最新源码构建为可执行文件！</p>
@@ -87,7 +87,7 @@
 <p><strong>方案二：</strong>下载并解压文件（不要运行程序），复制全部文件，直接覆盖旧版本文件。</p>
 <h2>⌨️ 源码运行</h2>
 <ol>
-<li>安装 <code>≥3.12</code> 版本的 <a href="https://www.python.org/">Python</a> 解释器</li>
+<li>安装 <code>3.12</code> 版本的 <a href="https://www.python.org/">Python</a> 解释器</li>
 <li>下载最新的源码或 <a href="https://github.com/JoeanAmier/XHS-Downloader/releases/latest">Releases</a> 发布的源码至本地</li>
 <ol><b>使用 pip 安装项目依赖</b>
 <li>运行 <code>python -m venv venv</code> 命令创建虚拟环境（可选）</li>
@@ -96,7 +96,8 @@
 <li>运行 <code>python .\main.py</code> 或者 <code>python main.py</code> 命令启动 XHS-Downloader</li>
 </ol>
 <ol><b>使用 uv 安装项目依赖（推荐）</b>
-<li>运行 <code>uv sync --no-dev</code> 命令同步环境依赖</li>
+<li>运行 <code>uv venv</code> 命令创建虚拟环境</li>
+<li>运行 <code>uv sync</code> 命令同步环境依赖</li>
 <li>运行 <code>uv run main.py</code> 命令启动 XHS-Downloader</li>
 </ol>
 </ol>
@@ -128,10 +129,9 @@
 <p><strong>注意：</strong>未设置 <code>--index</code> 参数时，支持传入多个作品链接，全部链接需要使用引号包围，链接之间使用空格分隔；已设置 <code>--index</code> 参数时，不支持传入多个作品链接，即使传入多个作品链接，程序仅处理首个作品链接！</p>
 <p><code>bool</code> 类型参数支持使用 <code>true</code>、<code>false</code>、<code>1</code>、<code>0</code>、<code>yes</code>、<code>no</code>、<code>on</code> 或 <code>off</code>（不区分大小写）来设置。</p>
 <h2>从浏览器读取 Cookie</h2>
-<p>该功能已失效，请参考 <a href="#cookie">获取 Cookie</a> 教程！</p>
-<p><del>可以使用命令行实现 <b>从浏览器读取 Cookie 并写入配置文件！</b></del></p>
-<p><del>命令示例：<code>python .\main.py --browser_cookie Chrome --update_settings</code></del></p>
-<p><del>兼容性提醒：此功能依赖的第三方模块已长期未更新，可能无法正常支持最新浏览器版本。若功能出现异常，请尝试手动获取 Cookie！</del></p>
+<p>可以使用命令行实现 <b>从浏览器读取 Cookie 并写入配置文件！</b></p>
+<p>命令示例：<code>python .\main.py --browser_cookie Chrome --update_settings</code></p>
+<p>兼容性提醒：此功能依赖的第三方模块已长期未更新，可能无法正常支持最新浏览器版本。若功能出现异常，请尝试手动获取 Cookie！</p>
 <hr>
 <img src="static/screenshot/命令行模式截图CN1.png" alt="">
 <hr>
@@ -256,9 +256,7 @@ async def example_api():
 <hr>
 <img src="static/screenshot/用户脚本截图4.png" alt="">
 </details>
-<p>提示：使用 XHS-Downloader 用户脚本批量提取作品链接，搭配 XHS-Downloader 程序可以实现批量下载作品文件！</p>
-<p><b>修改用户脚本语言</b></p>
-<img src="static/screenshot/脚本切换语言.png" alt="切换语言">
+<p>提示：使用 XHS-Downloader 用户脚本批量提取作品链接，搭配 XHS-Downloader 程序可以实现批量下载无水印作品文件！</p>
 <h2>🌏 连接服务器</h2>
 <p>⭐ 本项目支持通过浏览器用户脚本与主程序联动，实现一键推送下载任务。</p>
 <ul><b>功能说明：</b>
@@ -269,13 +267,13 @@ async def example_api():
 </ul>
 <h2>📜 脚本说明</h2>
 <ul>
-<li>下载小红书作品文件时，脚本需要花费时间处理文件，请等待片刻，请勿多次点击下载按钮</li>
+<li>下载小红书无水印作品文件时，脚本需要花费时间处理文件，请等待片刻，请勿多次点击下载按钮</li>
+<li>无水印图片文件为 PNG 格式；无水印视频文件较大，可能需要较长的时间处理，页面跳转可能会导致下载失败</li>
 <li>提取账号发布、收藏、点赞、专辑作品链接时，脚本可以自动滚动页面直至加载全部作品</li>
 <li>提取推荐作品链接、搜索作品、用户链接时，脚本可以自动滚动指定次数加载更多内容，默认滚动次数：50 次</li>
 <li>自动滚动页面功能默认关闭；用户可以自由开启，并修改滚动页面次数，修改后立即生效</li>
 <li>如果未开启自动滚动页面功能，用户需要手动滚动页面以便加载更多内容后再进行其他操作</li>
 <li>支持作品文件打包下载；该功能默认开启，多个文件的作品将会以压缩包格式下载</li>
-<li>向服务器推送下载任务时，文件格式、名称规则等设置以服务器配置文件中的设置为准</li>
 <li>使用全局代理工具可能会导致脚本下载文件失败，如有异常，请尝试关闭代理工具，必要时向作者反馈</li>
 <li>XHS-Downloader 用户脚本仅实现可见即可得的数据采集功能，无任何收费功能和破解功能</li>
 </ul>
@@ -436,7 +434,7 @@ async def example():
 <td align="center">image_format</td>
 <td align="center">str</td>
 <td align="center">图文作品文件下载格式，支持：<code>AUTO</code>、<code>PNG</code>、<code>WEBP</code>、<code>JPEG</code>、<code>HEIC</code><br><strong>部分作品没有 <code>HEIC</code> 格式的文件，此时下载的文件可能为 <code>WEBP</code> 格式！</strong><br><strong>设置为 <code>AUTO</code> 时表示动态格式，实际格式取决于服务器响应数据！</strong></td>
-<td align="center">JPEG</td>
+<td align="center">PNG</td>
 </tr>
 <tr>
 <td align="center">image_download</td>
@@ -455,12 +453,6 @@ async def example():
 <td align="center">bool</td>
 <td align="center">图文动图文件下载开关</td>
 <td align="center">false</td>
-</tr>
-<tr>
-<td align="center">video_preference</td>
-<td align="center">str</td>
-<td align="center">视频作品文件下载偏好；含义：<code>resolution</code>：分辨率优先；<code>bitrate</code>：码率优先；<code>size</code>：文件大小优先</td>
-<td align="center">resolution</td>
 </tr>
 <tr>
 <td align="center">folder_mode</td>
@@ -508,7 +500,8 @@ async def example():
 <hr>
 <p><b>其他说明：<code>user_agent</code>参数获取示例；强烈建议根据实际浏览器信息进行设置！</b></p>
 <img src="static/screenshot/请求头示例图.png" alt="">
-<h1 id="cookie">🌐 Cookie</h1>
+<h1>🌐 Cookie</h1>
+<p><code>2.2</code> 版本开始，项目功能无异常的情况下，无需额外处理 Cookie！</p>
 <ol>
 <li>打开浏览器（可选无痕模式启动），访问 <code>https://www.xiaohongshu.com/explore</code></li>
 <li>登录小红书账号（可跳过）</li>

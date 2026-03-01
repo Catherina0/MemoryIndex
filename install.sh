@@ -18,9 +18,35 @@ if [[ $(uname) != "Darwin" ]]; then
     exit 1
 fi
 
+echo -e "${YELLOW}1. 检查基础环境与系统工具 (Homebrew / Git)...${NC}"
+
+# 检测并自动安装 Homebrew
+if ! command -v brew &> /dev/null; then
+    echo -e "${YELLOW}未检测到 Homebrew。正在为您自动安装 (可能需要输入您的 Mac 密码)...${NC}"
+    # 使用非交互模式自动安装
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    
+    # 动态将 brew 添加到当前脚本的 PATH 中（针对 Apple Silicon 和 Intel）
+    if [ -x "/opt/homebrew/bin/brew" ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x "/usr/local/bin/brew" ]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+else
+    echo -e "✅ Homebrew 已安装"
+fi
+
+# 检测 Git，如果不存在用 brew 补齐（虽然 brew 安装时会自动触发 Xcode CLT 安装 git，这里做个双保险）
+if ! command -v git &> /dev/null; then
+    echo -e "${YELLOW}未检测到 Git，正在通过 Homebrew 安装...${NC}"
+    brew install -q git
+else
+    echo -e "✅ Git 已安装"
+fi
+
 # ==========================================
-# 如果是通过 curl | bash 运行的，则先 Clone 仓库
-# 检测是否在 git 仓库内部
+# 检测是否在 git 仓库内部，如果不是则 Clone 仓库
+# （支持通过 curl | bash 运行）
 # ==========================================
 if [ ! -d ".git" ] || ! grep -q "MemoryIndex" <<< "$(git remote -v 2>/dev/null)"; then
     echo -e "${YELLOW}📥 正在克隆 MemoryIndex 仓库到当前目录...${NC}"
@@ -33,23 +59,21 @@ if [ ! -d ".git" ] || ! grep -q "MemoryIndex" <<< "$(git remote -v 2>/dev/null)"
     echo -e "✅ 已进入项目目录: $(pwd)\n"
 fi
 
-echo -e "${YELLOW}1. 检查环境变量和工具...${NC}"
-if ! command -v brew &> /dev/null; then
-    echo -e "${RED}❌ 未检测到 Homebrew。${NC}"
-    echo -e "请先安装 Homebrew: ${BLUE}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
-    exit 1
-fi
+echo -e "${YELLOW}2. 检查多媒体依赖 (ffmpeg, python3.12)...${NC}"
+brew install -q ffmpeg python@3.12 || true
+echo -e "✅ 系统级依赖就绪 (ffmpeg, python3.12)\n"
 
-echo "正在通过 Homebrew 检查系统依赖 (ffmpeg, python3)..."
-brew install -q ffmpeg python@3.11 || true
-echo -e "✅ 系统依赖就绪 (ffmpeg, python3)\n"
-
-echo -e "${YELLOW}2. 创建并激活虚拟环境...${NC}"
+echo -e "${YELLOW}3. 创建并激活虚拟环境...${NC}"
 if [ -d ".venv" ]; then
     echo "发现现有 .venv，清理重建中..."
     rm -rf .venv
 fi
-python3 -m venv .venv
+# 优先使用 python3.12，如果没有则回退回 python3
+if command -v python3.12 &> /dev/null; then
+    python3.12 -m venv .venv
+else
+    python3 -m venv .venv
+fi
 export VIRTUAL_ENV="$(pwd)/.venv"
 export PATH="$VIRTUAL_ENV/bin:$PATH"
 echo -e "✅ 虚拟环境创建并激活完毕\n"

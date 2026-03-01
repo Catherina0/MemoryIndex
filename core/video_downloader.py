@@ -556,8 +556,8 @@ class VideoDownloader:
         xhs_path = Path(__file__).parent.parent / "XHS-Downloader"
         if not xhs_path.exists():
             raise NotImplementedError(
-                "XHS-Downloader 未安装。\n"
-                f"请先克隆: git clone https://github.com/JoeanAmier/XHS-Downloader.git"
+                "XHS-Downloader 未找到。\n"
+                f"请确保该文件夹存在于: {xhs_path}"
             )
         
         # 添加到 sys.path

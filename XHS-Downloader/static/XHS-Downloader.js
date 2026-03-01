@@ -2,15 +2,13 @@
 // @name           XHS-Downloader
 // @namespace      xhs_downloader
 // @homepage       https://github.com/JoeanAmier/XHS-Downloader
-// @version        2.3.1
+// @version        2.2.3
 // @tag            小红书
 // @tag            RedNote
-// @tag            XiaoHongShu
-// @description    提取小红书作品/用户链接，下载小红书图文/视频作品文件
-// @description:en Extract RedNote works/user links, Download images/videos files
+// @description    提取小红书作品/用户链接，下载小红书无水印图文/视频作品文件
+// @description:en Extract RedNote works/user links, Download watermark-free images/videos files
 // @author         JoeanAmier
 // @match          http*://www.xiaohongshu.com/explore*
-// @match          http*://www.xiaohongshu.com/discovery/item/*
 // @match          http*://www.xiaohongshu.com/user/profile/*
 // @match          http*://www.xiaohongshu.com/search_result*
 // @match          http*://www.xiaohongshu.com/board/*
@@ -32,274 +30,6 @@
 (function () {
     'use strict';
 
-    const i18n = {
-        'CN': {
-            instructionsText: `功能清单：
-1. 下载小红书作品文件
-2. 提取推荐页面作品链接
-3. 提取账号发布作品链接
-4. 提取账号收藏作品链接
-5. 提取账号专辑作品链接
-6. 提取账号点赞作品链接
-7. 提取搜索结果作品链接
-8. 提取搜索结果用户链接
-
-注意事项：
-1. 下载小红书作品文件时，脚本需要花费时间处理文件，请等待片刻，请勿多次点击下载按钮
-2. 提取账号发布、收藏、点赞、专辑作品链接时，脚本可以自动滚动页面直至加载全部作品
-3. 提取推荐作品链接、搜索作品、用户链接时，脚本可以自动滚动指定次数加载更多内容，默认滚动次数：50 次
-4. 自动滚动页面功能默认关闭；用户可以自由开启，并修改滚动页面次数，修改后立即生效
-5. 如果未开启自动滚动页面功能，用户需要手动滚动页面以便加载更多内容后再进行其他操作
-6. 支持作品文件打包下载；该功能默认开启，多个文件的作品将会以压缩包格式下载
-7. 向服务器推送下载任务时，文件格式、名称规则等设置以服务器配置文件中的设置为准
-8. 使用全局代理工具可能会导致脚本下载文件失败，如有异常，请尝试关闭代理工具，必要时向作者反馈
-9. XHS-Downloader 用户脚本仅实现可见即可得的数据采集功能，无任何收费功能和破解功能
-
-项目开源地址：https://github.com/JoeanAmier/XHS-Downloader
-`,
-            disclaimerText: `1. 使用者对本项目的使用由使用者自行决定，并自行承担风险。作者对使用者使用本项目所产生的任何损失、责任、或风险概不负责。
-2. 本项目的作者提供的代码和功能是基于现有知识和技术的开发成果。作者按现有技术水平努力确保代码的正确性和安全性，但不保证代码完全没有错误或缺陷。
-3. 本项目依赖的所有第三方库、插件或服务各自遵循其原始开源或商业许可，使用者需自行查阅并遵守相应协议，作者不对第三方组件的稳定性、安全性及合规性承担任何责任。
-4. 使用者在使用本项目时必须严格遵守 GNU General Public License v3.0 的要求，并在适当的地方注明使用了 GNU General Public License v3.0 的代码。
-5. 使用者在使用本项目的代码和功能时，必须自行研究相关法律法规，并确保其使用行为合法合规。任何因违反法律法规而导致的法律责任和风险，均由使用者自行承担。
-6. 使用者不得使用本工具从事任何侵犯知识产权的行为，包括但不限于未经授权下载、传播受版权保护的内容，开发者不参与、不支持、不认可任何非法内容的获取或分发。
-7. 本项目不对使用者涉及的数据收集、存储、传输等处理活动的合规性承担责任。使用者应自行遵守相关法律法规，确保处理行为合法正当；因违规操作导致的法律责任由使用者自行承担。
-8. 使用者在任何情况下均不得将本项目的作者、贡献者或其他相关方与使用者的使用行为联系起来，或要求其对使用者使用本项目所产生的任何损失或损害负责。
-9. 本项目的作者不会提供 XHS-Downloader 项目的付费版本，也不会提供与 XHS-Downloader 项目相关的任何商业服务。
-10. 基于本项目进行的任何二次开发、修改或编译的程序与原创作者无关，原创作者不承担与二次开发行为或其结果相关的任何责任，使用者应自行对因二次开发可能带来的各种情况负全部责任。
-11. 本项目不授予使用者任何专利许可；若使用本项目导致专利纠纷或侵权，使用者自行承担全部风险和责任。未经作者或权利人书面授权，不得使用本项目进行任何商业宣传、推广或再授权。
-12. 作者保留随时终止向任何违反本声明的使用者提供服务的权利，并可能要求其销毁已获取的代码及衍生作品。
-13. 作者保留在不另行通知的情况下更新本声明的权利，使用者持续使用即视为接受修订后的条款。
-
-在使用本项目的代码和功能之前，请您认真考虑并接受以上免责声明。如果您对上述声明有任何疑问或不同意，请不要使用本项目的代码和功能。如果您使用了本项目的代码和功能，则视为您已完全理解并接受上述免责声明，并自愿承担使用本项目的一切风险和后果。
-`,
-            readmeTitle: 'XHS-Downloader 脚本说明',
-            disclaimerTitle: 'XHS-Downloader 免责声明',
-            disclaimerConfirm: '我已知晓',
-            readmeMenuTitle: "阅读脚本说明和免责声明",
-            aboutText: `项目开源协议：GNU General Public License v3.0
-项目开源地址：https://github.com/JoeanAmier/XHS-Downloader
-
-如果 XHS-Downloader 对您有帮助，请考虑为它点个 Star ⭐，感谢您的支持！
-
-✨ 作者的其他开源项目：
-
-DouK-Downloader（抖音、DouYin、TikTok）：https://github.com/JoeanAmier/TikTokDownloader
-KS-Downloader（快手、KuaiShou）：https://github.com/JoeanAmier/KS-Downloader
-
-项目 Discord 社区：https://discord.com/invite/ZYtmgKud9Y
-`,
-            aboutTitle: '关于 XHS-Downloader',
-            errorTitle: '发生异常',
-            errorText: (text) => `${text}请向作者反馈！\n项目开源地址：https://github.com/JoeanAmier/XHS-Downloader`,
-            imageExtractError: "解析图文作品数据发生异常！",
-            downloadLinkError: "处理下载链接发生异常！",
-            downloadTips: "正在下载文件，请稍等...",
-            downloadError: "下载作品文件发生异常！",
-            extractError: "读取作品数据发生异常！",
-            linkExtractSuccess: '作品/用户链接已复制到剪贴板！',
-            linkExtractError: "未提取到任何作品/用户链接！",
-            videoDownloadError: "下载视频作品文件发生异常！",
-            imageDownloadError: "下载图文作品文件发生异常！",
-            signInPrompt: "提取作品链接失败！受平台限制，未登录状态下无法通过账号主页浏览作品详情！请登录后重试！",
-            jsZipError: "XHS-Downloader 用户脚本依赖库 JSZip 加载失败，作品文件打包下载功能无法使用，请尝试刷新网页或者向作者反馈！",
-            tipsTitle: '脚本提示',
-            confirmButton: '确认',
-            closeButton: '关闭',
-            autoScrollLabel: '自动滚动页面',
-            autoScrollDesc: '启用后，页面将根据规则自动滚动以便加载更多内容',
-            filePackLabel: '文件打包下载',
-            filePackDesc: '启用后，多个文件的作品将会以压缩包格式下载',
-            scrollCountLabel: '自动滚动次数',
-            scrollCountDesc: '自动滚动页面的次数（仅在启用自动滚动页面时可用）',
-            linkCheckboxSwitchLabel: '链接提取选择模式',
-            linkCheckboxSwitchDesc: '关闭后，提取作品链接时无需确认直接提取全部链接',
-            imageCheckboxSwitchLabel: '图片下载选择模式',
-            imageCheckboxSwitchDesc: '关闭后，下载图文作品时无需确认直接下载全部文件',
-            keepMenuVisibleLabel: '菜单保持显示',
-            keepMenuVisibleDesc: '启用后，功能菜单无需鼠标悬停始终保持显示',
-            scriptServerURLLabel: 'WebSocket 服务器地址',
-            scriptServerURLDesc: '用户脚本连接的 WebSocket 服务器',
-            scriptServerSwitchLabel: '连接服务器',
-            scriptServerSwitchDesc: '启用后，可以把作品下载任务推送至服务器',
-            imageDownloadFormatLabel: '图片下载格式',
-            imageDownloadFormatDesc: '图文作品文件下载格式',
-            saveSettingsButton: '保存设置',
-            cancelSettingsButton: '放弃修改',
-            selectAllButton: '全部选中',
-            deselectAllButton: '全部取消',
-            startDownloadButton: '开始下载',
-            closeDownloadButton: '取消下载',
-            imageSelectionTip: '请至少选择一张图片！',
-            itemsExtractTip: '请选择需要提取的项目',
-            itemsExtractConfirm: '提取链接',
-            itemsExtractCancel: '放弃',
-            extractRecommendLinksText: '提取推荐作品链接',
-            extractRecommendLinksDescription: '提取推荐页面的作品链接至剪贴板',
-            downloadNoteFilesText: '下载作品文件',
-            downloadNoteFilesDescription: '下载当前作品文件',
-            pushDownloadTaskText: '推送下载任务',
-            pushDownloadTaskDescription: '向服务器发送下载请求',
-            extractPublishedLinksText: '提取发布作品链接',
-            extractPublishedLinksDescription: '提取账号发布作品链接至剪贴板',
-            extractLikedLinksText: '提取点赞作品链接',
-            extractLikedLinksDescription: '提取账号点赞作品链接至剪贴板',
-            extractSavedLinksText: '提取收藏作品链接',
-            extractSavedLinksDescription: '提取账号收藏作品链接至剪贴板',
-            extractSearchNoteLinksText: '提取作品链接',
-            extractSearchNoteLinksDescription: '提取搜索结果的作品链接至剪贴板',
-            extractSearchUsersLinksText: '提取用户链接',
-            extractSearchUsersLinksDescription: '提取搜索结果的用户链接至剪贴板',
-            extractAlbumNotesLinksText: '提取专辑作品链接',
-            extractAlbumNotesLinksDescription: '提取当前专辑的作品链接至剪贴板',
-            modifyScriptSettingsText: '修改用户脚本设置',
-            modifyScriptSettingsDescription: '修改用户脚本设置',
-            aboutXHSText: '关于 XHS-Downloader',
-            aboutXHSDescription: '查看 XHS-Downloader 更多信息',
-            imageCheckboxTitle: '请选中需要下载的图片',
-            scriptServerError: '脚本服务器连接出错，请检查网络连接或脚本服务器状态是否正常！',
-            pushTaskError: '脚本服务器未连接，请检查网络连接或脚本服务器状态是否正常！',
-            pushTaskSuccess: "已向服务器发送下载请求",
-            settingsTitle: '用户脚本设置',
-        }, 'EN': {
-            instructionsText: `Features:
-1. Download RedNote note files
-2. Extract note links from the Recommendation page
-3. Extract note links from an account's Published tab
-4. Extract note links from an account's Collections tab
-5. Extract note links from an account's Albums
-6. Extract note links from an account's Liked tab
-7. Extract note links from search results
-8. Extract user links from search results
-
-Notes:
-1. When downloading note files, the script needs time to process. Please wait a moment and do not click the download button repeatedly.
-2. When extracting links from Published, Collections, Liked, or Albums, the script can automatically scroll the page until all notes are loaded.
-3. When extracting Recommendation, Search Notes, or User links, the script can automatically scroll a specified number of times. Default: 50 times.
-4. Auto-scroll is disabled by default; users can enable it and modify the scroll count. Changes take effect immediately.
-5. If auto-scroll is disabled, users must manually scroll the page to load more content before performing extractions.
-6. Supports batch downloading (ZIP format); this feature is enabled by default. Notes with multiple files will be downloaded as a compressed package.
-7. When pushing tasks to a server, settings such as file format and naming rules are determined by the server's configuration file.
-8. Using global proxy tools may cause download failures. If issues occur, try disabling the proxy and provide feedback to the author if necessary.
-9. The XHS-Downloader userscript only provides "what you see is what you get" data collection; it contains no paid features or decryption/cracking functions.
-
-Open Source: https://github.com/JoeanAmier/XHS-Downloader
-`,
-            disclaimerText: `1. The use of this project is at the user's own discretion and risk. The author is not responsible for any loss, liability, or risk arising from its use.
-2. The code and functions provided are based on existing knowledge and technology. While efforts are made to ensure correctness and security, the author does not guarantee that the code is entirely error-free.
-3. All third-party libraries, plugins, or services relied upon by this project follow their own original open-source or commercial licenses. Users must consult and comply with those agreements.
-4. Users must strictly adhere to the GNU General Public License v3.0 requirements and credit the use of GPL v3.0 code where appropriate.
-5. Users must research relevant laws and regulations to ensure their use of this project is legal and compliant. Any legal liability arising from violations is borne solely by the user.
-6. Users must not use this tool for any acts that infringe on intellectual property rights, including but not limited to unauthorized downloading or distribution of copyrighted content.
-7. This project assumes no responsibility for the compliance of data collection, storage, or transmission activities performed by the user.
-8. Under no circumstances shall the author or contributors be held liable for any damages or losses related to the user's actions.
-9. The author will not provide a paid version of XHS-Downloader, nor any commercial services related to the project.
-10. Any secondary development, modification, or compilation of this program is unrelated to the original author. The user is solely responsible for any consequences of such actions.
-11. This project does not grant any patent licenses. The user assumes all risks regarding patent disputes. Commercial promotion or sub-licensing without written authorization is prohibited.
-12. The author reserves the right to terminate service to any user violating this disclaimer and may request the destruction of obtained code.
-13. The author reserves the right to update this disclaimer without notice. Continued use constitutes acceptance of the revised terms.
-
-Before using this project, please carefully consider and accept the above disclaimer. If you have any doubts or disagree, do not use the code or functions. Use of the project implies full understanding and acceptance of these terms.
-`,
-            readmeTitle: 'XHS-Downloader Instructions',
-            disclaimerTitle: 'XHS-Downloader Disclaimer',
-            disclaimerConfirm: 'I acknowledge',
-            readmeMenuTitle: "Read Instructions and Disclaimer",
-            aboutText: `License: GNU General Public License v3.0
-GitHub: https://github.com/JoeanAmier/XHS-Downloader
-
-If XHS-Downloader helps you, please consider giving it a Star ⭐. Thanks for your support!
-
-✨ Other Projects by the Author:
-
-DouK-Downloader (DouYin, TikTok): https://github.com/JoeanAmier/TikTokDownloader
-KS-Downloader (KuaiShou): https://github.com/JoeanAmier/KS-Downloader
-
-Discord Community: https://discord.com/invite/ZYtmgKud9Y
-`,
-            aboutTitle: 'About XHS-Downloader',
-            errorTitle: 'Exception Occurred',
-            errorText: (text) => `${text} Please report this to the author!\nGitHub: https://github.com/JoeanAmier/XHS-Downloader`,
-            imageExtractError: "Error parsing image note data!",
-            downloadLinkError: "Error processing download links!",
-            downloadTips: "Downloading file, please wait...",
-            downloadError: "Error downloading note files!",
-            extractError: "Error reading note data!",
-            linkExtractSuccess: 'Note/User links copied to clipboard!',
-            linkExtractError: "No Note/User links extracted!",
-            videoDownloadError: "Error downloading video note!",
-            imageDownloadError: "Error downloading image note!",
-            signInPrompt: "Failed to extract links! Due to platform restrictions, note details cannot be viewed via account pages without logging in. Please log in and try again!",
-            jsZipError: "JSZip library failed to load. ZIP packaging is unavailable. Please refresh or contact the author!",
-            tipsTitle: 'Script Tips',
-            confirmButton: 'Confirm',
-            closeButton: 'Close',
-            autoScrollLabel: 'Auto-scroll Page',
-            autoScrollDesc: 'When enabled, the page will automatically scroll to load more content',
-            filePackLabel: 'Package Files for Download',
-            filePackDesc: 'When enabled, notes with multiple files will be downloaded as a ZIP archive',
-            scrollCountLabel: 'Auto-scroll Count',
-            scrollCountDesc: 'Number of times to scroll (only active when Auto-scroll is enabled)',
-            linkCheckboxSwitchLabel: 'Link Extraction Selection Mode',
-            linkCheckboxSwitchDesc: 'If disabled, all links will be extracted immediately without confirmation',
-            imageCheckboxSwitchLabel: 'Image Download Selection Mode',
-            imageCheckboxSwitchDesc: 'If disabled, all images will be downloaded immediately without confirmation',
-            keepMenuVisibleLabel: 'Keep Menu Visible',
-            keepMenuVisibleDesc: 'When enabled, the menu stays visible without needing a mouse hover',
-            scriptServerURLLabel: 'WebSocket Server URL',
-            scriptServerURLDesc: 'The WebSocket server address the script connects to',
-            scriptServerSwitchLabel: 'Connect to Server',
-            scriptServerSwitchDesc: 'When enabled, download tasks can be pushed to the server',
-            imageDownloadFormatLabel: 'Image Download Format',
-            imageDownloadFormatDesc: 'Preferred file format for downloading images',
-            saveSettingsButton: 'Save Settings',
-            cancelSettingsButton: 'Discard Changes',
-            selectAllButton: 'Select All',
-            deselectAllButton: 'Deselect All',
-            startDownloadButton: 'Start Download',
-            closeDownloadButton: 'Cancel Download',
-            imageSelectionTip: 'Please select at least one image!',
-            itemsExtractTip: 'Please select items to extract',
-            itemsExtractConfirm: 'Extract Links',
-            itemsExtractCancel: 'Cancel',
-            extractRecommendLinksText: 'Extract Recommended Note Links',
-            extractRecommendLinksDescription: '',
-            downloadNoteFilesText: 'Download Note Files',
-            downloadNoteFilesDescription: '',
-            pushDownloadTaskText: 'Push Download Task',
-            pushDownloadTaskDescription: 'Send download request to the server',
-            extractPublishedLinksText: 'Extract Published Note Links',
-            extractPublishedLinksDescription: '',
-            extractLikedLinksText: 'Extract Liked Note Links',
-            extractLikedLinksDescription: '',
-            extractSavedLinksText: 'Extract Collected Note Links',
-            extractSavedLinksDescription: '',
-            extractSearchNoteLinksText: 'Extract Note Links',
-            extractSearchNoteLinksDescription: 'Extract note links from search results',
-            extractSearchUsersLinksText: 'Extract User Links',
-            extractSearchUsersLinksDescription: 'Extract user links from search results',
-            extractAlbumNotesLinksText: 'Extract Album Note Links',
-            extractAlbumNotesLinksDescription: 'Extract note links from the current album',
-            modifyScriptSettingsText: 'Modify Script Settings',
-            modifyScriptSettingsDescription: '',
-            aboutXHSText: 'About XHS-Downloader',
-            aboutXHSDescription: '',
-            imageCheckboxTitle: 'Please select images to download',
-            scriptServerError: 'Server connection error. Please check your network or server status!',
-            pushTaskError: 'Server not connected. Please check your network or server status!',
-            pushTaskSuccess: "Download request sent to server successfully",
-            settingsTitle: 'Script Settings',
-        },
-    };
-
-    let lang = GM_getValue("language", undefined);
-    if (!lang) {
-        lang = navigator.language.toLowerCase().includes('zh') ? 'CN' : 'EN';
-        GM_setValue("language", lang);
-    }
-
-    let t = i18n[lang];
-
     const iconBase64 = "data:image/png;base64,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";
 
     const defaultsWebSocketURL = "ws://127.0.0.1:5558";
@@ -311,8 +41,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         maxScrollCount: GM_getValue("maxScrollCount", 50),
         keepMenuVisible: GM_getValue("keepMenuVisible", false),
         linkCheckboxSwitch: GM_getValue("linkCheckboxSwitch", true),
-        imageCheckboxSwitch: GM_getValue("imageCheckboxSwitch", true),
-        imageDownloadFormat: GM_getValue("imageDownloadFormat", "jpeg"),
+        imageCheckboxSwitch: GM_getValue("imageCheckboxSwitch", true), // imageDownloadFormat: GM_getValue("imageDownloadFormat", "JPG"),
         scriptServerURL: GM_getValue("scriptServerURL", defaultsWebSocketURL),
         scriptServerSwitch: GM_getValue("scriptServerSwitch", false),
         fileNameFormat: undefined,
@@ -334,16 +63,54 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
     };
 
     const readme = async () => {
+        const instructions = `功能清单：
+1. 下载小红书无水印作品文件
+2. 提取推荐页面作品链接
+3. 提取账号发布作品链接
+4. 提取账号收藏作品链接
+5. 提取账号专辑作品链接
+6. 提取账号点赞作品链接
+7. 提取搜索结果作品链接
+8. 提取搜索结果用户链接
+
+注意事项：
+1. 下载小红书无水印作品文件时，脚本需要花费时间处理文件，请等待片刻，请勿多次点击下载按钮
+2. 无水印作品文件较大，可能需要较长的时间处理，页面跳转可能会导致下载失败
+3. 提取账号发布、收藏、点赞、专辑作品链接时，脚本可以自动滚动页面直至加载全部作品
+4. 提取推荐作品链接、搜索作品、用户链接时，脚本可以自动滚动指定次数加载更多内容，默认滚动次数：50 次
+5. 自动滚动页面功能默认关闭；用户可以自由开启，并修改滚动页面次数，修改后立即生效
+6. 如果未开启自动滚动页面功能，用户需要手动滚动页面以便加载更多内容后再进行其他操作
+7. 支持作品文件打包下载；该功能默认开启，多个文件的作品将会以压缩包格式下载
+
+项目开源地址：https://github.com/JoeanAmier/XHS-Downloader
+`
+        const disclaimer_content = `1. 使用者对本项目的使用由使用者自行决定，并自行承担风险。作者对使用者使用本项目所产生的任何损失、责任、或风险概不负责。
+2. 本项目的作者提供的代码和功能是基于现有知识和技术的开发成果。作者按现有技术水平努力确保代码的正确性和安全性，但不保证代码完全没有错误或缺陷。
+3. 本项目依赖的所有第三方库、插件或服务各自遵循其原始开源或商业许可，使用者需自行查阅并遵守相应协议，作者不对第三方组件的稳定性、安全性及合规性承担任何责任。
+4. 使用者在使用本项目时必须严格遵守 GNU General Public License v3.0 的要求，并在适当的地方注明使用了 GNU General Public License v3.0 的代码。
+5. 使用者在使用本项目的代码和功能时，必须自行研究相关法律法规，并确保其使用行为合法合规。任何因违反法律法规而导致的法律责任和风险，均由使用者自行承担。
+6. 使用者不得使用本工具从事任何侵犯知识产权的行为，包括但不限于未经授权下载、传播受版权保护的内容，开发者不参与、不支持、不认可任何非法内容的获取或分发。
+7. 本项目不对使用者涉及的数据收集、存储、传输等处理活动的合规性承担责任。使用者应自行遵守相关法律法规，确保处理行为合法正当；因违规操作导致的法律责任由使用者自行承担。
+8. 使用者在任何情况下均不得将本项目的作者、贡献者或其他相关方与使用者的使用行为联系起来，或要求其对使用者使用本项目所产生的任何损失或损害负责。
+9. 本项目的作者不会提供 XHS-Downloader 项目的付费版本，也不会提供与 XHS-Downloader 项目相关的任何商业服务。
+10. 基于本项目进行的任何二次开发、修改或编译的程序与原创作者无关，原创作者不承担与二次开发行为或其结果相关的任何责任，使用者应自行对因二次开发可能带来的各种情况负全部责任。
+11. 本项目不授予使用者任何专利许可；若使用本项目导致专利纠纷或侵权，使用者自行承担全部风险和责任。未经作者或权利人书面授权，不得使用本项目进行任何商业宣传、推广或再授权。
+12. 作者保留随时终止向任何违反本声明的使用者提供服务的权利，并可能要求其销毁已获取的代码及衍生作品。
+13. 作者保留在不另行通知的情况下更新本声明的权利，使用者持续使用即视为接受修订后的条款。
+
+在使用本项目的代码和功能之前，请您认真考虑并接受以上免责声明。如果您对上述声明有任何疑问或不同意，请不要使用本项目的代码和功能。如果您使用了本项目的代码和功能，则视为您已完全理解并接受上述免责声明，并自愿承担使用本项目的一切风险和后果。
+`
+
         await showTextModal({
-                                title: t.readmeTitle, text: t.instructionsText, mode: 'info', closeText: t.closeButton
+                                title: 'XHS-Downloader 脚本说明', text: instructions, mode: 'info', closeText: '关闭'
                             });
         if (!config.disclaimer) {
             showTextModal({
-                              title: t.disclaimerTitle,
-                              text: t.disclaimerText,
+                              title: 'XHS-Downloader 免责声明',
+                              text: disclaimer_content,
                               mode: 'confirm',
-                              confirmText: t.disclaimerConfirm,
-                              closeText: t.closeButton
+                              confirmText: '我已知晓',
+                              closeText: '关闭'
                           }).then(answer => {
                 GM_setValue("disclaimer", answer);
                 config.disclaimer = answer;
@@ -352,19 +119,13 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
     };
 
     if (!config.disclaimer) {
-        readme().then();
+        readme();
     }
 
     console.info("用户接受 XHS-Downloader 免责声明", config.disclaimer)
 
-    GM_registerMenuCommand(t.readmeMenuTitle, function () {
-        readme().then();
-    });
-
-    GM_registerMenuCommand("切换语言/Switch language", function () {
-        lang = lang === "CN" ? "EN" : "CN";
-        GM_setValue("language", lang);
-        t = i18n[lang];
+    GM_registerMenuCommand("阅读脚本说明和免责声明", function () {
+        readme();
     });
 
     const updatePackageDownloadFiles = (value) => {
@@ -417,42 +178,51 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         GM_setValue("scriptServerSwitch", config.scriptServerSwitch);
     }
 
-    const updateImageDownloadFormat = (value) => {
-        config.imageDownloadFormat = value.toLowerCase();
-        GM_setValue("imageDownloadFormat", config.imageDownloadFormat);
-    }
-
     const updateFileNameFormat = (value) => {
         config.fileNameFormat = value;
         GM_setValue("fileNameFormat", config.fileNameFormat);
     };
 
     const about = () => {
+        const aboutText = `项目开源协议：GNU General Public License v3.0
+项目开源地址：https://github.com/JoeanAmier/XHS-Downloader
+
+如果 XHS-Downloader 对您有帮助，请考虑为它点个 Star ⭐，感谢您的支持！
+If XHS-Downloader has been helpful to you, please consider giving it a Star ⭐, Thank you for your support!
+
+✨ 作者的其他开源项目：
+✨ Other Open Source Projects by the Author:
+
+DouK-Downloader（抖音、DouYin、TikTok）：https://github.com/JoeanAmier/TikTokDownloader
+KS-Downloader（快手、KuaiShou）：https://github.com/JoeanAmier/KS-Downloader
+
+项目 Discord 社区：https://discord.com/invite/ZYtmgKud9Y
+`;
         showTextModal({
-                          title: t.aboutTitle, text: t.aboutText, mode: 'info', closeText: t.closeButton
-                      }).then();
+                          title: '关于 XHS-Downloader', text: aboutText, mode: 'info', closeText: '关闭'
+                      });
     }
 
     const abnormal = (text) => {
         showTextModal({
-                          title: t.errorTitle, text: t.errorText(text), mode: 'info', closeText: t.closeButton
-                      }).then();
+                          title: '发生异常',
+                          text: `${text}请向作者反馈！\n项目开源地址：https://github.com/JoeanAmier/XHS-Downloader`,
+                          mode: 'info',
+                          closeText: '关闭'
+                      });
     };
 
     const runTips = (text) => {
         showTextModal({
-                          title: t.tipsTitle, text: text, mode: 'info', closeText: t.closeButton
-                      }).then();
+                          title: '脚本提示', text: text, mode: 'info', closeText: '关闭'
+                      });
     }
 
     const generateVideoUrl = note => {
         try {
-            const key = note.video?.consumer?.originVideoKey;
-            if (key) return [`https://sns-video-bd.xhscdn.com/${key}`];
-            const video = note.video.media.stream.h265;
-            return [video[video.length - 1].masterUrl];
+            return [`https://sns-video-bd.xhscdn.com/${note.video.consumer.originVideoKey}`];
         } catch (error) {
-            console.error("Error deal video URL:", error);
+            console.error("Error generating video URL:", error);
             return [];
         }
     };
@@ -463,14 +233,9 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         let urls = [];
         try {
             images.forEach((item) => {
-                const url = item.urlDefault || item.url;
-                let match = url.match(regex);
+                let match = item.urlDefault.match(regex);
                 if (match && match[1]) {
-                    urls.push(
-                        `https://ci.xiaohongshu.com/${match[1]}?imageView2/format/${GM_getValue(
-                            "imageDownloadFormat",
-                            "jpeg"
-                        )}`);
+                    urls.push(`https://ci.xiaohongshu.com/${match[1]}?imageView2/format/png`);
                 }
             })
             return urls
@@ -489,10 +254,9 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                 return []
             }
             for (const [index, item] of imageList.entries()) {
-                const url = item.urlDefault || item.url;
-                if (url) {
+                if (item.urlDefault) {
                     items.push({
-                                   webp: url, index: index + 1, url: urls[index],
+                                   webp: item.urlDefault, index: index + 1, url: urls[index],
                                })
                 } else {
                     console.error("提取图片预览链接失败", item)
@@ -514,7 +278,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                 let items = extractImageWebpUrls(note, urls);
                 if (items.length === 0) {
                     console.error("解析图文作品数据失败", note)
-                    abnormal(t.imageExtractError)
+                    abnormal("解析图文作品数据发生异常！")
                 } else if (urls.length > 1 && config.imageCheckboxSwitch) {
                     data.index = await showImageSelectionModal(items, name, server,);
                 }
@@ -523,17 +287,17 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         } else {
             console.debug(`文件名称 ${name}`);
             if (note.type === "video") {
-                showToast(t.downloadTips);
+                showToast("正在下载文件，请稍等...");
                 await downloadVideo(urls[0], name);
             } else {
                 let items = extractImageWebpUrls(note, urls);
                 if (items.length === 0) {
                     console.error("解析图文作品数据失败", note)
-                    abnormal(t.imageExtractError)
+                    abnormal("解析图文作品数据发生异常！")
                 } else if (urls.length > 1 && config.imageCheckboxSwitch) {
                     await showImageSelectionModal(items, name,);
                 } else {
-                    showToast(t.downloadTips);
+                    showToast("正在下载文件，请稍等...");
                     await downloadImage(items, name);
                 }
             }
@@ -552,34 +316,31 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                 // console.debug("下载链接", links);
                 await download(links, note, server,);
             } else {
-                abnormal(t.downloadLinkError)
+                abnormal("处理下载链接发生异常！")
             }
         } catch (error) {
             console.error("Error in exploreDeal function:", error);
-            abnormal(t.downloadError);
+            abnormal("下载作品文件发生异常！");
         }
     };
 
     const extractNoteInfo = () => {
-        const data = unsafeWindow.__INITIAL_STATE__?.noteData?.data?.noteData;
-        if (data) return data;
         const regex = /\/explore\/([^?]+)/;
         const match = currentUrl.match(regex);
         if (match) {
-            return unsafeWindow.__INITIAL_STATE__.note.noteDetailMap[match[1]].note;
+            return unsafeWindow.__INITIAL_STATE__.note.noteDetailMap[match[1]]
         } else {
             console.error("从链接提取作品 ID 失败", currentUrl,);
         }
     };
 
     const extractDownloadLinks = async (server = false) => {
-        if (currentUrl.includes("https://www.xiaohongshu.com/explore/") || currentUrl.includes(
-            "https://www.xiaohongshu.com/discovery/item/")) {
+        if (currentUrl.includes("https://www.xiaohongshu.com/explore/")) {
             let note = extractNoteInfo();
-            if (note) {
-                await exploreDeal(note, server,);
+            if (note.note) {
+                await exploreDeal(note.note, server,);
             } else {
-                abnormal(t.extractError);
+                abnormal("读取作品数据发生异常！");
             }
         }
     };
@@ -645,9 +406,9 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         const downloadPromises = items.map(async (item) => {
             let fileName;
             if (item.index) {
-                fileName = `${name}_${item.index}.${GM_getValue("imageDownloadFormat", "jpeg")}`; // 根据索引生成文件名
+                fileName = `${name}_${item.index}.png`; // 根据索引生成文件名
             } else {
-                fileName = `${name}.${GM_getValue("imageDownloadFormat", "jpeg")}`;
+                fileName = `${name}.png`;
             }
             const result = await downloadFile(item.url, fileName, false); // 调用单个文件下载方法
             if (result) {
@@ -699,7 +460,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
 
     const downloadVideo = async (url, name) => {
         if (!await downloadFile(url, `${name}.mp4`)) {
-            abnormal(t.videoDownloadError);
+            abnormal("下载视频作品文件发生异常！");
         }
     };
 
@@ -708,19 +469,16 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         if (!config.packageDownloadFiles && items.length > 1) {
             let result = [];
             for (let item of items) {
-                result.push(await downloadFile(
-                    item.url,
-                    `${name}_${item.index}.${GM_getValue("imageDownloadFormat", "jpeg")}`
-                ));
+                result.push(await downloadFile(item.url, `${name}_${item.index}.png`));
             }
             success = result.every(item => item === true);
         } else if (items.length === 1) {
-            success = await downloadFile(items[0].url, `${name}.${GM_getValue("imageDownloadFormat", "jpeg")}`);
+            success = await downloadFile(items[0].url, `${name}.png`);
         } else {
             success = await downloadFiles(items, name,);
         }
         if (!success) {
-            abnormal(t.imageDownloadError);
+            abnormal("下载图文作品文件发生异常！");
         }
     };
 
@@ -852,7 +610,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             if (order >= 0 && order <= 2) {
                 data = extractNotesInfo(order);
                 if (!invalidDetection(data)) {
-                    runTips(t.signInPrompt);
+                    runTips("提取作品链接失败！受平台限制，未登录状态下无法通过账号主页浏览作品详情！请登录后重试！");
                     return;
                 }
             } else if (order === 3) {
@@ -894,16 +652,17 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         extractAllLinks(urlsString => {
             if (urlsString) {
                 GM_setClipboard(urlsString, "text", () => {
-                    showToast(t.linkExtractSuccess);
+                    showToast('作品/用户链接已复制到剪贴板！');
                 });
             } else {
-                showToast(t.linkExtractError)
+                showToast("未提取到任何作品/用户链接！")
             }
         }, order);
     };
 
     if (typeof JSZip === 'undefined') {
-        runTips(t.jsZipError);
+        runTips(
+            "XHS-Downloader 用户脚本依赖库 JSZip 加载失败，作品文件打包下载功能无法使用，请尝试刷新网页或者向作者反馈！");
     }
 
     let style = document.createElement('style');
@@ -1145,7 +904,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
      */
     function showTextModal(opts) {
         const {
-            title = t.tipsTitle, text = '', mode = 'info', confirmText = t.confirmButton, closeText = t.closeButton,
+            title = '提示', text = '', mode = 'info', confirmText = '确认', closeText = '关闭',
         } = opts || {};
 
         if (document.getElementById('textGenericOverlay')) {
@@ -1339,7 +1098,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         const header = document.createElement('div');
         header.className = 'modal-header';
         header.innerHTML = `
-            <span>${t.settingsTitle}</span>
+            <span>用户脚本设置</span>
         `;
 
         // 创建内容区域
@@ -1348,22 +1107,22 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
 
         // 自动滚动开关
         const autoScroll = createSwitchItem({
-                                                label: t.autoScrollLabel,
-                                                description: t.autoScrollDesc,
+                                                label: '自动滚动页面',
+                                                description: '启用后，页面将根据规则自动滚动以便加载更多内容',
                                                 checked: GM_getValue("autoScrollSwitch", false),
                                             });
 
         // 文件打包开关
         const filePack = createSwitchItem({
-                                              label: t.filePackLabel,
-                                              description: t.filePackDesc,
+                                              label: '文件打包下载',
+                                              description: '启用后，多个文件的作品将会以压缩包格式下载',
                                               checked: GM_getValue("packageDownloadFiles", true),
                                           });
 
         // 滚动次数设置
         const scrollCount = createNumberInput({
-                                                  label: t.scrollCountLabel,
-                                                  description: t.scrollCountDesc,
+                                                  label: '自动滚动次数',
+                                                  description: '自动滚动页面的次数（仅在启用自动滚动页面时可用）',
                                                   value: GM_getValue("maxScrollCount", 50),
                                                   min: 10,
                                                   max: 9999,
@@ -1371,45 +1130,44 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                                               });
 
         const linkCheckboxSwitch = createSwitchItem({
-                                                        label: t.linkCheckboxSwitchLabel,
-                                                        description: t.linkCheckboxSwitchDesc,
+                                                        label: '链接提取选择模式',
+                                                        description: '关闭后，提取作品链接时无需确认直接提取全部链接',
                                                         checked: GM_getValue("linkCheckboxSwitch", true),
                                                     });
 
         const imageCheckboxSwitch = createSwitchItem({
-                                                         label: t.imageCheckboxSwitchLabel,
-                                                         description: t.imageCheckboxSwitchDesc,
+                                                         label: '图片下载选择模式',
+                                                         description: '关闭后，下载图文作品时无需确认直接下载全部文件',
                                                          checked: GM_getValue("imageCheckboxSwitch", true),
                                                      });
 
         const keepMenuVisible = createSwitchItem({
-                                                     label: t.keepMenuVisibleLabel,
-                                                     description: t.keepMenuVisibleDesc,
+                                                     label: '菜单保持显示',
+                                                     description: '启用后，功能菜单无需鼠标悬停始终保持显示',
                                                      checked: GM_getValue("keepMenuVisible", false),
                                                  });
 
         const scriptServerURL = createTextInput({
-                                                    label: t.scriptServerURLLabel,
-                                                    description: t.scriptServerURLDesc,
+                                                    label: 'WebSocket 服务器地址',
+                                                    description: '用户脚本连接的 WebSocket 服务器',
                                                     placeholder: defaultsWebSocketURL,
                                                     value: GM_getValue("scriptServerURL", defaultsWebSocketURL),
                                                     disabled: !GM_getValue("scriptServerSwitch", false),
                                                 });
 
         const scriptServerSwitch = createSwitchItem({
-                                                        label: t.scriptServerSwitchLabel,
-                                                        description: t.scriptServerSwitchDesc,
+                                                        label: '连接服务器',
+                                                        description: '启用后，可以把下载任务推送至服务器',
                                                         checked: GM_getValue("scriptServerSwitch", false),
                                                     });
 
-        const imageDownloadFormat = createSelectItem({
-                                                         label: t.imageDownloadFormatLabel,
-                                                         description: t.imageDownloadFormatDesc,
-                                                         options: ["PNG", "WEBP", "JPEG", "HEIC"],
-                                                         value: GM_getValue("imageDownloadFormat", "jpeg")
-                                                             .toUpperCase(),
-                                                     });
-
+        // const imageDownloadFormat = createSelectItem({
+        //                                                  label: '图片下载格式',
+        //                                                  description: '选择图片格式',
+        //                                                  options: ["AUTO", "PNG", "JPG",],
+        //                                                  value: GM_getValue("imageDownloadFormat", "JPG"),
+        //                                              });
+        //
         // const nameFormat = createTextInput({
         //                                        label: '文件名称格式',
         //                                        description: '设置文件的名称格式（例如：{date}-{title}）。',
@@ -1433,7 +1191,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         body.appendChild(scrollCount);
         body.appendChild(linkCheckboxSwitch);
         body.appendChild(imageCheckboxSwitch);
-        body.appendChild(imageDownloadFormat);
+        // body.appendChild(imageDownloadFormat);
         body.appendChild(keepMenuVisible);
         body.appendChild(scriptServerURL);
         body.appendChild(scriptServerSwitch);
@@ -1443,10 +1201,10 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         footer.className = 'modal-footer';
         const saveBtn = document.createElement('button');
         saveBtn.className = 'primary-btn';
-        saveBtn.textContent = t.saveSettingsButton;
+        saveBtn.textContent = '保存设置';
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'secondary-btn';
-        cancelBtn.textContent = t.cancelSettingsButton;
+        cancelBtn.textContent = '放弃修改';
         footer.appendChild(saveBtn);
         footer.appendChild(cancelBtn);
 
@@ -1467,7 +1225,6 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             updateMaxScrollCount(parseInt(scrollCount.querySelector('input').value) || 50)
             updateScriptServerURL(scriptServerURL.querySelector('.text-input').value.trim() || defaultsWebSocketURL);
             updateScriptServerSwitch(scriptServerSwitch.querySelector('input').checked);
-            updateImageDownloadFormat(imageDownloadFormat.querySelector('select').value.trim() || "jpeg");
             // updateFileNameFormat(nameFormat.querySelector('.text-input').value.trim() || null);
             closeSettingsModal();
         });
@@ -1585,7 +1342,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             const header = document.createElement('div');
             header.className = 'modal-header';
             header.innerHTML = `
-            <span>${t.imageCheckboxTitle}</span>
+            <span>请选中需要下载的图片</span>
         `;
 
             // 创建内容区域
@@ -1639,19 +1396,19 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             // 新增：全选 / 全不选
             const selectAllBtn = document.createElement('button');
             selectAllBtn.className = 'secondary-btn';
-            selectAllBtn.textContent = t.selectAllButton;
+            selectAllBtn.textContent = '全选';
 
             const selectNoneBtn = document.createElement('button');
             selectNoneBtn.className = 'secondary-btn';
-            selectNoneBtn.textContent = t.deselectAllButton;
+            selectNoneBtn.textContent = '全不选';
 
             const confirmBtn = document.createElement('button');
             confirmBtn.className = 'primary-btn';
-            confirmBtn.textContent = t.startDownloadButton;
+            confirmBtn.textContent = '开始下载';
 
             const closeBtn = document.createElement('button');
             closeBtn.className = 'secondary-btn';
-            closeBtn.textContent = t.closeDownloadButton;
+            closeBtn.textContent = '关闭窗口';
 
             footer.appendChild(selectAllBtn);
             footer.appendChild(selectNoneBtn);
@@ -1675,14 +1432,14 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                                                 }
                                             });
                 if (selectedImages.length === 0) {
-                    showToast(t.imageSelectionTip);
+                    showToast('请至少选择一张图片！');
                     return;
                 }
                 closeImagesModal();
                 if (server) {
                     resolve(selectedImages.map(item => item.index));
                 } else {
-                    showToast(t.downloadTips);
+                    showToast("正在下载文件，请稍等...");
                     await downloadImage(selectedImages, name)
                 }
             });
@@ -1815,10 +1572,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
      */
     function showListSelectionModal(list, options = {}) {
         const {
-            title = t.itemsExtractTip,
-            confirmText = t.itemsExtractConfirm,
-            cancelText = t.itemsExtractCancel,
-            prechecked = true,
+            title = '请选择需要提取的项目', confirmText = '提取链接', cancelText = '放弃', prechecked = true,
         } = options;
 
         if (document.getElementById('listSelectionOverlay')) return Promise.resolve(null);
@@ -1912,11 +1666,11 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             // 新增：全选 / 全不选
             const selectAllBtn = document.createElement('button');
             selectAllBtn.className = 'secondary-btn';
-            selectAllBtn.textContent = t.selectAllButton;
+            selectAllBtn.textContent = '全选';
 
             const selectNoneBtn = document.createElement('button');
             selectNoneBtn.className = 'secondary-btn';
-            selectNoneBtn.textContent = t.deselectAllButton;
+            selectNoneBtn.textContent = '全不选';
 
             // 右侧操作：确认 / 取消
             const confirmBtn = document.createElement('button');
@@ -2080,7 +1834,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
             flex: 1;
         }
 
-        .menuTitle {
+        .menutitle {
             font-size: 0.95rem;
             color: var(--on-surface);
             font-weight: 500;
@@ -2258,67 +2012,66 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
 
         if (!config.disclaimer) {
             menuItems.push({
-                               text: 'README', icon: ' 📄 ', action: readme, description: t.readmeMenuTitle
+                               text: 'README', icon: ' 📄 ', action: readme, description: '阅读脚本说明和免责声明'
                            },);
         } else if (currentUrl === "https://www.xiaohongshu.com/explore" || currentUrl.includes(
             "https://www.xiaohongshu.com/explore?")) {
             menuItems.push({
-                               text: t.extractRecommendLinksText,
+                               text: '提取推荐作品链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(-1),
-                               description: t.extractRecommendLinksDescription
+                               description: '提取当前页面的作品链接至剪贴板'
                            },);
-        } else if (currentUrl.includes("https://www.xiaohongshu.com/explore/") || currentUrl.includes(
-            "https://www.xiaohongshu.com/discovery/item/")) {
+        } else if (currentUrl.includes("https://www.xiaohongshu.com/explore/")) {
             menuItems.push({
-                               text: t.downloadNoteFilesText,
+                               text: '下载作品文件',
                                icon: ' 📦 ',
                                action: () => extractDownloadLinks(false),
-                               description: t.downloadNoteFilesDescription
+                               description: '下载当前作品的无水印文件'
                            },);
             if (config.scriptServerSwitch) {
                 menuItems.push({
-                                   text: t.pushDownloadTaskText,
+                                   text: '推送下载任务',
                                    icon: ' 🌏 ',
                                    action: () => extractDownloadLinks(true),
-                                   description: t.pushDownloadTaskDescription
+                                   description: '向服务器发送下载请求'
                                });
             }
         } else if (currentUrl.includes("https://www.xiaohongshu.com/user/profile/")) {
             menuItems.push({
-                               text: t.extractPublishedLinksText,
+                               text: '提取发布作品链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(0),
-                               description: t.extractPublishedLinksDescription
+                               description: '提取账号发布作品链接至剪贴板'
                            }, {
-                               text: t.extractLikedLinksText,
+                               text: '提取点赞作品链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(2),
-                               description: t.extractLikedLinksDescription
+                               description: '提取账号点赞作品链接至剪贴板'
                            }, {
-                               text: t.extractSavedLinksText,
+                               text: '提取收藏作品链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(1),
-                               description: t.extractSavedLinksDescription
+                               description: '提取账号收藏作品链接至剪贴板'
                            },);
         } else if (currentUrl.includes("https://www.xiaohongshu.com/search_result")) {
             menuItems.push({
-                               text: t.extractSearchNoteLinksText,
+                               text: '提取作品链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(3),
-                               description: t.extractSearchNoteLinksDescription
+                               description: '提取搜索结果的作品链接至剪贴板'
                            }, {
-                               text: t.extractSearchUsersLinksText,
+                               text: '提取用户链接',
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(4),
-                               description: t.extractSearchUsersLinksDescription
+                               description: '提取搜索结果的用户链接至剪贴板'
                            },);
         } else if (currentUrl.includes("https://www.xiaohongshu.com/board/")) {
             menuItems.push({
-                               text: t.extractAlbumNotesLinksText,
+                               text: "提取专辑作品链接",
                                icon: ' ⛓ ',
                                action: () => extractAllLinksEvent(5),
-                               description: t.extractAlbumNotesLinksDescription
+                               description: '提取当前专辑的作品链接至剪贴板'
                            },);
         }
 
@@ -2326,12 +2079,12 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         menuItems.push({
                            separator: true
                        }, {
-            text: t.modifyScriptSettingsText,
-            icon: ' ⚙️ ',
-            action: showSettings,
-            description: t.modifyScriptSettingsDescription
+                           text: '修改用户脚本设置', icon: ' ⚙️ ', action: showSettings, description: '修改用户脚本设置'
                        }, {
-                           text: t.aboutXHSText, icon: ' 📒 ', action: about, description: t.aboutXHSDescription
+            text: '关于 XHS-Downloader',
+            icon: ' 📒 ',
+            action: about,
+            description: '查看 XHS-Downloader 更多信息'
                        });
 
         // 创建菜单项
@@ -2353,7 +2106,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
                     <span class="material-icons">${item.icon}</span>
                 </div>
                 <div class="content">
-                    <div class="menuTitle">${item.text}</div>
+                    <div class="menutitle">${item.text}</div>
                     <div class="subtitle">${item.description}</div>
                 </div>
             `;
@@ -2436,7 +2189,7 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
 
         onError(error) {
             console.error('Script Server WebSocket error:', error);
-            showToast(t.scriptServerError,);
+            showToast('脚本服务器连接出错，请检查网络连接或脚本服务器状态是否正常！',);
         }
 
         get isConnected() {
@@ -2473,9 +2226,9 @@ Discord Community: https://discord.com/invite/ZYtmgKud9Y
         send(data) {
             if (this.isConnected) {
                 this.ws.send(data);
-                showToast(t.pushTaskSuccess);
+                showToast("已向服务器发送下载请求");
             } else {
-                showToast(t.pushTaskError,);
+                showToast('脚本服务器未连接，请检查网络连接或脚本服务器状态是否正常！',);
             }
         }
     }

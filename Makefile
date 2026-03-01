@@ -21,12 +21,13 @@ ensure-venv:
 		else \
 			echo "🔧 首次运行：创建虚拟环境..."; \
 		fi; \
-		python3 -m venv $(VENV_DIR); \
+		python3.12 -m venv $(VENV_DIR) 2>/dev/null || python3 -m venv $(VENV_DIR); \
 		echo "  ✅ 虚拟环境已创建: $(VENV_DIR)"; \
 		echo ""; \
 		echo "📦 安装依赖..."; \
 		$(PIP) install --upgrade pip setuptools wheel; \
 		$(PIP) install -r requirements.txt; \
+		$(PIP) install -r XHS-Downloader/requirements.txt 2>/dev/null || true; \
 		echo "  ✅ 依赖安装完成"; \
 		echo ""; \
 		echo "🌐 初始化 Playwright 浏览器..."; \
