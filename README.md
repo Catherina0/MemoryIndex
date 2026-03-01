@@ -9,6 +9,20 @@
 
 MemoryIndex 是一个基于 **MIAP（MemoryIndex 智能代理协议）** 的个人知识管理系统。通过专门化的 AI 代理角色，它能将视频（YouTube/Bilibili）和网页（知乎/Reddit/Twitter 等）自动转化为干净的 Markdown 文档，统一存储到 `/docs/` 文件夹，并提供毫秒级的全文检索。
 
+## 🚀 极速一键安装 (macOS 专属)
+
+打开 macOS 的 Terminal（终端），直接粘贴以下命令执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Catherina0/MemoryIndex/main/install.sh | bash
+```
+
+*此脚本会自动帮你：克隆项目仓库、通过 Homebrew 安装必需的系统依赖（Python 3.11, ffmpeg 等）、创建独立的虚拟环境、安装所有 Python 依赖与 Playwright 浏览器，并最终完成数据库初始化构建！*
+
+安装结束后，请查看目录下的 `.env` 文件，填入你的 `GROQ_API_KEY` 及其他可能的设定值，即可立即使用 `make` 命令开启知识获取之旅。
+
+---
+
 ## 🧠 设计理念：智能代理协议 (MIAP)
 
 MemoryIndex 采用**角色化 AI 代理系统**，每个代理负责特定的知识转换任务：

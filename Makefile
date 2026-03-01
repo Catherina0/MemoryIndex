@@ -29,10 +29,17 @@ ensure-venv:
 		$(PIP) install -r requirements.txt; \
 		echo "  ✅ 依赖安装完成"; \
 		echo ""; \
+		echo "🌐 初始化 Playwright 浏览器..."; \
+		$(PYTHON) -m playwright install --with-deps chromium 2>/dev/null || echo "  ⚠️ Playwright 浏览器安装跳过或失败"; \
+		echo ""; \
+		echo "🗄️  初始化数据库与检索引擎..."; \
+		$(PYTHON) -m db.schema 2>/dev/null || true; \
+		$(PYTHON) -c "from db.whoosh_search import get_whoosh_index; get_whoosh_index()" 2>/dev/null || true; \
+		echo ""; \
 		if [ ! -f ".env" ]; then \
 			echo "📝 创建配置文件..."; \
 			cp .env.example .env 2>/dev/null || touch .env; \
-			echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY"; \
+			echo "  ⚠️  请编辑 .env 文件，填入你的 GROQ_API_KEY / GEMINI_API_KEY"; \
 		fi; \
 		echo ""; \
 		echo "✅ 环境初始化完成！"; \
@@ -449,16 +456,18 @@ download-run: ensure-venv
 	@echo "🔊 流程: 下载 → 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@# 先下载视频（所有输出正常显示，包括进度条）
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"; \
-	if [ $$? -ne 0 ]; then \
+	@# 下载视频（只运行一次），从输出中提取文件路径
+	@DOWNLOAD_OUTPUT=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" 2>&1); \
+	DOWNLOAD_EXIT=$$?; \
+	echo "$$DOWNLOAD_OUTPUT"; \
+	if [ $$DOWNLOAD_EXIT -ne 0 ]; then \
 		echo "❌ 下载失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
-	VIDEO_PATH=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --json 2>/dev/null | $(PYTHON) -c "import json, sys; data = json.load(sys.stdin); print(data['file_path'])"); \
+	VIDEO_PATH=$$(echo "$$DOWNLOAD_OUTPUT" | tail -n 1 | $(PYTHON) -c "import json, sys; data = json.load(sys.stdin); print(data['file_path'])" 2>/dev/null); \
 	if [ -z "$$VIDEO_PATH" ]; then \
-		echo "❌ 无法获取下载文件路径"; \
+		echo "❌ 无法从下载输出中提取文件路径"; \
 		exit 1; \
 	fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \

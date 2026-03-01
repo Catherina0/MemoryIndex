@@ -318,15 +318,45 @@ class VideoDownloader:
         Returns:
             清洗后的文件名
         """
-        # 移除非法字符
-        filename = re.sub(r'[<>:"/\\|?*]', '', filename)
-        # 替换空格和特殊字符
+        import unicodedata
+        
+        # 1. 规范化 Unicode（分解组合字符）
+        filename = unicodedata.normalize('NFKC', filename)
+        
+        # 2. 只保留安全字符：字母、数字、中日韩文字、基本标点
+        safe_chars = []
+        for char in filename:
+            code_point = ord(char)
+            # 允许的字符范围：
+            # - ASCII 可见字符（除了文件系统非法字符）
+            # - 中日韩统一表意文字 (CJK Unified Ideographs): U+4E00 - U+9FFF
+            # - 中日韩扩展A: U+3400 - U+4DBF
+            # - 日文平假名: U+3040 - U+309F
+            # - 日文片假名: U+30A0 - U+30FF
+            # - 韩文音节: U+AC00 - U+D7AF
+            if (32 <= code_point < 127 and char not in '<>:"/\\|?*') or \
+               (0x4E00 <= code_point <= 0x9FFF) or \
+               (0x3400 <= code_point <= 0x4DBF) or \
+               (0x3040 <= code_point <= 0x309F) or \
+               (0x30A0 <= code_point <= 0x30FF) or \
+               (0xAC00 <= code_point <= 0xD7AF):
+                safe_chars.append(char)
+        
+        filename = ''.join(safe_chars)
+        
+        # 3. 压缩连续空白字符为单个下划线
         filename = re.sub(r'[\s]+', '_', filename)
-        # 移除前后的点和空格
-        filename = filename.strip('. ')
-        # 截断过长的文件名
-        if len(filename) > max_length:
-            filename = filename[:max_length]
+        
+        # 4. 移除前后的点、空格和下划线
+        filename = filename.strip('._\u3000 ')  # \u3000 是全角空格
+        
+        # 5. 截断过长的文件名（考虑 UTF-8 字节长度）
+        if len(filename.encode('utf-8')) > max_length:
+            # 按字符逐步截断直到满足字节长度要求
+            while len(filename.encode('utf-8')) > max_length and len(filename) > 0:
+                filename = filename[:-1]
+            filename = filename.rstrip('._\u3000 ')
+        
         return filename or "video"
     
     def _download_with_ytdlp(self, url: str, platform: str, force_redownload: bool) -> LocalFileInfo:
