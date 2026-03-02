@@ -103,7 +103,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/db_show <ID>` - 从数据库根据ID显示明细\n"
         "`/db_stats` - 查看知识库存储统计\n"
         "`/make <参数>` - 极客模式：直接执行任意 make 命令 (例: `/make db-list LIMIT=50`)\n\n"
-        "4️⃣ **系统命令**\n"
+        "4️⃣ **URL 工具**\n"
+        "`/url_clean <URL或文本>` - 展开短链接并去除追踪参数（淘宝/京东/小红书/B站/抖音等）\n\n"
+        "5️⃣ **系统命令**\n"
         "`/start` - 显示欢迎信息\n"
         "`/help`  - 显示本帮助信息\n\n"
         "💡 _提示：直接分享浏览器的网页链接给我即可，无需加额外文字。_"
@@ -263,6 +265,55 @@ async def cmd_db_show(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_db_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await run_make_target(update, context, "db-stats", None)
 
+async def cmd_url_clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理 /url_clean 命令：展开短链接 + 去除追踪参数，单独发送可复制链接"""
+    if not await check_auth(update): return
+    if not context.args:
+        await update.message.reply_text(
+            "❌ 请提供链接或包含链接的文本。\n"
+            "用法: `/url_clean <URL或文本>`",
+            parse_mode="Markdown"
+        )
+        return
+
+    status_message = await update.message.reply_text("⏳ 正在处理链接...", parse_mode="Markdown")
+    try:
+        # 调用模块获取结构化结果
+        repo_root = str(Path(__file__).parent.parent)
+        sys.path.insert(0, repo_root)
+        from scripts.url_cleaner import clean_url
+
+        raw = " ".join(context.args)
+        result = clean_url(raw)
+
+        if 'error' in result:
+            await status_message.edit_text(f"❌ {result['error']}")
+            return
+
+        original = result['original']
+        expanded = result['expanded']
+        cleaned  = result['cleaned']
+
+        # 第一条：处理摘要
+        lines = []
+        if expanded != original:
+            lines.append(f"🔄 短链接已还原")
+            lines.append(f"原始: {original}")
+        if cleaned != expanded:
+            lines.append(f"🧹 已去除追踪参数")
+        if cleaned == original:
+            lines.append("✅ 链接无需变更")
+        summary = "\n".join(lines) if lines else "✅ 处理完成"
+        await status_message.edit_text(summary)
+
+        # 第二条：清理后的链接，独立 code 块，点击即可复制
+        await update.message.reply_text(
+            f"`{cleaned}`",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await status_message.edit_text(f"⚠️ 执行出错: {e}")
+
 async def cmd_make(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理动态 make 命令 /make target xxx=yyy """
     if not await check_auth(update): return
@@ -299,6 +350,7 @@ async def post_init(application):
         BotCommand("download_ocr", "▶️ 下载视频并处理文本与图像"),
         BotCommand("archive_run", "🌐 完整归档单个长网页"),
         BotCommand("archive_ocr", "🌐 归档网页并进行版面OCR"),
+        BotCommand("url_clean", "🔗 展开短链接 & 去除追踪参数"),
         BotCommand("make", "🛠️ 极客模式: 直接执行 Makefile 命令")
     ]
     await application.bot.set_my_commands(commands)
@@ -321,6 +373,7 @@ def main():
     app.add_handler(CommandHandler("db_list", cmd_db_list))
     app.add_handler(CommandHandler("db_show", cmd_db_show))
     app.add_handler(CommandHandler("db_stats", cmd_db_stats))
+    app.add_handler(CommandHandler("url_clean", cmd_url_clean))
     app.add_handler(CommandHandler("make", cmd_make))
     
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))

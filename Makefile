@@ -1,7 +1,7 @@
 # Makefile for Video Report Pipeline
 # 使用方法：make <target> VIDEO=/path/to/video.mp4
 
-.PHONY: help setup test clean run run-ocr install check ensure-venv
+.PHONY: help setup test clean run run-ocr install check ensure-venv url-clean tg-bot-stop
 
 # 虚拟环境路径
 VENV_DIR := .venv
@@ -95,6 +95,7 @@ help:
 	@echo "  make archive URL=网址                保存网页为 Markdown"
 	@echo "  make archive-run URL=网址            归档 + 生成AI报告"
 	@echo "  make archive-batch FILE=urls.txt     批量归档"
+	@echo "  make url-clean URL=链接              URL 反追踪 & 短链接还原"
 	@echo ""
 	@echo "🔍 搜索与管理："
 	@echo "  make search Q=\"关键词\"              全文搜索"
@@ -105,6 +106,7 @@ help:
 	@echo "🤖 Telegram Bot："
 	@echo "  make tg-bot-setup                    配置 Telegram Bot Token"
 	@echo "  make tg-bot-start                    启动 Telegram Bot（终端常驻）"
+	@echo "  make tg-bot-stop                     停止 Telegram Bot"
 	@echo ""
 	@echo "🤖 OCR 引擎选择（make ocr 时可用）："
 	@echo "  OCR_ENGINE=vision                    Apple Vision（macOS 默认，免配置）"
@@ -853,6 +855,22 @@ test-archiver: ensure-venv
 			print(f'Content length: {result[\"content_length\"]}'); \
 		asyncio.run(test())"
 
+# URL 反追踪 & 短链接还原
+url-clean: ensure-venv
+	@if [ -z "$(URL)" ]; then \
+		echo "❌ 错误: 请提供URL参数"; \
+		echo "用法: make url-clean URL=\"链接或包含链接的文本\""; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/url_cleaner.py "$(URL)"
+	@echo ""
+	@CLEAN_URL=$$($(PYTHON) scripts/url_cleaner.py --clean-only "$(URL)" 2>/dev/null); \
+	if [ -n "$$CLEAN_URL" ]; then \
+		echo "📋 清理后链接（已复制到剪贴板）："; \
+		echo "   $$CLEAN_URL"; \
+		echo "$$CLEAN_URL" | pbcopy 2>/dev/null && echo "✅ 已复制" || echo "⚠️  pbcopy 不可用（非 macOS）"; \
+	fi
+
 # DrissionPage 归档（高级：强制使用真实浏览器）
 drission-archive: ensure-venv
 	@if [ -z "$(URL)" ]; then \
@@ -984,11 +1002,19 @@ tg-bot-setup: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@$(PYTHON) -c "import os; from pathlib import Path; from dotenv import load_dotenv, set_key; env_path = Path.home() / '.memoryindex' / '.env'; env_path.parent.mkdir(parents=True, exist_ok=True); env_path.touch(exist_ok=True); load_dotenv(env_path); current_token=os.getenv('TG_BOT_TOKEN', ''); current_user=os.getenv('TG_ALLOWED_USER_ID', ''); print(f'当前配置的 TG_BOT_TOKEN: {current_token[:5]}***{current_token[-4:]}' if current_token else '未配置 TG_BOT_TOKEN'); token=input('\n请输入新的 Telegram Bot Token (直接回车保持不变): ').strip(); set_key(str(env_path), 'TG_BOT_TOKEN', token) if token else None; print(f'\n当前允许使用的用户ID: {current_user}' if current_user else '\n当前未限制使用用户(所有人可用)'); user_id=input('\n请输入仅允许使用的 Telegram User ID (直接回车保持不变, 输入 -1 取消限制): ').strip(); set_key(str(env_path), 'TG_ALLOWED_USER_ID', '' if user_id == '-1' else user_id) if user_id else None; print('\n✅ 配置已更新。')"
 
+# 停止 Telegram Bot
+tg-bot-stop:
+	@echo "🛑 停止 Telegram Bot..."
+	@pkill -9 -f "cli/tg_bot.py" 2>/dev/null && echo "✅ Bot 已停止" || echo "ℹ️  Bot 未在运行"
+
 # 常驻运行 Telegram Bot
 tg-bot-start: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🚀 启动 Telegram Bot (终端常驻)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🛑 清理已有实例..."
+	@pkill -9 -f "cli/tg_bot.py" 2>/dev/null || true
+	@sleep 1
 	@if ! $(PYTHON) -c "import telegram" 2>/dev/null; then \
 		echo "📦 未检测到 python-telegram-bot，正在安装..."; \
 		$(PIP) install "python-telegram-bot[job-queue]"; \
