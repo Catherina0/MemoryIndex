@@ -45,13 +45,17 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(
         str(db_path),
         detect_types=sqlite3.PARSE_DECLTYPES,
-        check_same_thread=False
+        check_same_thread=False,
+        timeout=10  # 等待锁最长 10 秒，避免 locking protocol 错误
     )
     
     # 配置连接
     conn.row_factory = sqlite3.Row  # 返回字典式行
     conn.execute("PRAGMA foreign_keys = ON")  # 启用外键
-    conn.execute("PRAGMA journal_mode = WAL")  # 启用 WAL 模式提升并发
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")  # 启用 WAL 模式提升并发
+    except sqlite3.OperationalError:
+        pass  # 已经是 WAL 模式或并发锁定时忽略，不影响正常读写
     
     return conn
 
