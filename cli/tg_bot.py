@@ -38,6 +38,39 @@ async def check_auth(update: Update) -> bool:
         return False
     return True
 
+async def send_long_message(update: Update, status_message, text: str, chunk_size: int = 3800):
+    """将长文本拆分成多条消息发送，超过 chunk_size 的部分作为新消息 reply"""
+    text = text.replace("```", "'''")
+    # 按行拆分，尽量保持段落完整
+    lines = text.split("\n")
+    chunks = []
+    current = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1  # +1 for newline
+        if current_len + line_len > chunk_size and current:
+            chunks.append("\n".join(current))
+            current = [line]
+            current_len = line_len
+        else:
+            current.append(line)
+            current_len += line_len
+    if current:
+        chunks.append("\n".join(current))
+
+    if not chunks:
+        chunks = ["✅ 执行完成。"]
+
+    total = len(chunks)
+    for i, chunk in enumerate(chunks):
+        header = f"📄 ({i+1}/{total})\n" if total > 1 else ""
+        msg = f"```text\n{header}{chunk}\n```"
+        if i == 0:
+            await status_message.edit_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(msg, parse_mode="Markdown")
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
     if not await check_auth(update): return
@@ -221,11 +254,9 @@ async def cmd_db_show(update: Update, context: ContextTypes.DEFAULT_TYPE):
             capture_output=True, text=True,
             cwd=str(Path(__file__).parent.parent)
         )
-        output = (result.stdout + "\n" + result.stderr).strip().replace("```", "'''")
-        if len(output) > 3800:
-            output = "... (前面的输出被截断)\n" + output[-3800:]
+        output = (result.stdout + "\n" + result.stderr).strip()
         if not output: output = "✅ 执行完成。"
-        await status_message.edit_text(f"```text\n{output}\n```", parse_mode="Markdown")
+        await send_long_message(update, status_message, output)
     except Exception as e:
         await status_message.edit_text(f"⚠️ 执行出错: {e}")
 
