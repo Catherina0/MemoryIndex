@@ -55,6 +55,37 @@ def run_init(args):
 
 
 def main():
+    # 智能路由：如果直接传入一个URL，则自动识别为网页或视频
+    if len(sys.argv) >= 2 and sys.argv[1].startswith('http'):
+        url = sys.argv[1]
+        # 简单判定视频平台
+        if any(domain in url for domain in ['bilibili.com', 'youtube.com', 'youtu.be', 'v.qq.com']):
+            print(f"🤖 智能路由：识别到视频URL，准备下载和处理 -> {url}")
+            sys.argv.insert(1, 'download')
+            # 默认自动处理并进行OCR
+            if '--process' not in sys.argv: sys.argv.append('--process')
+            if '--ocr' not in sys.argv: sys.argv.append('--ocr')
+        else:
+            print(f"🤖 智能路由：识别到网页URL，准备归档 -> {url}")
+            sys.argv.insert(1, 'archive')
+
+    # Makefile 桥接路由：无缝继承所有 Makefile 脚本功能
+    native_commands = {'init', 'search', 'tags', 'topics', 'list-tags', 'suggest', 'list', 'show', 'delete', 'process', 'download', 'archive', 'selftest', 'config', 'stats', '-h', '--help', '--version'}
+    if len(sys.argv) >= 2 and sys.argv[1] not in native_commands and not sys.argv[1].startswith('-'):
+        # 如果不是内置命令，且不像是个参数标志，尝试转发给 Makefile
+        target = sys.argv[1]
+        if (PROJECT_ROOT / "Makefile").exists():
+            import subprocess
+            print(f"🛠️  未识别的命令，已尝试转发至 Makefile 执行: make {target}")
+            try:
+                result = subprocess.run(["make", target] + sys.argv[2:], cwd=str(PROJECT_ROOT))
+                sys.exit(result.returncode)
+            except KeyboardInterrupt:
+                sys.exit(130)
+            except FileNotFoundError:
+                pass
+
+
     parser = argparse.ArgumentParser(
         prog='memidx',
         description='MemoryIndex - 智能视频知识库系统',
@@ -85,7 +116,13 @@ def main():
   memidx archive URL                          # 归档网页为 Markdown
   memidx archive URL --output custom.md       # 指定输出文件
 
-🔧 系统维护：
+�️ 扩展生态 (无缝兼容 Makefile)：
+  memidx setup                                # 安装依赖与环境
+  memidx db-reset                             # 重建数据库 
+  memidx clean-all                            # 清理所有缓存/产物
+  (绝大多数 `make <命令>` 现在都可等效替换为 `memidx <命令>`)
+
+�🔧 系统维护：
   memidx selftest                             # 系统自检
   memidx selftest --full                      # 完整测试（含API）
   memidx config                               # 配置向导
@@ -154,6 +191,7 @@ def main():
     # 展示视频详情
     show_parser = subparsers.add_parser('show', help='展示视频详情')
     show_parser.add_argument('id', type=int, help='视频ID')
+    show_parser.add_argument('file', nargs='?', type=str, help='要直接展示的文件类型 (例如: report, transcript, ocr, info)')
     show_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     show_parser.add_argument('--full', action='store_true', help='显示完整内容（包含转写、OCR等）')
     

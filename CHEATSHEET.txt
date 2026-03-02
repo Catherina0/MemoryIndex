@@ -998,8 +998,11 @@ archiver/
 
 列出所有视频（名称+标签+摘要）：
   make db-list              # 默认列出前 20 条
-  make db-list LIMIT=50     # 列出前 50 条
+  make db-list page=2       # 翻页，查看第2页
+  make db-list limit=50     # 列出前 50 条
   make ls                   # 快捷命令
+
+💡 提示：所有 `make` 命令的参数（如 `page=2`, `limit=50`, `id=1`, `url=xxx`）均支持首字母任意大小写，无缝兼容！
 
 查看特定视频详情：
   make db-show ID=1         # 查看视频基本信息

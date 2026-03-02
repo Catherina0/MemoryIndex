@@ -8,6 +8,32 @@ VENV_DIR := .venv
 PYTHON := $(VENV_DIR)/bin/python
 PIP := $(VENV_DIR)/bin/pip
 
+# 支持将小写参数自动映射到大写变量（兼容各种输入习惯）
+PAGE ?= $(page)
+export PAGE
+LIMIT ?= $(limit)
+export LIMIT
+FLAGS ?= $(flags)
+export FLAGS
+ID ?= $(id)
+export ID
+URL ?= $(url)
+export URL
+VIDEO ?= $(video)
+export VIDEO
+Q ?= $(q)
+export Q
+TAGS ?= $(tags)
+export TAGS
+MODE ?= $(mode)
+export MODE
+FILE ?= $(file)
+export FILE
+OUTPUT ?= $(output)
+export OUTPUT
+FORCE ?= $(force)
+export FORCE
+
 # 确保虚拟环境存在且可用（首次运行或损坏时自动创建）
 ensure-venv:
 	@VENV_OK=0; \
@@ -75,6 +101,10 @@ help:
 	@echo "  make search-tags TAGS=\"标签1 标签2\"  按标签搜索"
 	@echo "  make db-show ID=1                    查看视频详情"
 	@echo "  make db-stats                        数据库统计"
+	@echo ""
+	@echo "🤖 Telegram Bot："
+	@echo "  make tg-bot-setup                    配置 Telegram Bot Token"
+	@echo "  make tg-bot-start                    启动 Telegram Bot（终端常驻）"
 	@echo ""
 	@echo "🤖 OCR 引擎选择（make ocr 时可用）："
 	@echo "  OCR_ENGINE=vision                    Apple Vision（macOS 默认，免配置）"
@@ -684,19 +714,28 @@ db-tags: ensure-venv
 # 列出所有视频（带标签和摘要）
 db-list: ensure-venv
 	@LIMIT=$${LIMIT:-20}; \
+	OFFSET=$${OFFSET:-0}; \
+	PAGE_VAL=$${PAGE:-$${page:-}}; \
+	if [ -n "$$PAGE_VAL" ]; then \
+		OFFSET=$$((($$PAGE_VAL-1)*$$LIMIT)); \
+	fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "📹 视频列表 (前 $$LIMIT 条)"; \
+	echo "📹 知识库列表 (Limit: $$LIMIT, Offset: $$OFFSET)"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(PYTHON) cli/search_cli.py list --limit $$LIMIT
+	$(PYTHON) cli/main_cli.py list --limit $$LIMIT --offset $$OFFSET
 
 # 展示特定ID的视频详情
 db-show: ensure-venv
 	@if [ -z "$(ID)" ]; then \
 		echo "❌ 错误：请指定视频ID"; \
-		echo "用法：make db-show ID=1"; \
+		echo "用法：make db-show ID=1 [FILE=report/transcript/ocr]"; \
 		exit 1; \
 	fi
-	@$(PYTHON) cli/search_cli.py show $(ID) $(FLAGS)
+	@if [ -n "$(FILE)" ]; then \
+		$(PYTHON) cli/search_cli.py show $(ID) $(FILE) $(FLAGS); \
+	else \
+		$(PYTHON) cli/search_cli.py show $(ID) $(FLAGS); \
+	fi
 
 # 删除特定ID的视频记录
 db-delete: ensure-venv
@@ -933,3 +972,26 @@ archive-run-visible: ensure-venv
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --visible
+
+# ============================================
+# Telegram Bot 集成
+# ============================================
+
+# 配置 Telegram Bot (设置 Token)
+tg-bot-setup: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🤖 配置 Telegram Bot"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@$(PYTHON) -c "import os; from pathlib import Path; from dotenv import load_dotenv, set_key; env_path = Path.home() / '.memoryindex' / '.env'; env_path.parent.mkdir(parents=True, exist_ok=True); env_path.touch(exist_ok=True); load_dotenv(env_path); current_token=os.getenv('TG_BOT_TOKEN', ''); current_user=os.getenv('TG_ALLOWED_USER_ID', ''); print(f'当前配置的 TG_BOT_TOKEN: {current_token[:5]}***{current_token[-4:]}' if current_token else '未配置 TG_BOT_TOKEN'); token=input('\n请输入新的 Telegram Bot Token (直接回车保持不变): ').strip(); set_key(str(env_path), 'TG_BOT_TOKEN', token) if token else None; print(f'\n当前允许使用的用户ID: {current_user}' if current_user else '\n当前未限制使用用户(所有人可用)'); user_id=input('\n请输入仅允许使用的 Telegram User ID (直接回车保持不变, 输入 -1 取消限制): ').strip(); set_key(str(env_path), 'TG_ALLOWED_USER_ID', '' if user_id == '-1' else user_id) if user_id else None; print('\n✅ 配置已更新。')"
+
+# 常驻运行 Telegram Bot
+tg-bot-start: ensure-venv
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🚀 启动 Telegram Bot (终端常驻)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@if ! $(PYTHON) -c "import telegram" 2>/dev/null; then \
+		echo "📦 未检测到 python-telegram-bot，正在安装..."; \
+		$(PIP) install "python-telegram-bot[job-queue]"; \
+		echo "✅ 安装完成"; \
+	fi
+	@PYTHONPATH=$(PWD) $(PYTHON) cli/tg_bot.py

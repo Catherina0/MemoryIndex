@@ -23,6 +23,14 @@ from db import SearchRepository
 from db.search import SearchField, SortBy
 
 
+def print_formatted_table(table_data: list, headers: list):
+    """打印去除网格横线的表格"""
+    text = tabulate(table_data, headers=headers, tablefmt='grid')
+    # 替换所有以 + 开头的网格线为空行
+    lines = ['' if line.startswith('+') else line for line in text.split('\n')]
+    print('\n'.join(lines))
+
+
 def format_duration(seconds: float) -> str:
     """格式化时长"""
     if not seconds:
@@ -102,7 +110,7 @@ def search_command(args):
             ])
         
         headers = ['#', 'ID', '视频标题', '来源', '匹配片段', '时间点', '相关性', '标签']
-        print(tabulate(table_data, headers=headers, tablefmt='grid'))
+        print_formatted_table(table_data, headers)
         
         # 详细信息
         if args.verbose:
@@ -151,7 +159,7 @@ def tag_search_command(args):
             ])
         
         headers = ['#', 'ID', '标题', '来源', '时长', '标签']
-        print(tabulate(table_data, headers=headers, tablefmt='grid'))
+        print_formatted_table(table_data, headers)
 
 
 def tags_command(args):
@@ -220,7 +228,7 @@ def list_tags_command(args):
             ])
         
         headers = ['#', '标签名', '分类', '视频数', '使用次数']
-        print(tabulate(table_data, headers=headers, tablefmt='grid'))
+        print_formatted_table(table_data, headers)
 
 
 def suggest_tags_command(args):
@@ -262,6 +270,34 @@ def show_command(args):
     
     # 获取文件（报告、转写、OCR）
     artifacts = repo.get_artifacts(args.id)
+    
+    # 如果指定了具体文件类型，直接输出其内容，不显示其它额外信息
+    if getattr(args, 'file', None):
+        target_type = args.file.lower()
+        # 寻找匹配类型的产物
+        target_artifact = next((a for a in artifacts if a.artifact_type and a.artifact_type.value.lower() == target_type), None)
+        
+        if not target_artifact:
+            print(f"❌ 未找到类型为 '{target_type}' 的相关文件。")
+            available = [a.artifact_type.value for a in artifacts if a.artifact_type]
+            if available:
+                print(f"💡 当前可用的文件类型有: {', '.join(available)}")
+            return
+            
+        print(f"=== {target_type.upper()} 内容 ({target_artifact.file_path or '内嵌'}) ===")
+        if target_artifact.content_text:
+            print(target_artifact.content_text)
+        elif target_artifact.file_path:
+            # 尝试从文件读取
+            import os
+            try:
+                with open(target_artifact.file_path, 'r', encoding='utf-8') as f:
+                    print(f.read())
+            except Exception as e:
+                print(f"❌ 无法读取文件 {target_artifact.file_path}: {e}")
+        else:
+            print("该文件无内容。")
+        return
     
     # JSON 输出
     if args.json:
@@ -476,7 +512,7 @@ def list_command(args):
         ])
     
     headers = ['#', 'ID', '标题', '来源', '时长', '标签', '摘要']
-    print(tabulate(table_data, headers=headers, tablefmt='grid'))
+    print_formatted_table(table_data, headers)
 
 
 def main():
@@ -588,6 +624,7 @@ def main():
     # 展示视频详情
     show_parser = subparsers.add_parser('show', help='展示特定ID的视频详情')
     show_parser.add_argument('id', type=int, help='视频ID')
+    show_parser.add_argument('file', nargs='?', type=str, help='要直接展示的文件类型 (例如: report, transcript, ocr, info)')
     show_parser.add_argument('--json', action='store_true', help='JSON格式输出')
     show_parser.add_argument('--full', action='store_true', help='显示完整内容（包含转写、OCR等）')
     show_parser.set_defaults(func=show_command)
