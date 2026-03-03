@@ -243,6 +243,19 @@ make db-show ID=1   # 👁️  查看特定记录详情
 make db-delete ID=1 # 🗑️  删除记录（需确认）
 make search Q="关键词"  # 🔍 全文搜索
 
+⚡ 命令别名（短命令）
+───────────────────────────────────────────────────────────────
+make downrun  URL=链接          → download-run
+make downocr  URL=链接          → download-ocr
+make show     id=<N>            → db-show
+make show     id=<N> report     → 查看详情 + 输出 report 全文
+make show     id=<N> transcript → 查看详情 + 输出 transcript 全文
+make show     id=<N> ocr        → 查看详情 + 输出 ocr 全文
+make report   id=<N>            → 直接输出 report 正文
+make transcript id=<N>          → 直接输出 transcript 正文
+make ls                         → db-list
+make db-search Q="关键词"       → search（与 make search 等价）
+
 �🔍 OCR 调试工具
 ───────────────────────────────────────────────────────────────
 python test_ocr_debug.py --check-api              # 检查OCR状态
@@ -448,8 +461,8 @@ Groq API Docs: https://console.groq.com/docs
 │ make archive URL='【标题】 😆 https://...'       │
 │                                                            │
 │ # 步骤3：选择归档模式（默认纯内容/完整含评论）🆕            │
-│ make archive URL=链接                    # 默认：纯内容   │
-│ make archive URL=链接 MODE=full          # 完整：含评论   │
+│ make archive URL=链接                     # 默认：纯内容  │
+│ make archive URL=链接 MODE=full           # 完整：含评论  │
 │                                                            │
 │ 流程：启动浏览器 → 加载登录态 → 提取 → Markdown → 图片     │
 │ 输出：archived/标题/  (不含平台前缀)🆕                     │
@@ -1011,8 +1024,16 @@ archiver/
 
 查看特定视频详情：
   make db-show ID=1         # 查看视频基本信息
+  make show    id=1         # ⚡ 同上（别名）
   make db-show ID=1 FLAGS="--full"   # 查看完整内容（转写+OCR）
   make db-show ID=1 FLAGS="--json"   # JSON格式输出
+
+  # 直接打开附件（别名组合）：
+  make show id=1 report     # 显示详情 → 输出完整 report 正文
+  make show id=1 transcript # 显示详情 → 输出完整 transcript 正文
+  make show id=1 ocr        # 显示详情 → 输出完整 ocr 正文
+  make report     id=1      # 仅输出 report 正文
+  make transcript id=1      # 仅输出 transcript 正文
 
 标签自动补全（命令行工具）：
   python search_cli.py suggest "机器"
@@ -1057,7 +1078,13 @@ archiver/
 
 查看特定记录：
   make db-show ID=1             # 查看ID=1的详细信息
+  make show    id=1             # ⚡ 同上（别名）
   make db-show ID=1 FLAGS="--full"  # 查看完整内容（含转写/OCR）
+  make show    id=1 report      # ⚡ 显示详情 + 输出 report 全文
+  make show    id=1 transcript  # ⚡ 显示详情 + 输出 transcript 全文
+  make show    id=1 ocr         # ⚡ 显示详情 + 输出 ocr 全文
+  make report     id=1          # ⚡ 仅输出 report 正文
+  make transcript id=1          # ⚡ 仅输出 transcript 正文
 
 删除记录：🆕
   make db-delete ID=1           # 删除记录（需确认）

@@ -1,7 +1,9 @@
 # Makefile for Video Report Pipeline
 # 使用方法：make <target> VIDEO=/path/to/video.mp4
 
-.PHONY: help setup test clean run run-ocr install check ensure-venv url-clean tg-bot-stop
+.PHONY: help setup test clean run run-ocr install check ensure-venv url-clean tg-bot-stop \
+        report transcript ocr \
+        downrun downocr show db-search
 
 # 虚拟环境路径
 VENV_DIR := .venv
@@ -132,6 +134,20 @@ help:
 	@echo "  • macOS 使用 Vision OCR（无需配置）"
 	@echo "  • 其他系统需安装 PaddleOCR：make install-paddle-ocr"
 	@echo "  • 需要配置 .env 文件中的 GROQ_API_KEY"
+	@echo ""
+	@echo "⚡ 命令别名（短命令）："
+	@echo "  make downrun  URL=链接          → download-run"
+	@echo "  make downocr  URL=链接          → download-ocr"
+	@echo "  make show     id=<N>            → db-show"
+	@echo "  make show     id=<N> report     → db-show + 打开 report"
+	@echo "  make show     id=<N> transcript → db-show + 打开 transcript"
+	@echo "  make show     id=<N> ocr        → db-show + 打开 ocr"
+	@echo "  make ls                         → db-list"
+	@echo "  make search   Q=\"关键词\"        → 与 make search 相同"
+	@echo "  make db-search Q=\"关键词\"       → search"
+	@echo "  make report   id=<N>            → db-show <N> report"
+	@echo "  make transcript id=<N>          → db-show <N> transcript"
+	@echo "  make ocr      id=<N>            → db-show <N> ocr"
 
 # 初始化环境（手动运行）
 setup: ensure-venv
@@ -739,6 +755,32 @@ db-show: ensure-venv
 		$(PYTHON) cli/search_cli.py show $(ID) $(FLAGS); \
 	fi
 
+# 快捷目标：make db-show id=<N> report / transcript / ocr
+# 用法示例：make db-show id=66 report
+report: ensure-venv
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ 错误：请先指定视频ID"; \
+		echo "用法：make db-show id=<N> report"; \
+		exit 1; \
+	fi
+	@$(PYTHON) cli/search_cli.py show $(ID) report $(FLAGS)
+
+transcript: ensure-venv
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ 错误：请先指定视频ID"; \
+		echo "用法：make db-show id=<N> transcript"; \
+		exit 1; \
+	fi
+	@$(PYTHON) cli/search_cli.py show $(ID) transcript $(FLAGS)
+
+ocr: ensure-venv
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ 错误：请先指定视频ID"; \
+		echo "用法：make db-show id=<N> ocr"; \
+		exit 1; \
+	fi
+	@$(PYTHON) cli/search_cli.py show $(ID) ocr $(FLAGS)
+
 # 删除特定ID的视频记录
 db-delete: ensure-venv
 	@if [ -z "$(ID)" ]; then \
@@ -790,6 +832,12 @@ ds: db-status
 
 # 快捷命令：列出视频
 ls: db-list
+
+# ── 别名映射 ────────────────────────────────────────────────────────────────
+downrun: download-run   # make downrun URL=...
+downocr: download-ocr   # make downocr URL=...
+show: db-show           # make show id=<N> [report/transcript/ocr]
+db-search: search       # make db-search q=<关键词>（search 是主目标）
 
 # ============================================
 # 网页归档功能 (Web Archiver)

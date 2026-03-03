@@ -207,3 +207,14 @@ def get_xiaohongshu_cookies() -> Optional[Dict[str, str]]:
         return cookies
     # Fall back to platform-specific config
     return manager.load_from_xhs_config()
+
+
+def get_zhihu_cookies() -> Optional[Dict[str, str]]:
+    """Convenience function to get Zhihu cookies."""
+    manager = CookieManager()
+    # Try cookies.txt / browser first
+    cookies = manager.load_from_browser('zhihu.com')
+    if cookies:
+        return cookies
+    # Fall back to platform-specific config
+    return manager.load_from_zhihu_config()

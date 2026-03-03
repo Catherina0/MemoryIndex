@@ -260,7 +260,7 @@ class VideoDownloader:
     def _download_with_progress(self, cmd: list, total_size: Optional[int] = None):
         """
         使用进度条执行下载命令
-        
+
         Args:
             cmd: 下载命令列表
             total_size: 文件总大小（字节），如果已知
@@ -272,37 +272,81 @@ class VideoDownloader:
             universal_newlines=True,
             bufsize=1
         )
-        
-        pbar = None
+
+        # 进度条始终创建（输出到 stderr，不影响 stdout 重定向）
         if total_size:
-            # 进度条输出到 stderr，这样即使 stdout 被重定向也能看到
-            pbar = tqdm(total=total_size, unit='B', unit_scale=True, desc='下载进度', file=sys.stderr)
-        
-        # 用于解析 yt-dlp 的进度输出
-        last_downloaded = 0
-        
+            # 已知文件大小：字节模式进度条
+            pbar = tqdm(
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+                desc='下载进度',
+                file=sys.stderr,
+                dynamic_ncols=True,
+            )
+            last_downloaded = 0
+            last_percent = 0.0
+        else:
+            # 未知文件大小：百分比模式进度条（0-100%）
+            pbar = tqdm(
+                total=100,
+                unit='%',
+                desc='下载进度',
+                file=sys.stderr,
+                dynamic_ncols=True,
+                bar_format='{l_bar}{bar}| {n:.0f}%{postfix}',
+            )
+            last_percent = 0.0
+            last_downloaded = 0
+
         for line in process.stdout:
-            # yt-dlp 进度格式: [download]  45.8% of 123.45MiB at 1.23MiB/s ETA 00:23
+            line = line.rstrip()
+            if not line:
+                continue
+
+            # yt-dlp 进度行格式: [download]  45.8% of 123.45MiB at 1.23MiB/s ETA 00:23
             if '[download]' in line and '%' in line:
-                # 尝试提取百分比
-                match = re.search(r'(\d+\.\d+)%', line)
-                if match and pbar:
+                match = re.search(r'([\d.]+)%', line)
+                if match:
                     percent = float(match.group(1))
-                    downloaded = int(total_size * percent / 100)
-                    if downloaded > last_downloaded:
-                        pbar.update(downloaded - last_downloaded)
-                        last_downloaded = downloaded
-                elif not pbar:
-                    # 如果没有总大小，至少显示进度信息到 stderr
-                    print(line.strip(), file=sys.stderr)
-            elif '[download] Destination:' in line or '[download] ' in line:
-                # 显示其他重要信息到 stderr
-                if not pbar:
-                    print(line.strip(), file=sys.stderr)
-        
-        if pbar:
-            pbar.close()
-        
+                    if total_size:
+                        # 字节模式：按百分比换算已下载字节数
+                        downloaded = int(total_size * percent / 100)
+                        if downloaded > last_downloaded:
+                            pbar.update(downloaded - last_downloaded)
+                            last_downloaded = downloaded
+                    else:
+                        # 百分比模式：直接更新百分比增量
+                        delta = percent - last_percent
+                        if delta > 0:
+                            pbar.update(delta)
+                            last_percent = percent
+                    # 在进度条后附加速度/ETA 信息
+                    speed_match = re.search(r'at\s+([\d.]+\w+/s)', line)
+                    eta_match = re.search(r'ETA\s+(\S+)', line)
+                    postfix = {}
+                    if speed_match:
+                        postfix['速度'] = speed_match.group(1)
+                    if eta_match:
+                        postfix['ETA'] = eta_match.group(1)
+                    if postfix:
+                        pbar.set_postfix(postfix, refresh=False)
+            elif '[download] Destination:' in line:
+                # 显示目标文件路径（在进度条上方打印）
+                tqdm.write(line, file=sys.stderr)
+            elif line.startswith('[') and not line.startswith('[download]'):
+                # 显示其他 yt-dlp 信息行（如 [youtube], [info], [Merger] 等）
+                tqdm.write(line, file=sys.stderr)
+
+        # 确保进度条跑满到100%
+        if total_size and last_downloaded < total_size:
+            pbar.update(total_size - last_downloaded)
+        elif not total_size and last_percent < 100:
+            pbar.update(100 - last_percent)
+
+        pbar.close()
+
         process.wait()
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, cmd)
@@ -361,46 +405,124 @@ class VideoDownloader:
     
     def _download_with_ytdlp(self, url: str, platform: str, force_redownload: bool) -> LocalFileInfo:
         """
-        使用 yt-dlp 下载视频
-        
+        使用 yt-dlp Python 库下载视频（支持实时进度条）
+
         Args:
             url: 视频URL
             platform: 平台名称
             force_redownload: 是否强制重新下载
-            
+
         Returns:
             LocalFileInfo: 下载后的文件信息
         """
-        if not self.ytdlp_path:
-            raise Exception("yt-dlp 未安装或未找到在 PATH 中")
-        
+        try:
+            import yt_dlp
+        except ImportError:
+            raise Exception("yt-dlp Python 库未安装，请执行: pip install yt-dlp")
+
         # 在 JSON 模式下，所有提示信息输出到 stderr
         output_stream = sys.stderr if self.json_mode else sys.stdout
-        
-        # 先获取视频信息（不下载）
+
+        # ── 进度条状态（在 progress_hook 闭包中共享） ──────────────────────
+        _state = {
+            "pbar": None,           # 当前活跃进度条
+            "cur_file": "",         # 当前正在下载的文件名
+            "last_bytes": 0,        # 上次已下载字节数（用于增量更新）
+        }
+
+        def _make_pbar(desc: str, total: Optional[int]):
+            """创建一个新的 tqdm 进度条"""
+            if not TQDM_AVAILABLE:
+                return None
+            common = dict(
+                desc=desc,
+                file=sys.stderr,
+                dynamic_ncols=True,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+            )
+            if total:
+                return tqdm(total=total, **common)
+            else:
+                return tqdm(**common)
+
+        def progress_hook(d: dict):
+            status = d.get("status")
+            filename = os.path.basename(d.get("filename", ""))
+
+            if status == "downloading":
+                total     = d.get("total_bytes") or d.get("total_bytes_estimate")
+                downloaded = d.get("downloaded_bytes", 0)
+                speed     = d.get("speed")       # bytes/s
+                eta       = d.get("eta")          # seconds
+
+                # 新文件开始下载时，关闭旧进度条并新建
+                if filename != _state["cur_file"]:
+                    if _state["pbar"] is not None:
+                        _state["pbar"].close()
+                    _state["cur_file"]  = filename
+                    _state["last_bytes"] = 0
+                    label = filename if len(filename) <= 35 else f"…{filename[-34:]}"
+                    _state["pbar"] = _make_pbar(f"下载 {label}", total)
+
+                pbar = _state["pbar"]
+                if pbar is not None:
+                    # 用增量更新，避免因估算值跳动导致进度条倒退
+                    delta = downloaded - _state["last_bytes"]
+                    if delta > 0:
+                        pbar.update(delta)
+                        _state["last_bytes"] = downloaded
+                    # 附加速度 / ETA 信息
+                    postfix = {}
+                    if speed and speed > 0:
+                        postfix["速度"] = f"{speed / 1024 / 1024:.2f} MB/s"
+                    if eta is not None:
+                        m, s = divmod(int(eta), 60)
+                        postfix["ETA"] = f"{m:02d}:{s:02d}"
+                    if postfix:
+                        pbar.set_postfix(postfix, refresh=False)
+
+            elif status == "finished":
+                pbar = _state["pbar"]
+                if pbar is not None:
+                    # 补足到 total（避免因估算误差导致进度条停在 99%）
+                    if pbar.total and pbar.n < pbar.total:
+                        pbar.update(pbar.total - pbar.n)
+                    pbar.close()
+                _state["pbar"]      = None
+                _state["cur_file"]  = ""
+                _state["last_bytes"] = 0
+
+            elif status == "error":
+                if _state["pbar"] is not None:
+                    _state["pbar"].close()
+                    _state["pbar"] = None
+
+        # ── 第一步：仅获取元数据（不下载） ────────────────────────────────
         print("📋 获取视频信息...", file=output_stream)
-        info_cmd = [self.ytdlp_path, "--dump-json", "--no-playlist", url]
-        result = subprocess.run(info_cmd, capture_output=True, text=True, check=True)
-        info = json.loads(result.stdout)
-        
-        # 提取元数据
-        video_id = info.get("id", "unknown")
-        title = self._sanitize_filename(info.get("title", "video"))
-        duration = info.get("duration")
-        uploader = info.get("uploader")
+        info_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+        with yt_dlp.YoutubeDL(info_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        video_id   = info.get("id", "unknown")
+        title      = self._sanitize_filename(info.get("title", "video"))
+        duration   = info.get("duration")
+        uploader   = info.get("uploader")
         upload_date = info.get("upload_date")
-        filesize = info.get("filesize") or info.get("filesize_approx")
-        
-        # 显示视频信息
+        filesize   = info.get("filesize") or info.get("filesize_approx")
+
         if filesize:
-            filesize_mb = filesize / (1024 * 1024)
-            print(f"📦 文件大小: {filesize_mb:.1f} MB", file=output_stream)
-        
-        # 构造文件名：标题_平台_视频ID.mp4
-        filename = f"{title}_{platform}_{video_id}.mp4"
+            print(f"📦 文件大小: {filesize / 1024 / 1024:.1f} MB", file=output_stream)
+
+        # ── 构造输出路径 ────────────────────────────────────────────────────
+        filename    = f"{title}_{platform}_{video_id}.mp4"
         output_path = self.download_dir / filename
-        
-        # 检查文件是否已存在
+
         if output_path.exists() and not force_redownload:
             print(f"✅ 文件已存在，跳过下载: {output_path}", file=output_stream)
             return LocalFileInfo(
@@ -411,33 +533,33 @@ class VideoDownloader:
                 duration=duration,
                 uploader=uploader,
                 upload_date=upload_date,
-                metadata=info
+                metadata=info,
             )
-        
-        # 下载视频（限制1080p，节省空间和带宽）
+
+        # ── 第二步：下载（带实时进度回调） ────────────────────────────────
         print(f"⬇️  开始下载（1080p）...", file=output_stream)
-        download_cmd = [
-            self.ytdlp_path,
-            "--no-playlist",
-            "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            "--merge-output-format", "mp4",
-            "-o", str(output_path),
-        ]
-        
-        # 添加进度条支持
-        if TQDM_AVAILABLE:
-            download_cmd.extend(["--newline", "--progress"])
-        
-        download_cmd.append(url)
-        
-        # 使用 Popen 实时捕获输出并显示进度
-        if TQDM_AVAILABLE:
-            self._download_with_progress(download_cmd, filesize)
-        else:
-            subprocess.run(download_cmd, check=True)
-        
+        download_opts = {
+            "format": (
+                "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]"
+                "/bestvideo[height<=1080]+bestaudio"
+                "/best[height<=1080]/best"
+            ),
+            "merge_output_format": "mp4",
+            "outtmpl": str(output_path),
+            "noplaylist": True,
+            "quiet": True,          # 关闭 yt-dlp 自带输出，改由 progress_hook 驱动
+            "no_warnings": False,
+            "progress_hooks": [progress_hook],
+        }
+        with yt_dlp.YoutubeDL(download_opts) as ydl:
+            ydl.download([url])
+
+        # 确保最后一个进度条已关闭（异常路径保险）
+        if _state["pbar"] is not None:
+            _state["pbar"].close()
+
         print(f"✅ 下载完成: {output_path}", file=output_stream)
-        
+
         return LocalFileInfo(
             file_path=output_path,
             platform=platform,
@@ -446,7 +568,7 @@ class VideoDownloader:
             duration=duration,
             uploader=uploader,
             upload_date=upload_date,
-            metadata=info
+            metadata=info,
         )
     
     def _download_with_bbdown(self, url: str, force_redownload: bool) -> LocalFileInfo:
@@ -649,13 +771,27 @@ def extract_url_from_text(text: str) -> Optional[str]:
         提取到的URL，或None
     """
     text = text.strip()
-    
+
+    # ── B站特殊处理：从文本中提取 BV ID 并规范化 URL ──────────────────────────
+    # BV ID 固定为 12 字符（BV + 10位字母数字），直接用正则提取，
+    # 防止 "BV1JHPgzXEHNvd_source=..." 这类缺 ? 分隔符的粘贴错误。
+    bv_match = re.search(r'(BV[a-zA-Z0-9]{10})', text)
+    if bv_match and 'bilibili' in text.lower():
+        bv_id = bv_match.group(1)
+        return f'https://www.bilibili.com/video/{bv_id}'
+
+    # ── 通用短链展开：b23.tv ──────────────────────────────────────────────────
+    b23_match = re.search(r'(https?://b23\.tv/[^\s?&]+)', text)
+    if b23_match:
+        url = b23_match.group(1)
+        url = re.sub(r'[.,;:\'"\)\]]+$', '', url)
+        return url
+
     # 支持的视频平台域名模式
     video_patterns = [
         r'https?://(?:www\.)?youtube\.com/watch\?v=[^&\s]+',
         r'https?://(?:www\.)?youtu\.be/[^\s?&]+',
         r'https?://(?:www\.)?bilibili\.com/video/[^\s?&]+',
-        r'https?://b23\.tv/[^\s?&]+',
         r'https?://(?:www\.)?xiaohongshu\.com/[^\s?&]+',
         r'https?://xhslink\.com/[^\s?&]+',
         r'https?://(?:www\.)?douyin\.com/[^\s?&]+',

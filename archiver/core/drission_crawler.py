@@ -400,7 +400,19 @@ class DrissionArchiver:
             folder_name = self._generate_folder_name(page_title, platform_adapter.name)
             folder_path = self.output_dir / folder_name
             folder_path.mkdir(parents=True, exist_ok=True)
-            
+
+            # 全页长截图
+            screenshot_path = folder_path / "screenshot.png"
+            try:
+                logger.info("📸 正在截取全页截图...")
+                self.current_tab.get_screenshot(
+                    path=str(screenshot_path),
+                    full_page=True
+                )
+                logger.info(f"✅ 截图已保存: {screenshot_path.name}")
+            except Exception as e:
+                logger.warning(f"⚠️  截图失败（可忽略）: {e}")
+
             # 下载图片
             logger.info("开始下载图片...")
             image_downloader = ImageDownloader(
@@ -508,6 +520,10 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 详见 [archive_raw.md](archive_raw.md)（网页内容+图片）
 
+## 🖼️ 页面截图
+
+详见 [screenshot.png](screenshot.png)（全页长截图）
+
 ---
 
 > 💡 **提示**: 使用 `report.md` 查看 LLM 处理后的结构化内容
@@ -580,7 +596,8 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 "images_downloaded": len(url_mapping) if image_urls else 0,
                 "images_total": len(image_urls) if image_urls else 0,
                 "ocr_enabled": with_ocr,
-                "ocr_text_length": len(ocr_text) if with_ocr else 0
+                "ocr_text_length": len(ocr_text) if with_ocr else 0,
+                "screenshot_path": str(screenshot_path) if screenshot_path.exists() else None
             }
             
         except Exception as e:
