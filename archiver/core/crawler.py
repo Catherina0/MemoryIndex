@@ -116,7 +116,13 @@ class UniversalArchiver:
                         headless=self.headless,
                         verbose=self.verbose
                     )
-                    return drission.archive(url, platform_adapter_instance, mode=mode)
+                    return drission.archive(
+                        url, 
+                        platform_adapter_instance, 
+                        mode=mode,
+                        generate_report=generate_report,
+                        with_ocr=with_ocr
+                    )
                 except Exception as e:
                     logger.error(f"DrissionPage 归档失败: {e}")
                     return {
@@ -190,7 +196,13 @@ class UniversalArchiver:
                 verbose=self.verbose
             )
             # 注意: DrissionCrawler 是同步的，这里直接调用
-            result = drission.archive(url, platform_adapter, mode=mode)
+            result = drission.archive(
+                url, 
+                platform_adapter, 
+                mode=mode,
+                generate_report=generate_report,
+                with_ocr=with_ocr
+            )
             if result.get('success'):
                 return result
             else:

@@ -925,7 +925,11 @@ async def archive_and_save(
     )
     
     # archive-run 和 archive-ocr 都会生成 report
-    archive_result = await archiver.archive(url, generate_report=True)
+    archive_result = await archiver.archive(
+        url, 
+        generate_report=True,
+        with_ocr=with_ocr  # 传入OCR参数
+    )
     
     if not archive_result.get('success'):
         error_msg = archive_result.get('error', '未知错误')

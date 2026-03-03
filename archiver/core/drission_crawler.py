@@ -518,10 +518,16 @@ class DrissionArchiver:
                                 page_cookies[c.get('name', '')] = c.get('value', '')
                 except Exception as e:
                     logger.debug(f"提取 Cookies 失败: {e}")
+
+                # 修复: 小红书图片的 Referer 必须是 https://www.xiaohongshu.com/
+                # 如果传入原始分享链接 (http://xhslink.com/...) 会导致 403 Forbidden
+                download_referer = url
+                if platform_adapter.name == 'xiaohongshu':
+                    download_referer = 'https://www.xiaohongshu.com/'
                 
                 url_mapping = image_downloader.download_all(
                     image_urls, 
-                    referer=url,
+                    referer=download_referer,
                     cookies=page_cookies if page_cookies else None
                 )
                 

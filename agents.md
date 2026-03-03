@@ -117,4 +117,6 @@
 3.  **代理**执行提取 -> 生成 Markdown（所有 Markdown 文件输出到 `/docs/` 文件夹）。
 4.  **管理员**检测 `/docs/` 中的新文件 -> 更新索引。
 5.  **用户**运行 `memidx search [query]` -> **管理员**返回结果。
-6.  不要主动执行git commit 和 push 命令
+
+# 重要要求
+不要主动执行git commit 和 push 命令
