@@ -119,8 +119,7 @@ class ImageDownloader:
         url: str,
         filename: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
-        referer: Optional[str] = None,
-        cookies: Optional[Dict[str, str]] = None
+        referer: Optional[str] = None
     ) -> Optional[str]:
         """（支持HTTP和base64）
         
@@ -129,7 +128,6 @@ class ImageDownloader:
             filename: 保存文件名（不含扩展名）
             headers: 请求头
             referer: Referer URL（用于防盗链）
-            cookies: Cookie字典
         
         Returns:
             本地文件路径，失败返回None
@@ -186,7 +184,7 @@ class ImageDownloader:
                 headers['Referer'] = f"{parsed.scheme}://{parsed.netloc}/"
             
             # 下载图片
-            response = requests.get(url, headers=headers, cookies=cookies, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             
             # 保存图片
@@ -302,8 +300,7 @@ class ImageDownloader:
         self,
         urls: List[str],
         headers: Optional[Dict[str, str]] = None,
-        referer: Optional[str] = None,
-        cookies: Optional[Dict[str, str]] = None
+        referer: Optional[str] = None
     ) -> Dict[str, str]:
         """
         批量下载图片
@@ -312,7 +309,6 @@ class ImageDownloader:
             urls: 图片URL列表
             headers: 请求头
             referer: Referer URL
-            cookies: Cookie字典
         
         Returns:
             URL到本地路径的映射字典
@@ -320,7 +316,7 @@ class ImageDownloader:
         results = {}
         for i, url in enumerate(urls, 1):
             logger.info(f"下载图片 {i}/{len(urls)}")
-            local_path = self.download_image(url, headers=headers, referer=referer, cookies=cookies)
+            local_path = self.download_image(url, headers=headers, referer=referer)
             if local_path:
                 results[url] = local_path
         
