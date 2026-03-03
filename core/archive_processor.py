@@ -928,7 +928,16 @@ async def archive_and_save(
     archive_result = await archiver.archive(url, generate_report=True)
     
     if not archive_result.get('success'):
-        raise Exception(f"归档失败: {archive_result.get('error')}")
+        error_msg = archive_result.get('error', '未知错误')
+        if archive_result.get('blocked'):
+            fix_cmds = archive_result.get('fix_commands', [])
+            print(f"\n🔒 归档被拦截！页面要求登录或触发了安全验证。")
+            print(f"   错误详情: {error_msg.splitlines()[0]}")
+            print(f"\n   ━━━━ 解决方法 ━━━━")
+            for i, cmd in enumerate(fix_cmds, 1):
+                print(f"   {i}️⃣   {cmd}")
+            print(f"   ━━━━━━━━━━━━━━━━━━\n")
+        raise Exception(f"归档失败: {error_msg}")
     
     print(f"✅ 归档完成: {archive_result['output_path']}")
     
@@ -992,10 +1001,20 @@ def main():
     parser.add_argument('--visible', action='store_true', help='显示浏览器（调试）')
     
     args = parser.parse_args()
-    
+
+    # 从输入中提取真实 URL（兼容小红书分享文本等含有前后缀的场景）
+    import re as _re
+    _url_match = _re.search(r'https?://\S+', args.url)
+    if _url_match:
+        actual_url = _url_match.group(0).rstrip('！!。，,')
+        if actual_url != args.url:
+            print(f"📎 从分享文本中提取 URL: {actual_url}")
+    else:
+        actual_url = args.url
+
     # 运行异步归档
     db_id = asyncio.run(archive_and_save(
-        url=args.url,
+        url=actual_url,
         output_dir=args.output_dir,
         with_ocr=args.with_ocr,
         headless=not args.visible

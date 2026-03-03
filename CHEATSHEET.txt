@@ -195,8 +195,16 @@ URL下载处理 - 直接链接：
 常见问题修复：
   • 依赖缺失：make install
   • 浏览器缺失：playwright install chromium
+  • Cookie未配置：make login
   • Cookie未配置：make config-xhs-cookie
   • 数据库问题：make db-init
+
+1. 列出当前保存的所有 Cookie 统计
+make list-cookies
+2. 删除针对某个域名的 Cookie
+make delete-cookie DOMAIN=xiaohongshu.com
+3. 一键清空所有的 Cookie
+make clear-cookies
 
 🌐 支持的视频平台
 ───────────────────────────────────────────────────────────────

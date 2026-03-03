@@ -13,10 +13,21 @@ import json
 import subprocess
 import shutil
 import sys
+import warnings
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from datetime import datetime
+
+# 忽略第三方库的警告（如 requests 的 urllib3 版本警告）
+warnings.filterwarnings("ignore", category=UserWarning, module="requests")
+# 也可以忽略专门针对 urllib3 的特定警告
+try:
+    import requests
+    from requests.packages.urllib3.exceptions import DependencyWarning
+    warnings.filterwarnings("ignore", category=DependencyWarning)
+except ImportError:
+    pass
 
 try:
     from tqdm import tqdm
@@ -179,20 +190,20 @@ class VideoDownloader:
         # 在 JSON 模式下，所有提示信息输出到 stderr
         output_stream = sys.stderr if self.json_mode else sys.stdout
         
-        print(f"📥 准备下载视频: {url}", file=output_stream)
+        print(f"📥 准备下载视频: {url}", file=output_stream, flush=True)
         
         # 检测平台
         platform = self._detect_platform(url)
-        print(f"🔍 检测到平台: {platform}", file=output_stream)
+        print(f"🔍 检测到平台: {platform}", file=output_stream, flush=True)
         
         # 检查数据库中是否已存在
         if not force_redownload:
             existing = self.check_already_downloaded(url)
             if existing:
-                print(f"✅ 视频已在数据库中 (ID: {existing['video_id']})")
-                print(f"   标题: {existing['title']}")
-                print(f"   文件: {existing['file_path']}")
-                print(f"💡 如需重新下载，请使用 force_redownload=True")
+                print(f"✅ 视频已在数据库中 (ID: {existing['video_id']})", flush=True)
+                print(f"   标题: {existing['title']}", flush=True)
+                print(f"   文件: {existing['file_path']}", flush=True)
+                print(f"💡 如需重新下载，请使用 force_redownload=True", flush=True)
                 
                 # 检查文件是否仍然存在
                 if existing['file_path'] and Path(existing['file_path']).exists():
@@ -208,31 +219,31 @@ class VideoDownloader:
                         metadata={'already_downloaded': True, 'database_id': existing['video_id']}
                     )
                 else:
-                    print(f"⚠️  原文件已不存在，将重新下载")
+                    print(f"⚠️  原文件已不存在，将重新下载", flush=True)
         
         # 尝试下载
         try:
             # 1. 首选方案：yt-dlp（支持大多数平台）
             return self._download_with_ytdlp(url, platform, force_redownload)
         except Exception as e:
-            print(f"⚠️  yt-dlp 下载失败: {e}")
+            print(f"⚠️  yt-dlp 下载失败: {e}", flush=True)
             
             # 2. B站降级方案：BBDown
             if platform == "bilibili":
                 try:
-                    print("🔄 尝试使用 BBDown 下载...")
+                    print("🔄 尝试使用 BBDown 下载...", flush=True)
                     return self._download_with_bbdown(url, force_redownload)
                 except Exception as e2:
-                    print(f"❌ BBDown 下载失败: {e2}")
+                    print(f"❌ BBDown 下载失败: {e2}", flush=True)
                     raise Exception(f"B站视频下载失败（已尝试 yt-dlp 和 BBDown）")
             
             # 3. 小红书降级方案：XHS-Downloader
             elif platform == "xiaohongshu":
                 try:
-                    print("🔄 尝试使用 XHS-Downloader 下载...")
+                    print("🔄 尝试使用 XHS-Downloader 下载...", flush=True)
                     return self._download_with_xhs(url, force_redownload)
                 except Exception as e2:
-                    print(f"❌ XHS-Downloader 下载失败: {e2}")
+                    print(f"❌ XHS-Downloader 下载失败: {e2}", flush=True)
                     raise Exception(f"小红书视频下载失败（已尝试 yt-dlp 和 XHS-Downloader）")
             
             # 其他平台直接抛出异常
@@ -500,7 +511,7 @@ class VideoDownloader:
                     _state["pbar"] = None
 
         # ── 第一步：仅获取元数据（不下载） ────────────────────────────────
-        print("📋 获取视频信息...", file=output_stream)
+        print("📋 获取视频信息...", file=output_stream, flush=True)
         info_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -517,14 +528,14 @@ class VideoDownloader:
         filesize   = info.get("filesize") or info.get("filesize_approx")
 
         if filesize:
-            print(f"📦 文件大小: {filesize / 1024 / 1024:.1f} MB", file=output_stream)
+            print(f"📦 文件大小: {filesize / 1024 / 1024:.1f} MB", file=output_stream, flush=True)
 
         # ── 构造输出路径 ────────────────────────────────────────────────────
         filename    = f"{title}_{platform}_{video_id}.mp4"
         output_path = self.download_dir / filename
 
         if output_path.exists() and not force_redownload:
-            print(f"✅ 文件已存在，跳过下载: {output_path}", file=output_stream)
+            print(f"✅ 文件已存在，跳过下载: {output_path}", file=output_stream, flush=True)
             return LocalFileInfo(
                 file_path=output_path,
                 platform=platform,
@@ -537,7 +548,7 @@ class VideoDownloader:
             )
 
         # ── 第二步：下载（带实时进度回调） ────────────────────────────────
-        print(f"⬇️  开始下载（1080p）...", file=output_stream)
+        print(f"⬇️  开始下载（1080p）...", file=output_stream, flush=True)
         download_opts = {
             "format": (
                 "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]"
@@ -601,7 +612,7 @@ class VideoDownloader:
         
         # BBDown 默认输出文件名格式
         # 这里简化处理，假设输出为 视频标题.mp4
-        temp_dir = self.download_dir / "temp"
+        temp_dir = self.download_dir / "temp_bbdown"
         temp_dir.mkdir(exist_ok=True)
         
         # 执行 BBDown（限制1080p）
@@ -612,6 +623,9 @@ class VideoDownloader:
             "-q", "1080P 高码率",  # 限制画质为1080P
             "--download-danmaku", "false"  # 不下载弹幕
         ]
+        
+        # 使用 Popen 获取输出并在需要时提取进度信息
+        print("🚀 启动 BBDown 下载...", flush=True)
         subprocess.run(cmd, check=True)
         
         # 查找下载的文件（BBDown会自动命名）
@@ -627,7 +641,7 @@ class VideoDownloader:
         
         src_file.rename(output_path)
         
-        print(f"✅ BBDown 下载完成: {output_path}")
+        print(f"✅ BBDown 下载完成: {output_path}", flush=True)
         
         return LocalFileInfo(
             file_path=output_path,

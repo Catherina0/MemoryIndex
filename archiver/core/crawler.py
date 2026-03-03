@@ -210,6 +210,7 @@ class UniversalArchiver:
         run_config = CrawlerRunConfig(
             wait_until="networkidle",
             page_timeout=30000,
+            screenshot=True,  # 截取页面截图（base64）
         )
         
         # 执行爬取
@@ -256,7 +257,21 @@ class UniversalArchiver:
             folder_name = self._generate_folder_name(page_title, platform_adapter.name)
             folder_path = self.output_dir / folder_name
             folder_path.mkdir(parents=True, exist_ok=True)
-            
+
+            # 全页截图（Crawl4AI 返回 base64）
+            screenshot_path = folder_path / "screenshot.png"
+            try:
+                if result.screenshot:
+                    import base64
+                    logger.info("📸 正在保存页面截图...")
+                    with open(screenshot_path, "wb") as _f:
+                        _f.write(base64.b64decode(result.screenshot))
+                    logger.info(f"✅ 截图已保存: {screenshot_path.name}")
+                else:
+                    logger.warning("⚠️  未获取到截图数据")
+            except Exception as _e:
+                logger.warning(f"⚠️  截图保存失败（可忽略）: {_e}")
+
             # 下载图片
             logger.info("开始下载图片...")
             image_downloader = ImageDownloader(
@@ -330,6 +345,10 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 详见 [archive_raw.md](archive_raw.md)（网页内容+图片）
 
+## 🖼️ 页面截图
+
+详见 [screenshot.png](screenshot.png)（页面截图）
+
 ---
 
 > 💡 **提示**: 使用 `report.md` 查看 LLM 处理后的结构化内容
@@ -400,7 +419,8 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 "title": page_title,
                 "content_length": len(markdown_content),
                 "images_downloaded": len(url_mapping) if image_urls else 0,
-                "images_total": len(image_urls) if image_urls else 0
+                "images_total": len(image_urls) if image_urls else 0,
+                "screenshot_path": str(screenshot_path) if screenshot_path.exists() else None
             }
     
     def _generate_filename(self, url: str, platform: str) -> str:

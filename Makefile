@@ -94,8 +94,14 @@ help:
 	@echo "  make download-ocr URL=链接           下载后立即处理（完整模式）"
 	@echo ""
 	@echo "🌐 网页归档："
+	@echo "  make login                          浏览器登录（保存登录态，一次搞定所有平台）"
+	@echo "  make list-cookies                   列出当前保存的所有 Cookie 统计"
+	@echo "  make delete-cookie DOMAIN=...       删除指定域名的 Cookie（如 xiaohongshu.com）"
+	@echo "  make clear-cookies                  清除浏览器所有 Cookie"
+
 	@echo "  make archive URL=网址                保存网页为 Markdown"
 	@echo "  make archive-run URL=网址            归档 + 生成AI报告"
+	@echo "  make archive-ocr URL=网址            归档 + OCR + AI报告"
 	@echo "  make archive-batch FILE=urls.txt     批量归档"
 	@echo "  make url-clean URL=链接              URL 反追踪 & 短链接还原"
 	@echo ""
@@ -147,9 +153,7 @@ help:
 	@echo "  make db-search Q=\"关键词\"       → search"
 	@echo "  make report   id=<N>            → db-show <N> report"
 	@echo "  make transcript id=<N>          → db-show <N> transcript"
-	@echo "  make ocr      id=<N>            → db-show <N> ocr"
-
-# 初始化环境（手动运行）
+        @echo "  make show-ocr id=<N>            → db-show <N> ocr"
 setup: ensure-venv
 	@echo "🔧 重新初始化环境..."
 	@echo "  → 更新 pip..."
@@ -240,13 +244,6 @@ selftest: ensure-venv
 	@$(PYTHON) scripts/selftest.py
 
 # Cookie 统一管理
-export-cookies: ensure-venv
-	@echo "📥 导出 Cookie 到统一位置..."
-	@$(PYTHON) scripts/export_cookies.py
-
-list-cookies: ensure-venv
-	@echo "📋 已配置的 Cookie:"
-	@$(PYTHON) -c "from pathlib import Path; import json; [print(f'  ✅ {f.stem.replace(\"_cookie\", \"\")}: {len(json.load(open(f)).get(\"cookie\", \"\"))} 字符') for f in sorted(Path('archiver/config').glob('*cookie*.json')) if Path(f).exists() and json.load(open(f)).get('cookie')]" 2>/dev/null || echo "  ℹ️  未找到已配置的 Cookie"
 
 cleanup-project:
 	@echo "🧹 清理项目临时文件..."
@@ -773,7 +770,7 @@ transcript: ensure-venv
 	fi
 	@$(PYTHON) cli/search_cli.py show $(ID) transcript $(FLAGS)
 
-ocr: ensure-venv
+show-ocr: ensure-venv
 	@if [ -z "$(ID)" ]; then \
 		echo "❌ 错误：请先指定视频ID"; \
 		echo "用法：make db-show id=<N> ocr"; \
@@ -955,6 +952,24 @@ config-drission-cookie: ensure-venv
 	@$(PYTHON) scripts/configure_drission_cookie.py
 
 # 重置浏览器数据（清空登录态）
+# Cookie 管理工具
+list-cookies: ensure-venv
+	@echo "📋 获取所有保存的 Cookie..."
+	@$(PYTHON) scripts/cookie_manager.py --list
+
+delete-cookie: ensure-venv
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "❌ 错误: 请提供 DOMAIN 参数。示例: make delete-cookie DOMAIN=xiaohongshu.com"; \
+		exit 1; \
+	fi
+	@echo "🗑️ 正在删除涉及 $$(DOMAIN) 的 Cookie..."
+	@$(PYTHON) scripts/cookie_manager.py --delete "$(DOMAIN)"
+
+clear-cookies: ensure-venv
+	@echo "🧹 清除所有 Cookie 数据 (不删除插件等其他浏览器数据)..."
+	@$(PYTHON) scripts/cookie_manager.py --clear-all
+
+
 reset-browser:
 	@echo "🔄 重置浏览器数据..."
 	@$(PYTHON) scripts/reset_browser.py

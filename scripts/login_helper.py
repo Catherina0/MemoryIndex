@@ -31,7 +31,11 @@ def login_helper(browser_data_dir: str = "./browser_data"):
     co.headless(False)  # 必须显示窗口
     
     # 明确指定浏览器路径（macOS）
-    co.set_paths(browser_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+    project_chromium = Path(__file__).parent.parent / "chromium/chrome-mac/Chromium.app/Contents/MacOS/Chromium"
+    if project_chromium.exists():
+        co.set_paths(browser_path=str(project_chromium))
+    else:
+        co.set_paths(browser_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
     
     # 反爬虫配置
     co.set_argument('--no-sandbox')
@@ -157,8 +161,14 @@ def login_helper(browser_data_dir: str = "./browser_data"):
                 platform_name = "小红书"
                 print(f"   正在检查 {platform_name} 登录状态...")
                 # 小红书主要检查 Cookie
-                cookies = page.cookies(as_dict=True)
-                if not any(k for k in cookies if "session" in k):
+                raw_cookies = page.cookies()
+                has_session = False
+                if isinstance(raw_cookies, dict):
+                    has_session = any("session" in k for k in raw_cookies)
+                elif isinstance(raw_cookies, list):
+                    has_session = any(isinstance(c, dict) and "session" in c.get("name", "") for c in raw_cookies)
+                
+                if not has_session:
                     print("   ⚠️  Warning: 未检测到 session 相关 Cookie")
                 # 刷新页面确保没弹窗
                 page.refresh()

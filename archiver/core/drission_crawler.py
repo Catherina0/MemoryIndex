@@ -358,7 +358,53 @@ class DrissionArchiver:
             page_title = self.current_tab.title
             if not page_title:
                 page_title = "Untitled"
-            
+
+            # 🔒 检测登录墙 / 安全拦截页
+            _current_url = self.current_tab.url or url
+            _blocked_titles = ["安全限制", "验证", "登录", "sign in", "login", "access denied", "forbidden"]
+            _blocked_url_keywords = ["login", "signin", "passport", "account/login", "captcha", "security"]
+            _is_blocked = (
+                any(kw in page_title.lower() for kw in _blocked_titles)
+                or any(kw in _current_url.lower() for kw in _blocked_url_keywords)
+            )
+            if _is_blocked:
+                # 直接映射到 Makefile 中已有的 cookie 配置目标
+                _PLATFORM_COOKIE_CMD = {
+                    "xiaohongshu": "make config-xhs-cookie",
+                    "xhs":         "make config-xhs-cookie",
+                    "zhihu":       "make config-zhihu-cookie",
+                }
+                _platform_hint = platform_adapter.name if platform_adapter else "xiaohongshu"
+                _cookie_cmd = _PLATFORM_COOKIE_CMD.get(_platform_hint, "make config-xhs-cookie")
+                logger.error(
+                    f"🔒 页面被拦截（标题: 「{page_title}」，当前URL: {_current_url}）\n"
+                    f"   原因: 未登录或 Cookie 已过期\n"
+                    f"   ━━━━ 解决方法 ━━━━\n"
+                    f"   1️⃣  浏览器登录（推荐，一次搞定所有平台）：\n"
+                    f"         make login\n"
+                    f"   2️⃣  平台专用 Cookie 配置：\n"
+                    f"         {_cookie_cmd}\n"
+                    f"   3️⃣  调试模式（可见浏览器，手动操作）：\n"
+                    f"         make archive-visible URL=\"{url}\"\n"
+                    f"   ━━━━━━━━━━━━━━━━━━"
+                )
+                return {
+                    "success": False,
+                    "error": (
+                        f"页面被拦截（{page_title}）：Cookie 未配置或已过期。\n"
+                        f"请运行 `make login` 在浏览器中登录（一次搞定所有平台），\n"
+                        f"或运行 `{_cookie_cmd}` 使用平台专用配置，\n"
+                        f"或运行 `make archive-visible URL=\"{url}\"` 调试模式重试。"
+                    ),
+                    "url": url,
+                    "blocked": True,
+                    "fix_commands": [
+                        "make login",
+                        _cookie_cmd,
+                        f'make archive-visible URL="{url}"',
+                    ],
+                }
+
             # 🆕 提前提取图片URL（从完整页面）
             full_page_html = self.current_tab.html
             logger.info("从完整页面提取图片URL...")
@@ -459,7 +505,25 @@ class DrissionArchiver:
             url_mapping = {}
             if image_urls:
                 logger.info(f"发现 {len(image_urls)} 张图片")
-                url_mapping = image_downloader.download_all(image_urls, referer=url)
+                
+                # 获取当前站点的 Cookies 用于下载需要权限的图片
+                page_cookies = {}
+                try:
+                    raw_cookies = self.current_tab.cookies()
+                    if isinstance(raw_cookies, dict):
+                        page_cookies = raw_cookies
+                    elif isinstance(raw_cookies, list):
+                        for c in raw_cookies:
+                            if isinstance(c, dict):
+                                page_cookies[c.get('name', '')] = c.get('value', '')
+                except Exception as e:
+                    logger.debug(f"提取 Cookies 失败: {e}")
+                
+                url_mapping = image_downloader.download_all(
+                    image_urls, 
+                    referer=url,
+                    cookies=page_cookies if page_cookies else None
+                )
                 
                 # 更新markdown中的图片链接
                 if url_mapping:
@@ -771,16 +835,14 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                             
                             # 移除"关注"按钮 - 通过文字内容匹配
                             try:
-                                all_elements = element.eles('tag:div') + element.eles('tag:button')
-                                follow_count = 0
-                                for elem in all_elements:
-                                    if elem.text and elem.text.strip() == '关注':
-                                        self.current_tab.run_js("arguments[0].remove()", elem)
-                                        follow_count += 1
-                                if follow_count > 0:
-                                    logger.info(f"  - 已移除 {follow_count} 个关注按钮")
-                            except Exception:
-                                pass
+                                # 使用更高效的选择器，避免遍历所有div和button
+                                follow_btns = element.eles('text:关注')
+                                if follow_btns:
+                                    logger.info(f"  - 已移除 {len(follow_btns)} 个关注按钮")
+                                    for btn in follow_btns:
+                                        self.current_tab.run_js("arguments[0].remove()", btn)
+                            except Exception as e:
+                                logger.debug(f"移除关注按钮失败: {e}")
                     
                     # 重新获取 HTML (移除元素后)
                     html = element.html
