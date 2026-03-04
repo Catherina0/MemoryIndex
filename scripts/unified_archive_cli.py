@@ -55,6 +55,8 @@ def main():
                         help='归档模式：default=只保留正文, full=完整内容（含评论等）')
     parser.add_argument('--generate-report', action='store_true',
                         help='生成 LLM 结构化报告（report.md）')
+    parser.add_argument('--screenshot-ocr', action='store_true',
+                        help='对全页截图进行 OCR 识别')
     parser.add_argument('--visible', action='store_true',
                         help='显示浏览器界面（默认为无头模式后台运行）')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -105,7 +107,12 @@ def main():
             headless=headless,
             verbose=args.verbose or True
         ) as archiver:
-            result = archiver.archive(url, mode=mode, generate_report=args.generate_report)
+            result = archiver.archive(
+                url, 
+                mode=mode, 
+                generate_report=args.generate_report,
+                screenshot_ocr=args.screenshot_ocr
+            )
             
             if result['success']:
                 print(f"\n✓ 归档成功: {result['output_path']}")
@@ -123,7 +130,12 @@ def main():
         
         async def archive_with_crawl4ai():
             archiver = UniversalArchiver(output_dir='archived', verbose=True)
-            result = await archiver.archive(url, mode=mode, generate_report=args.generate_report)
+            result = await archiver.archive(
+                url, 
+                mode=mode, 
+                generate_report=args.generate_report,
+                screenshot_ocr=args.screenshot_ocr
+            )
             
             if result['success']:
                 print(f"\n✓ 归档成功: {result['output_path']}")

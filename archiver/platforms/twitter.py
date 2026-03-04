@@ -14,8 +14,10 @@ class TwitterAdapter(PlatformAdapter):
             name="twitter",
             # 推特的主要内容选择器
             # article[data-testid="tweet"] 是单条推文
-            # [data-testid="tweetText"] 是推文文本
-            content_selector="article[data-testid='tweet']",
+            # [data-testid="twitterArticleReadView"] 是长文章
+            # [data-testid="tweetDetail"] 是对话详情页的主推文
+            # [data-testid="twitterArticleRichTextView"] 是 Draft.js 生成的长文章容器
+            content_selector="[data-testid='tweet'], [data-testid='twitterArticleReadView'], [data-testid='tweetDetail'], [data-testid='twitterArticleRichTextView']",
             exclude_selector=(
                 "[data-testid='sidebarColumn'], "
                 "[aria-label*='Timeline'], "
@@ -28,7 +30,7 @@ class TwitterAdapter(PlatformAdapter):
                 # 排除操作栏（回复、转推、点赞等）
                 "[role='group']"
             ),
-            wait_for_selector="[data-testid='tweetText']",
+            wait_for_selector="[data-testid='tweet'], [data-testid='twitterArticleReadView']",
             requires_login=True,  # 推特通常需要登录才能查看完整内容
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )

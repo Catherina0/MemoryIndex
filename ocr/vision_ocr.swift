@@ -78,6 +78,49 @@ struct OCRConfig {
     }
 }
 
+// MARK: - 文本排序逻辑
+struct TextBlock {
+    let text: String
+    let bbox: CGRect // Normalized 0..1, origin bottom-left
+}
+
+func sortTextBlocks(_ blocks: [TextBlock]) -> [String] {
+    // 简单的行聚类算法
+    // 1. 按 Y 轴降序排列 (从上到下)
+    let sortedByY = blocks.sorted { $0.bbox.origin.y > $1.bbox.origin.y }
+    
+    var rows: [[TextBlock]] = []
+    
+    for block in sortedByY {
+        var added = false
+        // 尝试加入现有行
+        // 若当前 block 的 Y 与某行的中心 Y 接近，则归入该行
+        // 阈值 0.015 约为 1.5% 屏幕高度，适合一般文本行距
+        if let lastRow = rows.last {
+            let lastY = lastRow[0].bbox.origin.y // 使用行首元素作为基准
+            if abs(block.bbox.origin.y - lastY) < 0.015 {
+                rows[rows.count - 1].append(block)
+                added = true
+            }
+        }
+        
+        if !added {
+             rows.append([block])
+        }
+    }
+    
+    // 2. 行内排序 (按 X 轴升序: 从左到右)
+    var result: [String] = []
+    for row in rows {
+        let sortedRow = row.sorted { $0.bbox.origin.x < $1.bbox.origin.x }
+        for block in sortedRow {
+            result.append(block.text)
+        }
+    }
+    
+    return result
+}
+
 // MARK: - OCR 核心逻辑
 func recognizeText(from imageURL: URL, config: OCRConfig) -> [String] {
     guard
@@ -88,13 +131,10 @@ func recognizeText(from imageURL: URL, config: OCRConfig) -> [String] {
         return []
     }
     
-    var recognizedTexts: [String] = []
-    let semaphore = DispatchSemaphore(value: 0)
+    var recognizedBlocks: [TextBlock] = []
     
     // 1. 创建 OCR 请求
     let request = VNRecognizeTextRequest { request, error in
-        defer { semaphore.signal() }
-        
         if let error = error {
             fputs("错误：识别失败 - \(error.localizedDescription)\n", stderr)
             return
@@ -104,10 +144,10 @@ func recognizeText(from imageURL: URL, config: OCRConfig) -> [String] {
             return
         }
         
-        // 2. 提取文本（按位置从上到下排序）
-        for observation in results.sorted(by: { $0.boundingBox.origin.y > $1.boundingBox.origin.y }) {
+        // 2. 提取文本块
+        for observation in results {
             if let candidate = observation.topCandidates(1).first {
-                recognizedTexts.append(candidate.string)
+                recognizedBlocks.append(TextBlock(text: candidate.string, bbox: observation.boundingBox))
             }
         }
     }
@@ -122,43 +162,46 @@ func recognizeText(from imageURL: URL, config: OCRConfig) -> [String] {
         request.automaticallyDetectsLanguage = true
     }
     
-    // 4. 执行请求
+    // 4. 执行请求 (同步)
     let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
     
     do {
+        // VNImageRequestHandler.perform 是同步阻塞的，无需信号量
         try handler.perform([request])
-        semaphore.wait()  // 等待异步完成
     } catch {
         fputs("错误：执行 OCR 失败 - \(error.localizedDescription)\n", stderr)
         return []
     }
     
-    return recognizedTexts
+    // 5. 智能排序
+    return sortTextBlocks(recognizedBlocks)
 }
 
 // MARK: - Main Entry
 func main() {
-    let args = CommandLine.arguments
+    autoreleasepool {
+        let args = CommandLine.arguments
+        
+        guard let config = OCRConfig.parse(args: args) else {
+            exit(1)
+        }
+        
+        let imageURL = URL(fileURLWithPath: config.imagePath)
+        
+        guard FileManager.default.fileExists(atPath: config.imagePath) else {
+            fputs("错误：文件不存在 - \(config.imagePath)\n", stderr)
+            exit(1)
+        }
+        
+        let texts = recognizeText(from: imageURL, config: config)
+        
+        // 输出结果（每行一个识别文本）
+        for text in texts {
+            print(text)
+        }
     
-    guard let config = OCRConfig.parse(args: args) else {
-        exit(1)
+        exit(texts.isEmpty ? 1 : 0)
     }
-    
-    let imageURL = URL(fileURLWithPath: config.imagePath)
-    
-    guard FileManager.default.fileExists(atPath: config.imagePath) else {
-        fputs("错误：文件不存在 - \(config.imagePath)\n", stderr)
-        exit(1)
-    }
-    
-    let texts = recognizeText(from: imageURL, config: config)
-    
-    // 输出结果（每行一个识别文本）
-    for text in texts {
-        print(text)
-    }
-    
-    exit(texts.isEmpty ? 1 : 0)
 }
 
 main()

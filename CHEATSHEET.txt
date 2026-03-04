@@ -34,6 +34,7 @@
 ───────────────────────────────────────────────────────────────
 • 🆕 DrissionPage 归档器 - 真实浏览器、完整JS、自动登录态
 • 🆕 图片自动下载 - HTTP + base64 → 本地JPG，自动更新引用
+• 📸 全页截图 OCR - 自动识别长截图，拯救因反爬而缺失的正文
 • 🌐 双引擎归档 - Crawl4AI（快）+ DrissionPage（强）
 • 🔐 一次登录长期使用 - 浏览器数据自动保存，支持多平台
 • 🔗 支持多平台 - 知乎、小红书、B站、Reddit、推特等
@@ -531,6 +532,11 @@ Groq API Docs: https://console.groq.com/docs
 │ make archive-ocr URL="https://www.zhihu.com/answer/xxx" │
 │ 流程：归档 → OCR识别图片 → AI分析 → 💾 入库               │
 │ 特点：适合图片较多的网页（知乎、小红书等）                 │
+│                                                            │
+│ # 🆕 强制全页截图 OCR (当正文无法提取时)                  │
+│ make archive-run URL="..." SCREENSHOT_OCR=true           │
+│ make archive-ocr URL="..." SCREENSHOT_OCR=true           │
+│ 特点：对整个长截图进行OCR，挽救反爬或动态加载失败的内容    │
 │                                                            │
 │ # 调试模式（显示浏览器）                                   │
 │ make archive-run-visible URL="链接"                      │

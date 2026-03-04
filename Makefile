@@ -21,6 +21,8 @@ ID ?= $(id)
 export ID
 URL ?= $(url)
 export URL
+SCREENSHOT_OCR ?= $(screenshot_ocr)
+export SCREENSHOT_OCR
 VIDEO ?= $(video)
 export VIDEO
 Q ?= $(q)
@@ -845,21 +847,21 @@ db-search: search       # make db-search q=<关键词>（search 是主目标）
 archive: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误: 请提供URL参数"; \
-		echo "用法: make archive URL=网址 [MODE=full]"; \
+		echo "用法: make archive URL=网址 [MODE=full] [SCREENSHOT_OCR=true]"; \
 		echo "💡 支持分享文本格式（自动提取URL）"; \
 		exit 1; \
 	fi
-	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default)
+	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default) $(if $(SCREENSHOT_OCR),--screenshot-ocr)
 
 # 归档单个URL（显示浏览器界面，供调试使用）
 archive-visible: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误: 请提供URL参数"; \
-		echo "用法: make archive-visible URL=网址 [MODE=full]"; \
+		echo "用法: make archive-visible URL=网址 [MODE=full] [SCREENSHOT_OCR=true]"; \
 		echo "💡 此命令会显示浏览器界面，供调试使用"; \
 		exit 1; \
 	fi
-	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default) --visible
+	@PYTHONPATH=. $(PYTHON) scripts/unified_archive_cli.py "$(URL)" --mode=$(or $(MODE),default) --visible $(if $(SCREENSHOT_OCR),--screenshot-ocr)
 
 # 批量归档（从文件读取URL列表）
 archive-batch: ensure-venv
@@ -1014,7 +1016,7 @@ archive-run: ensure-venv
 	@echo "📝 流程: 归档 → AI报告 → LLM重命名 → 数据库存储"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)"
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" $(if $(SCREENSHOT_OCR),--screenshot-ocr)
 
 # 归档网页并进行OCR识别（类似 download-ocr）
 # 生成 report.md，使用 LLM 重命名
@@ -1036,7 +1038,7 @@ archive-ocr: ensure-venv
 	@echo "🔍 流程: 归档 → OCR识别 → AI报告 → LLM重命名 → 数据库存储"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --with-ocr
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --with-ocr $(if $(SCREENSHOT_OCR),--screenshot-ocr)
 
 # 归档网页（显示浏览器，供调试）
 archive-run-visible: ensure-venv
@@ -1052,7 +1054,7 @@ archive-run-visible: ensure-venv
 	@echo "👁️  浏览器窗口将可见"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --visible
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/archive_processor.py "$(URL)" --visible $(if $(SCREENSHOT_OCR),--screenshot-ocr)
 
 # ============================================
 # Telegram Bot 集成

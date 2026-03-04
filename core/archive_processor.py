@@ -983,6 +983,7 @@ async def archive_and_save(
     url: str,
     output_dir: str = "output",
     with_ocr: bool = False,
+    screenshot_ocr: bool = False,
     headless: bool = True
 ) -> int:
     """
@@ -1019,7 +1020,8 @@ async def archive_and_save(
     archive_result = await archiver.archive(
         url, 
         generate_report=True,
-        with_ocr=with_ocr  # 传入OCR参数
+        with_ocr=with_ocr,
+        screenshot_ocr=screenshot_ocr
     )
     
     if not archive_result.get('success'):
@@ -1093,6 +1095,7 @@ def main():
     parser.add_argument('url', help='网页URL')
     parser.add_argument('--output-dir', default='output', help='输出目录')
     parser.add_argument('--with-ocr', action='store_true', help='启用OCR识别')
+    parser.add_argument('--screenshot-ocr', action='store_true', help='仅启用全页截图OCR')
     parser.add_argument('--visible', action='store_true', help='显示浏览器（调试）')
     
     args = parser.parse_args()
@@ -1112,6 +1115,7 @@ def main():
         url=actual_url,
         output_dir=args.output_dir,
         with_ocr=args.with_ocr,
+        screenshot_ocr=args.screenshot_ocr,
         headless=not args.visible
     ))
     

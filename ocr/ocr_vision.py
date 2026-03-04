@@ -25,6 +25,8 @@ except ImportError:
 
 # Swift 脚本路径
 VISION_OCR_SCRIPT = Path(__file__).parent / "vision_ocr.swift"
+# 编译后的二进制文件路径
+VISION_OCR_BIN = Path(__file__).parent / "vision_ocr_bin"
 # 画布裁剪最大尺寸（超过此尺寸将进行裁剪识别）
 MAX_CANVAS_SIZE = 3000
 
@@ -59,6 +61,9 @@ class VisionOCR:
         # 检查 Swift 脚本
         if not VISION_OCR_SCRIPT.exists():
             raise FileNotFoundError(f"未找到 Swift OCR 脚本: {VISION_OCR_SCRIPT}")
+            
+        # 尝试编译 Swift 脚本以提升性能
+        self._compile_swift_script()
         
         # 语言映射：PaddleOCR 风格 -> Vision Framework 风格
         lang_map = {
@@ -75,6 +80,32 @@ class VisionOCR:
         self.recognition_level = recognition_level
         self.use_language_correction = use_language_correction
     
+    def _compile_swift_script(self):
+        """若需要，编译 Swift 脚本以提升性能"""
+        try:
+            # 检查是否需要重新编译：如果二进制不存在，或者源码比二进制新
+            should_compile = False
+            if not VISION_OCR_BIN.exists():
+                should_compile = True
+            elif VISION_OCR_SCRIPT.stat().st_mtime > VISION_OCR_BIN.stat().st_mtime:
+                should_compile = True
+                
+            if should_compile:
+                print(f"ℹ️  Vision OCR: Compiling Swift script for performance...")
+                # swiftc -o vision_ocr_bin vision_ocr.swift
+                subprocess.run(
+                    ["swiftc", str(VISION_OCR_SCRIPT), "-o", str(VISION_OCR_BIN)],
+                    check=True,
+                    capture_output=True
+                )
+        except Exception as e:
+            print(f"⚠️  Vision OCR Compilation Failed: {e}. Fallback to interpreter mode.")
+            if VISION_OCR_BIN.exists():
+                try:
+                    VISION_OCR_BIN.unlink()
+                except:
+                    pass
+
     def _ocr_tiled(self, img, width: int, height: int, **kwargs) -> List:
         """
         切分并识别大图
@@ -100,43 +131,47 @@ class VisionOCR:
         total_chunks = v_steps * h_steps
         current_chunk = 0
         
-        for i in range(v_steps):
-            for j in range(h_steps):
-                current_chunk += 1
-                left = j * MAX_CANVAS_SIZE
-                upper = i * MAX_CANVAS_SIZE
-                right = min((j + 1) * MAX_CANVAS_SIZE, width)
-                lower = min((i + 1) * MAX_CANVAS_SIZE, height)
-                
-                print(f"    Processing chunk {current_chunk}/{total_chunks}: ({left}, {upper}) -> ({right}, {lower})")
-                
-                # Crop region
-                region = img.crop((left, upper, right, lower))
-                
-                # Save to temp
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-                    tmp_path = tmp_file.name
-                    # Try to save as PNG
-                    region.save(tmp_path, format="PNG")
-                
-                try:
-                    # Recursive call
-                    # Ensure minimal overhead for recursive calls
-                    chunk_res = self.ocr(tmp_path, **kwargs)
+        # 使用 TemporaryDirectory 确保即使崩溃也能清理临时文件（虽然 hard kill 可能不行，但比单个文件好管理）
+        with tempfile.TemporaryDirectory(prefix="ocr_vision_tiled_") as temp_dir:
+            for i in range(v_steps):
+                for j in range(h_steps):
+                    current_chunk += 1
+                    left = j * MAX_CANVAS_SIZE
+                    upper = i * MAX_CANVAS_SIZE
+                    right = min((j + 1) * MAX_CANVAS_SIZE, width)
+                    lower = min((i + 1) * MAX_CANVAS_SIZE, height)
                     
-                    if chunk_res and chunk_res[0]:
-                        chunk_texts = chunk_res[0].get("rec_texts", [])
-                        chunk_scores = chunk_res[0].get("rec_scores", [])
+                    print(f"    Processing chunk {current_chunk}/{total_chunks}: ({left}, {upper}) -> ({right}, {lower})")
+                    
+                    # Crop region
+                    region = img.crop((left, upper, right, lower))
+                    
+                    # Save to temp file inside the temp directory
+                    tmp_filename = f"chunk_{i}_{j}.png"
+                    tmp_path = os.path.join(temp_dir, tmp_filename)
+                    
+                    try:
+                        region.save(tmp_path, format="PNG")
                         
-                        rec_texts.extend(chunk_texts)
-                        rec_scores.extend(chunk_scores)
+                        # Recursive call (minimal overhead)
+                        chunk_res = self.ocr(tmp_path, **kwargs)
                         
-                except Exception as e:
-                    print(f"⚠️  Vision OCR Chunk Error: {e}")
-                
-                finally:
+                        if chunk_res and chunk_res[0]:
+                            chunk_texts = chunk_res[0].get("rec_texts", [])
+                            chunk_scores = chunk_res[0].get("rec_scores", [])
+                            
+                            rec_texts.extend(chunk_texts)
+                            rec_scores.extend(chunk_scores)
+                            
+                    except Exception as e:
+                        print(f"⚠️  Vision OCR Chunk Error: {e}")
+                    
+                    # (可选)处理完一个切片后立即删除文件以释放空间，虽然 temp_dir 最终会清理
                     if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+                        try:
+                            os.unlink(tmp_path)
+                        except:
+                            pass
                         
         if rec_texts:
             return [{
@@ -191,20 +226,25 @@ class VisionOCR:
                     # print(f"⚠️  Vision OCR Warning: PIL Check Failed: {e}")
                     pass
         
-        # 构建命令
-        cmd = [
-            "swift",
-            str(VISION_OCR_SCRIPT),
+        # 构建命令：优先使用编译后的二进制以提升性能
+        cmd = []
+        if VISION_OCR_BIN.exists() and os.access(VISION_OCR_BIN, os.X_OK):
+            cmd = [str(VISION_OCR_BIN)]
+        else:
+            # Fallback to interpreter
+            cmd = ["swift", str(VISION_OCR_SCRIPT)]
+            
+        cmd.extend([
             str(image_path),
             "--lang", ",".join(self.languages),
             "--level", self.recognition_level
-        ]
+        ])
         
         if not self.use_language_correction:
             cmd.append("--no-correction")
         
         try:
-            # 执行 Swift 脚本
+            # 执行 Swift 脚本，捕获标准输出作为识别结果
             result = subprocess.run(
                 cmd,
                 capture_output=True,
