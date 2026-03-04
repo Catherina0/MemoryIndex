@@ -175,46 +175,84 @@ class VideoDownloader:
             return None
     
     def _capture_screenshot(self, url: str, output_path: Path):
-        """使用 DrissionPage 截取网页截图"""
+        """
+        使用 DrissionArchiver 截取网页截图 (支持 Cookie 和反爬策略)
+        """
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        
         try:
-            # 尝试导入 DrissionPage
-            from DrissionPage import Chromium, ChromiumOptions
+            # 尝试导入 archiver 模块
+            # 如果在 process_video.py 环境中运行，路径通常已正确设置
+            # 如果单独运行，可能需要添加路径
+            PROJECT_ROOT = Path(__file__).parent.parent
+            if str(PROJECT_ROOT) not in sys.path:
+                sys.path.insert(0, str(PROJECT_ROOT))
             
-            output_stream = sys.stderr if self.json_mode else sys.stdout
-            print(f"📸 正在截取网页截图...", file=output_stream, flush=True)
+            from archiver.core.drission_crawler import DrissionArchiver
+            
+            print(f"📸 正在调用浏览器截取网页...", file=output_stream, flush=True)
+            
+            # 初始化 Archiver (复用 browser_data 目录)
+            browser_data_dir = PROJECT_ROOT / "browser_data"
+            archiver = DrissionArchiver(
+                output_dir=str(output_path.parent),
+                browser_data_dir=str(browser_data_dir),
+                headless=True,
+                verbose=False
+            )
+            
+            # 调用截图方法
+            archiver.capture_screenshot(url, output_path)
+            
+            if output_path.exists():
+                print(f"✅ 网页截图已保存: {output_path.name}", file=output_stream, flush=True)
+            
+        except ImportError:
+            print(f"⚠️  未找到 archiver 模块，尝试使用基础 DrissionPage 截图...", file=output_stream, flush=True)
+            self._capture_screenshot_basic(url, output_path)
+            
+        except Exception as e:
+            print(f"⚠️  截图过程出错 (不影响视频下载): {e}", file=output_stream, flush=True)
+
+    def _capture_screenshot_basic(self, url: str, output_path: Path):
+        """基础版截图 (不带 Cookie 和复杂策略)"""
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        
+        try:
+            from DrissionPage import Chromium, ChromiumOptions
             
             co = ChromiumOptions()
             co.set_headless(True)
-            co.set_argument('--no-sandbox')  # 避免权限问题
+            co.set_argument('--no-sandbox')
             co.set_argument('--disable-gpu')
-            
-            # 不会自动下载浏览器，假设环境已准备好 (archiver 已预装)
             
             browser = Chromium(co)
             tab = browser.new_tab(url)
             
-            # 等待页面加载完成 (最多30秒)
+            # 等待页面加载
             tab.wait.load_complete(timeout=30)
+            target_platform = self._detect_platform(url)
             
-            # 对于某些网站可能需要额外等待动态内容
+            # 简单滚动
+            tab.scroll.to_bottom()
             import time
             time.sleep(2)
+            tab.scroll.to_top()
+            time.sleep(1)
             
-            # 截图 (全页)
+            # 截图
             tab.get_screenshot(path=str(output_path), full_page=True)
             
             tab.close()
             browser.quit()
             
             if output_path.exists():
-                print(f"✅ 截图已保存: {output_path.name}", file=output_stream, flush=True)
+                print(f"✅ (基础) 截图已保存: {output_path.name}", file=output_stream, flush=True)
             
         except ImportError:
-            # 忽略 DrissionPage 未安装的情况
             pass
         except Exception as e:
-            output_stream = sys.stderr if self.json_mode else sys.stdout
-            print(f"⚠️  截图失败: {e}", file=output_stream, flush=True)
+            print(f"⚠️  基础截图失败: {e}", file=output_stream, flush=True)
 
     def download_video(self, url: str, force_redownload: bool = False) -> LocalFileInfo:
         """
@@ -245,10 +283,10 @@ class VideoDownloader:
         if not force_redownload:
             existing = self.check_already_downloaded(url)
             if existing:
-                print(f"✅ 视频已在数据库中 (ID: {existing['video_id']})", flush=True)
-                print(f"   标题: {existing['title']}", flush=True)
-                print(f"   文件: {existing['file_path']}", flush=True)
-                print(f"💡 如需重新下载，请使用 force_redownload=True", flush=True)
+                print(f"✅ 视频已在数据库中 (ID: {existing['video_id']})", file=output_stream, flush=True)
+                print(f"   标题: {existing['title']}", file=output_stream, flush=True)
+                print(f"   文件: {existing['file_path']}", file=output_stream, flush=True)
+                print(f"💡 如需重新下载，请使用 force_redownload=True", file=output_stream, flush=True)
                 
                 # 检查文件是否仍然存在
                 if existing['file_path'] and Path(existing['file_path']).exists():
@@ -272,24 +310,24 @@ class VideoDownloader:
                 # 1. 首选方案：yt-dlp（支持大多数平台）
                 result = self._download_with_ytdlp(url, platform, force_redownload)
             except Exception as e:
-                print(f"⚠️  yt-dlp 下载失败: {e}", flush=True)
+                print(f"⚠️  yt-dlp 下载失败: {e}", file=output_stream, flush=True)
                 
                 # 2. B站降级方案：BBDown
                 if platform == "bilibili":
                     try:
-                        print("🔄 尝试使用 BBDown 下载...", flush=True)
+                        print("🔄 尝试使用 BBDown 下载...", file=output_stream, flush=True)
                         result = self._download_with_bbdown(url, force_redownload)
                     except Exception as e2:
-                        print(f"❌ BBDown 下载失败: {e2}", flush=True)
+                        print(f"❌ BBDown 下载失败: {e2}", file=output_stream, flush=True)
                         raise Exception(f"B站视频下载失败（已尝试 yt-dlp 和 BBDown）")
                 
                 # 3. 小红书降级方案：XHS-Downloader
                 elif platform == "xiaohongshu":
                     try:
-                        print("🔄 尝试使用 XHS-Downloader 下载...", flush=True)
+                        print("🔄 尝试使用 XHS-Downloader 下载...", file=output_stream, flush=True)
                         result = self._download_with_xhs(url, force_redownload)
                     except Exception as e2:
-                        print(f"❌ XHS-Downloader 下载失败: {e2}", flush=True)
+                        print(f"❌ XHS-Downloader 下载失败: {e2}", file=output_stream, flush=True)
                         raise Exception(f"小红书视频下载失败（已尝试 yt-dlp 和 XHS-Downloader）")
                 
                 # 其他平台直接抛出异常
@@ -707,8 +745,15 @@ class VideoDownloader:
         ]
         
         # 使用 Popen 获取输出并在需要时提取进度信息
-        print("🚀 启动 BBDown 下载...", flush=True)
-        subprocess.run(cmd, check=True)
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        print("🚀 启动 BBDown 下载...", file=output_stream, flush=True)
+
+        # 确保 JSON 模式下，子进程的 stdout/stderr 也重定向到 stderr (或 None)
+        # 否则会污染主进程的 JSON 输出管道
+        stdout_target = sys.stderr if self.json_mode else None
+        
+        # 注意: 如果需要捕获输出做分析，可以用 subprocess.PIPE，这里简单重定向
+        subprocess.run(cmd, check=True, stdout=stdout_target, stderr=stdout_target)
         
         # 查找下载的文件（BBDown会自动命名）
         downloaded_files = list(temp_dir.glob("*.mp4"))
@@ -723,7 +768,8 @@ class VideoDownloader:
         
         src_file.rename(output_path)
         
-        print(f"✅ BBDown 下载完成: {output_path}", flush=True)
+        output_stream = sys.stderr if self.json_mode else sys.stdout
+        print(f"✅ BBDown 下载完成: {output_path}", file=output_stream, flush=True)
         
         return LocalFileInfo(
             file_path=output_path,
@@ -949,6 +995,10 @@ def main():
     
     args = parser.parse_args()
     
+    # 🩹 补丁：手动检查 --json 参数（防止 argparse 在特定参数顺序下解析失败）
+    if "--json" in sys.argv:
+        args.json = True
+    
     # 从输入中提取URL（支持自动提取）
     url = extract_url_from_text(args.url)
     if not url:
@@ -980,7 +1030,7 @@ def main():
                 "upload_date": file_info.upload_date,
             }
             # 直接输出到 stdout，不带其他信息
-            import sys
+            # (Remove import sys here because it's shadowing global sys and causing UnboundLocalError earlier)
             sys.stdout.write(json.dumps(output, ensure_ascii=False) + "\n")
             sys.stdout.flush()
         else:
@@ -1026,7 +1076,10 @@ def main():
             )
         
     except Exception as e:
-        print(f"\n❌ 下载失败: {e}")
+        if  "--json" in sys.argv:
+            print(f"❌ 下载失败: {e}", file=sys.stderr)
+        else:
+            print(f"\n❌ 下载失败: {e}")
         exit(1)
 
 

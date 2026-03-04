@@ -36,7 +36,8 @@ try:
         OCR_ENGINE = 'vision'
         print("✅ 使用 Apple Vision OCR（系统原生）")
 except ImportError:
-    pass
+    init_vision_ocr = None
+    ocr_folder_vision = None
 
 # 如果 Vision OCR 不可用，尝试导入 PaddleOCR
 if not OCR_ENGINE:
@@ -45,9 +46,20 @@ if not OCR_ENGINE:
         OCR_ENGINE = 'paddle'
         print("✅ 使用 PaddleOCR")
     except ImportError:
+        init_ocr = None
+        ocr_folder_to_text = None
         print("⚠️  警告：未找到可用的 OCR 引擎")
         print("   • macOS: 无需安装，应该自动检测 Vision OCR")
         print("   • 其他平台: 请运行 'make install-paddle-ocr'")
+else:
+    # 即使选择了 Vision OCR，也许可以作为备用加载 PaddleOCR
+    # 但为了简单，如果 vision 选定，我们在此处不强制加载 paddle
+    # 但是为了避免后续 UnboundLocalError，我们在这里尝试导入 paddle (如果不导入，init_ocr 会是 unbound)
+    try:
+        from ocr.ocr_utils import init_ocr, ocr_folder_to_text
+    except ImportError:
+        init_ocr = None
+        ocr_folder_to_text = None
 
 # 导入多进程OCR（用于提升CPU利用率）
 try:
@@ -1043,7 +1055,8 @@ def generate_formatted_report(
     video_path: Path = None,
     model_name: str = None,
     detail_model_name: str = None,
-    asr_model_name: str = None
+    asr_model_name: str = None,
+    video_info: dict = None
 ) -> str:
     """
     生成格式化的报告，包含元信息、AI总结和原始数据
@@ -1060,8 +1073,35 @@ def generate_formatted_report(
     
     # 使用 Markdown 格式
     report = []
+    # 添加 Front Matter (如果存在元数据)
+    if video_info:
+        report.append("---")
+        report.append(f"title: {video_info.get('title', video_name)}")
+        if video_info.get('video_id'):
+            report.append(f"video_id: {video_info.get('video_id')}")
+        if video_info.get('platform'):
+            report.append(f"platform: {video_info.get('platform')}")
+        if video_info.get('upload_date'):
+            report.append(f"date: {video_info.get('upload_date')}")
+        if video_info.get('uploader'):
+            report.append(f"uploader: {video_info.get('uploader')}")
+        if video_info.get('duration'):
+             report.append(f"duration: {video_info.get('duration')}")
+        if video_info.get('url'):
+             report.append(f"url: {video_info.get('url')}")
+        report.append("tags: [Video, AI, Summary]")
+        report.append("---\n")
+
     report.append("# 📹 视频分析报告\n")
-    report.append(f"**📝 视频名称**: {video_name}  ")
+    report.append(f"**📝 视频名称**: {video_info.get('title', video_name) if video_info else video_name}  ")
+    if video_info:
+        if video_info.get('platform'):
+             report.append(f"**📺 平台**: {video_info.get('platform')}  ")
+        if video_info.get('uploader'):
+             report.append(f"**👤 作者**: {video_info.get('uploader')}  ")
+        if video_info.get('url'):
+            report.append(f"**🔗 原始链接**: [{video_info.get('url')}]({video_info.get('url')})  ")
+
     report.append(f"**🕒 处理时间**: {formatted_time}  ")
     report.append(f"**📁 输出目录**: `{session_dir.name}`  ")
     if video_path:
@@ -1419,6 +1459,8 @@ def process_video(
     platform_title: str = None,
     ocr_engine: str = None,  # 新增：'vision' 或 'paddle'，None=自动选择
     smart_ocr: bool = True,  # 新增：是否启用智能抽帧
+    cover_image_path: Path = None, # 新增：封面图片路径
+    video_info: dict = None, # 新增：视频元数据
 ):
     ensure_dir(output_dir)
 
@@ -1447,6 +1489,71 @@ def process_video(
     transcript_text = ""
     current_fps = 1
     
+    # 1.5 尝试识别封面/截图内容 (无论是否开启 frames OCR)
+    cover_ocr_text = ""
+    if cover_image_path and cover_image_path.exists():
+        # 保存封面图片到 session 目录
+        try:
+            import shutil
+            dest_cover_path = session_dir / f"cover{cover_image_path.suffix}"
+            shutil.copy(cover_image_path, dest_cover_path)
+            print(f"   🖼️  封面图片已保存: {dest_cover_path.name}")
+        except Exception as e:
+            print(f"   ⚠️  保存封面图片失败: {e}")
+
+        print(f"\n🖼️  正在识别网页截图/封面文字: {cover_image_path.name} ...")
+        try:
+            import tempfile
+            import shutil
+            
+            # 使用临时文件夹处理单张图片(复用 folder 接口)
+            with tempfile.TemporaryDirectory() as temp_cover_dir:
+                temp_dir_path = Path(temp_cover_dir)
+                # Vision OCR 和 PaddleOCR 文件夹模式通常期望特定的文件名格式或扫描所有图片
+                # 为了兼容性，重命名为 frame_0001.png
+                temp_cover_file = temp_dir_path / "frame_0001.png"
+                shutil.copy(cover_image_path, temp_cover_file)
+                
+                selected_engine = ocr_engine or OCR_ENGINE
+                temp_ocr_text = ""
+                
+                if selected_engine == 'vision':
+                    # Vision OCR (macOS)
+                    if init_vision_ocr:
+                        ocr_instance = init_vision_ocr(lang=ocr_lang)
+                        # Vision OCR helper 需要 output_path 参数
+                        temp_ocr_text = ocr_folder_vision(ocr_instance, temp_dir_path, output_path=None, debug=False)
+                    else:
+                        print("   ⚠️  Vision OCR 模块未加载")
+                        
+                elif selected_engine == 'paddle':
+                    # PaddleOCR
+                    if init_ocr:
+                        ocr_instance = init_ocr(
+                            lang=ocr_lang, use_gpu=use_gpu, 
+                            det_model=ocr_det_model, rec_model=ocr_rec_model
+                        )
+                        temp_ocr_text = ocr_folder_to_text(
+                            ocr_instance, str(temp_dir_path),
+                            min_score=0.3, debug=False, use_preprocessing=True
+                        )
+                    else:
+                        print("   ⚠️  PaddleOCR 模块未加载")
+                
+                if temp_ocr_text.strip():
+                    cover_ocr_text = temp_ocr_text
+                    print(f"   ✅ 网页截图/封面识别成功: {len(cover_ocr_text)} 字符")
+                    
+                    # 保存封面 OCR 结果
+                    cover_ocr_path = session_dir / "cover_ocr.md"
+                    with open(cover_ocr_path, "w", encoding="utf-8") as f:
+                        f.write(f"# 网页截图/封面 OCR 结果\n\n{cover_ocr_text}")
+                else:
+                    print("   ℹ️  网页截图/封面未识别到文字")
+                    
+        except Exception as e:
+            print(f"   ⚠️  网页截图/封面 OCR 过程出错: {e}")
+
     # 2. 如果是OCR模式，先处理视频帧和OCR
     if with_frames:
         print("\n" + "="*60)
@@ -1489,20 +1596,24 @@ def process_video(
         selected_engine = ocr_engine or OCR_ENGINE
         
         if selected_engine == 'vision':
-            print(f"   🍎 使用 Apple Vision OCR (lang={ocr_lang})")
-            try:
-                ocr = init_vision_ocr(
-                    lang=ocr_lang,
-                    recognition_level='accurate',  # 'fast' 或 'accurate'
-                )
-                ocr_text = ocr_folder_vision(
-                    ocr,
-                    frames_dir,
-                    output_path=ocr_raw_path,
-                    debug=False,
-                )
-            except Exception as e:
-                print(f"   ⚠️  Vision OCR 失败，尝试降级到 PaddleOCR: {e}")
+            if init_vision_ocr:
+                print(f"   🍎 使用 Apple Vision OCR (lang={ocr_lang})")
+                try:
+                    ocr = init_vision_ocr(
+                        lang=ocr_lang,
+                        recognition_level='accurate',  # 'fast' 或 'accurate'
+                    )
+                    ocr_text = ocr_folder_vision(
+                        ocr,
+                        frames_dir,
+                        output_path=ocr_raw_path,
+                        debug=False,
+                    )
+                except Exception as e:
+                    print(f"   ⚠️  Vision OCR 失败，尝试降级到 PaddleOCR: {e}")
+                    selected_engine = 'paddle'
+            else:
+                print(f"   ⚠️  Vision OCR 未加载，尝试降级到 PaddleOCR")
                 selected_engine = 'paddle'
         
         if selected_engine == 'paddle':
@@ -1529,22 +1640,26 @@ def process_video(
                 )
             else:
                 # 降级到单进程模式
-                print(f"   🐼 使用 PaddleOCR (det={ocr_det_model}, rec={ocr_rec_model})")
-                ocr = init_ocr(
-                    lang=ocr_lang,
-                    use_gpu=use_gpu,
-                    det_model=ocr_det_model,
-                    rec_model=ocr_rec_model
-                )
-                ocr_text = ocr_folder_to_text(
-                    ocr, 
-                    str(frames_dir), 
-                    min_score=0.3,
-                    debug=False,
-                    use_preprocessing=True,
-                    roi_bottom_only=True,
-                    hybrid_mode=True,
-                )
+                if init_ocr:
+                    print(f"   🐼 使用 PaddleOCR (det={ocr_det_model}, rec={ocr_rec_model})")
+                    ocr = init_ocr(
+                        lang=ocr_lang,
+                        use_gpu=use_gpu,
+                        det_model=ocr_det_model,
+                        rec_model=ocr_rec_model
+                    )
+                    ocr_text = ocr_folder_to_text(
+                        ocr, 
+                        str(frames_dir), 
+                        min_score=0.3,
+                        debug=False,
+                        use_preprocessing=True,
+                        roi_bottom_only=True,
+                        hybrid_mode=True,
+                    )
+                else:
+                    print("   ❌ OCR 引擎不可用 (PaddleOCR 未加载)")
+                    ocr_text = ""
         
         if ocr_text.strip():
             char_count = len(ocr_text)
@@ -1625,8 +1740,11 @@ def process_video(
         # 如果没有 segments（例如纯音频且未拆分），则使用纯文本
         combined_text_parts.append(transcript_text)
 
-    if with_frames:
+    if with_frames and ocr_text:
         combined_text_parts.append(f"\n\n=== OCR from Frames ===\n{ocr_text}\n")
+
+    if cover_ocr_text:
+        combined_text_parts.append(f"\n\n=== OCR from Webpage Screenshot/Cover ===\n{cover_ocr_text}\n")
 
     combined_text = "\n".join(combined_text_parts)
 
@@ -1661,7 +1779,8 @@ def process_video(
         video_path=video_path,
         model_name=model_name,
         detail_model_name=detail_model_name,
-        asr_model_name=asr_model_name
+        asr_model_name=asr_model_name,
+        video_info=video_info
     )
     
     report_path.write_text(report_content, encoding="utf-8")
@@ -1787,6 +1906,9 @@ def main():
     source_url = None
     platform_title = None
     
+    cover_image_path = None
+    video_info = {}
+    
     if is_url:
         # 如果是URL，尝试下载
         if not DOWNLOADER_AVAILABLE:
@@ -1802,7 +1924,22 @@ def main():
             video_path = file_info.file_path
             source_url = input_str
             platform_title = getattr(file_info, 'title', None)
+            cover_image_path = getattr(file_info, 'screenshot_path', None)
+            
+            # 提取元数据
+            video_info = {
+                'title': getattr(file_info, 'title', None),
+                'video_id': getattr(file_info, 'video_id', None),
+                'platform': getattr(file_info, 'platform', None),
+                'duration': getattr(file_info, 'duration', None),
+                'uploader': getattr(file_info, 'uploader', None),
+                'upload_date': getattr(file_info, 'upload_date', None),
+                'url': input_str
+            }
+            
             print(f"✅ 下载完成: {video_path}")
+            if cover_image_path:
+                 print(f"🖼️  下载封面: {cover_image_path}")
         except Exception as e:
             print(f"❌ 下载失败: {e}")
             exit(1)
@@ -1812,6 +1949,23 @@ def main():
         if not video_path.exists():
             print(f"❌ 错误：视频文件不存在: {video_path}")
             exit(1)
+            
+        # 尝试查找同名封面/截图图片
+        # 优先查找 _screenshot 后缀（网页截图），其次查找同名图片（封面/缩略图）
+        potential_covers = [
+            # 网页截图（包含更多信息）优先
+            video_path.parent / f"{video_path.stem}_screenshot.png",
+            video_path.parent / f"{video_path.stem}_screenshot.jpg",
+            # 其次是缩略图/封面
+            video_path.with_suffix(".jpg"),
+            video_path.with_suffix(".png"),
+            video_path.with_suffix(".webp"),
+        ]
+        for p in potential_covers:
+            if p.exists():
+                cover_image_path = p
+                print(f"🖼️  发现本地截图/封面: {cover_image_path.name}")
+                break
 
     output_dir = Path(args.out_dir).resolve()
 
@@ -1827,6 +1981,8 @@ def main():
         source_url=source_url,
         platform_title=platform_title,
         smart_ocr=not args.legacy_ocr,
+        cover_image_path=cover_image_path,
+        video_info=video_info
     )
 
 

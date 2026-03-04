@@ -16,8 +16,17 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("⚠️  Vision OCR Warning: PIL (Pillow) not installed. Long image handling disabled.")
+
 # Swift 脚本路径
 VISION_OCR_SCRIPT = Path(__file__).parent / "vision_ocr.swift"
+# 画布裁剪最大尺寸（超过此尺寸将进行裁剪识别）
+MAX_CANVAS_SIZE = 3000
 
 
 class VisionOCR:
@@ -66,6 +75,76 @@ class VisionOCR:
         self.recognition_level = recognition_level
         self.use_language_correction = use_language_correction
     
+    def _ocr_tiled(self, img, width: int, height: int, **kwargs) -> List:
+        """
+        切分并识别大图
+        
+        Args:
+            img: PIL Image 对象
+            width: 原图宽度
+            height: 原图高度
+            **kwargs: 透传参数
+        
+        Returns:
+            合并后的识别结果
+        """
+        rec_texts = []
+        rec_scores = []
+        
+        print(f"ℹ️  Vision OCR: 检测到大图 ({width}x{height})，启动切片识别模式...")
+        
+        # Calculate grid steps
+        v_steps = (height + MAX_CANVAS_SIZE - 1) // MAX_CANVAS_SIZE
+        h_steps = (width + MAX_CANVAS_SIZE - 1) // MAX_CANVAS_SIZE
+        
+        total_chunks = v_steps * h_steps
+        current_chunk = 0
+        
+        for i in range(v_steps):
+            for j in range(h_steps):
+                current_chunk += 1
+                left = j * MAX_CANVAS_SIZE
+                upper = i * MAX_CANVAS_SIZE
+                right = min((j + 1) * MAX_CANVAS_SIZE, width)
+                lower = min((i + 1) * MAX_CANVAS_SIZE, height)
+                
+                print(f"    Processing chunk {current_chunk}/{total_chunks}: ({left}, {upper}) -> ({right}, {lower})")
+                
+                # Crop region
+                region = img.crop((left, upper, right, lower))
+                
+                # Save to temp
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+                    tmp_path = tmp_file.name
+                    # Try to save as PNG
+                    region.save(tmp_path, format="PNG")
+                
+                try:
+                    # Recursive call
+                    # Ensure minimal overhead for recursive calls
+                    chunk_res = self.ocr(tmp_path, **kwargs)
+                    
+                    if chunk_res and chunk_res[0]:
+                        chunk_texts = chunk_res[0].get("rec_texts", [])
+                        chunk_scores = chunk_res[0].get("rec_scores", [])
+                        
+                        rec_texts.extend(chunk_texts)
+                        rec_scores.extend(chunk_scores)
+                        
+                except Exception as e:
+                    print(f"⚠️  Vision OCR Chunk Error: {e}")
+                
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                        
+        if rec_texts:
+            return [{
+                "rec_texts": rec_texts,
+                "rec_scores": rec_scores
+            }]
+        return [[]]
+
     def _check_macos(self) -> bool:
         """检查是否在 macOS 环境"""
         import platform
@@ -91,6 +170,26 @@ class VisionOCR:
         """
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"图片不存在: {image_path}")
+
+        # 大图自动切片逻辑
+        if PIL_AVAILABLE:
+            try:
+                with Image.open(image_path) as img:
+                    width, height = img.size
+                    
+                    if width > MAX_CANVAS_SIZE or height > MAX_CANVAS_SIZE:
+                        # 递归调用时避免无限循环（通过检查临时文件后缀或其他机制，或者直接在 _ocr_tiled 里面手动分割）
+                        # 这里我们直接调用 _ocr_tiled，它使用 crop 和 tempfile
+                        # 只有原始大图才会进这个 IF 分支
+                        return self._ocr_tiled(img, width, height, **kwargs)
+            except Exception as e:
+                # 常见错误：非图片文件、格式不支持等
+                # 不阻断流程，尝试直接传给 swift
+                if "DecompressionBombError" in str(e):
+                    print(f"⚠️  Vision OCR: 图片极大 (DecompressionBombError)，尝试直接处理...")
+                else:
+                    # print(f"⚠️  Vision OCR Warning: PIL Check Failed: {e}")
+                    pass
         
         # 构建命令
         cmd = [
