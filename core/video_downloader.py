@@ -254,6 +254,103 @@ class VideoDownloader:
         except Exception as e:
             print(f"⚠️  基础截图失败: {e}", file=output_stream, flush=True)
 
+    def _save_metadata(self, file_info: LocalFileInfo, url: str):
+        """保存视频元数据到 Markdown 文件"""
+        try:
+            # 目标目录: output/<视频文件名(无后缀)>/
+            # 基于视频文件名（在 videos/ 下）创建 output 目录下的同名文件夹
+            video_stem = file_info.file_path.stem
+            output_dir = Path("output") / video_stem
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 使用 README.md 作为文件名
+            md_path = output_dir / "README.md"
+            
+            # 准备数据            
+            title = file_info.title or "Untitled"
+            platform = file_info.platform or "unknown"
+            video_id = file_info.video_id or "unknown"
+            
+            duration_str = "Unknown"
+            if file_info.duration:
+                duration_str = f"{file_info.duration:.1f}"
+            
+            uploader = file_info.uploader or "Unknown"
+            upload_date = file_info.upload_date or "Unknown"
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            description = ""
+            if file_info.metadata:
+                description = file_info.metadata.get('description', '')
+                
+            if description:
+                # 简单清理一下 description
+                description = f"\n\n## 📝 简介\n\n{description}"
+            
+            # 使用 json.dumps 确保 YAML 字符串转义正确
+            safe_title = json.dumps(title, ensure_ascii=False)
+            safe_url = json.dumps(url, ensure_ascii=False)
+            safe_platform = json.dumps(platform, ensure_ascii=False)
+            safe_video_id = json.dumps(video_id, ensure_ascii=False)
+            safe_uploader = json.dumps(uploader, ensure_ascii=False)
+            safe_upload_date = json.dumps(upload_date, ensure_ascii=False)
+            safe_now = json.dumps(now, ensure_ascii=False)
+
+            # 更新文件路径引用为相对路径（因为 videos/ 和 output/ 平级）
+            # videos/abc.mp4 -> ../../videos/abc.mp4 (如果在 output/abc/ 下)
+            # 或者简单地引用绝对路径？或者仅文件名
+            # 为了方便在 output/abc/ 下点击，最好使用相对路径
+            # output/abc/ -> videos/abc.mp4
+            # 相对路径: ../../videos/abc.mp4
+            try:
+                # 尝试计算相对路径
+                video_rel_path = os.path.relpath(file_info.file_path, output_dir)
+            except ValueError:
+                # 如果跨驱动器等无法计算相对路径，使用绝对路径
+                video_rel_path = str(file_info.file_path.absolute())
+
+            md_content = f"""---
+title: {safe_title}
+url: {safe_url}
+platform: {safe_platform}
+video_id: {safe_video_id}
+duration: {file_info.duration or 0}
+uploader: {safe_uploader}
+upload_date: {safe_upload_date}
+downloaded_at: {safe_now}
+---
+
+# {title}
+
+**来源**: [{url}]({url})  
+**平台**: {platform}  
+**视频ID**: {video_id}  
+**时长**: {duration_str} 秒  
+**上传者**: {uploader}  
+**上传日期**: {upload_date}  
+**下载时间**: {now}
+
+---
+
+## 📄 视频文件
+
+文件路径: [{file_info.file_path.name}]({video_rel_path})
+{description}
+
+> 💡 **提示**: 此文件由 MemoryIndex 下载器自动生成
+"""
+            
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(md_content)
+            
+            # 仅在非JSON模式下打印，或者是使用 stderr
+            output_stream = sys.stderr if self.json_mode else sys.stdout
+            print(f"✅ 元数据已保存: {md_path}", file=output_stream, flush=True)
+            
+        except Exception as e:
+            output_stream = sys.stderr if self.json_mode else sys.stdout
+            print(f"⚠️  保存元数据失败: {e}", file=output_stream, flush=True)
+
     def download_video(self, url: str, force_redownload: bool = False) -> LocalFileInfo:
         """
         统一下载接口
@@ -346,6 +443,10 @@ class VideoDownloader:
                     result.screenshot_path = screenshot_path
             except Exception as e:
                 print(f"⚠️  截图步骤异常（不影响视频下载）: {e}", file=output_stream, flush=True)
+
+        # 保存元数据 Markdown
+        if result and result.file_path:
+             self._save_metadata(result, url)
 
         return result
 
@@ -1073,6 +1174,8 @@ def main():
                 ocr_engine="vision",
                 source_url=url,
                 platform_title=file_info.title,
+                cover_image_path=file_info.screenshot_path,
+                video_info=file_info.metadata,
             )
         
     except Exception as e:

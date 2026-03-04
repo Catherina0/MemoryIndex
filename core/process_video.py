@@ -1464,10 +1464,22 @@ def process_video(
 ):
     ensure_dir(output_dir)
 
-    # 1. 创建带时间戳的输出文件夹
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 1. 创建输出文件夹
+    # 逻辑：优先复用 output/<video_name> 目录（方便与 download 阶段生成的 README.md 合并）
+    # 只有当该目录已存在且包含 report.md（说明是之前的完整运行）时，才创建带时间戳的新目录
     video_name = video_path.stem
-    session_dir = output_dir / f"{video_name}_{timestamp}"
+    default_session_dir = output_dir / video_name
+    
+    if default_session_dir.exists() and (default_session_dir / "report.md").exists():
+        # 旧记录存在，创建新目录保留历史
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = output_dir / f"{video_name}_{timestamp}"
+        print(f"⚠️  目录 {default_session_dir} 已存在且包含报告，将创建新目录: {session_dir}")
+    else:
+        # 复用目录（download 阶段可能已创建并放入了 README.md）
+        session_dir = default_session_dir
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     ensure_dir(session_dir)
     
     # 2. 各类文件路径
