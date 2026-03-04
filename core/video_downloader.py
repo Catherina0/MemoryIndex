@@ -48,6 +48,7 @@ class LocalFileInfo:
     uploader: Optional[str]   # 上传者
     upload_date: Optional[str] # 上传日期
     metadata: Dict[str, Any]  # 其他元数据
+    screenshot_path: Optional[Path] = None  # 截图路径
 
 
 class VideoDownloader:
@@ -173,6 +174,48 @@ class VideoDownloader:
             print(f"⚠️  检查数据库时出错: {e}", file=sys.stderr)
             return None
     
+    def _capture_screenshot(self, url: str, output_path: Path):
+        """使用 DrissionPage 截取网页截图"""
+        try:
+            # 尝试导入 DrissionPage
+            from DrissionPage import Chromium, ChromiumOptions
+            
+            output_stream = sys.stderr if self.json_mode else sys.stdout
+            print(f"📸 正在截取网页截图...", file=output_stream, flush=True)
+            
+            co = ChromiumOptions()
+            co.set_headless(True)
+            co.set_argument('--no-sandbox')  # 避免权限问题
+            co.set_argument('--disable-gpu')
+            
+            # 不会自动下载浏览器，假设环境已准备好 (archiver 已预装)
+            
+            browser = Chromium(co)
+            tab = browser.new_tab(url)
+            
+            # 等待页面加载完成 (最多30秒)
+            tab.wait.load_complete(timeout=30)
+            
+            # 对于某些网站可能需要额外等待动态内容
+            import time
+            time.sleep(2)
+            
+            # 截图 (全页)
+            tab.get_screenshot(path=str(output_path), full_page=True)
+            
+            tab.close()
+            browser.quit()
+            
+            if output_path.exists():
+                print(f"✅ 截图已保存: {output_path.name}", file=output_stream, flush=True)
+            
+        except ImportError:
+            # 忽略 DrissionPage 未安装的情况
+            pass
+        except Exception as e:
+            output_stream = sys.stderr if self.json_mode else sys.stdout
+            print(f"⚠️  截图失败: {e}", file=output_stream, flush=True)
+
     def download_video(self, url: str, force_redownload: bool = False) -> LocalFileInfo:
         """
         统一下载接口
@@ -196,6 +239,8 @@ class VideoDownloader:
         platform = self._detect_platform(url)
         print(f"🔍 检测到平台: {platform}", file=output_stream, flush=True)
         
+        result = None
+        
         # 检查数据库中是否已存在
         if not force_redownload:
             existing = self.check_already_downloaded(url)
@@ -208,7 +253,7 @@ class VideoDownloader:
                 # 检查文件是否仍然存在
                 if existing['file_path'] and Path(existing['file_path']).exists():
                     # 返回已存在的文件信息
-                    return LocalFileInfo(
+                    result = LocalFileInfo(
                         file_path=Path(existing['file_path']),
                         platform=platform,
                         video_id=self._extract_video_id(url, platform) or "unknown",
@@ -221,33 +266,51 @@ class VideoDownloader:
                 else:
                     print(f"⚠️  原文件已不存在，将重新下载", flush=True)
         
-        # 尝试下载
-        try:
-            # 1. 首选方案：yt-dlp（支持大多数平台）
-            return self._download_with_ytdlp(url, platform, force_redownload)
-        except Exception as e:
-            print(f"⚠️  yt-dlp 下载失败: {e}", flush=True)
-            
-            # 2. B站降级方案：BBDown
-            if platform == "bilibili":
-                try:
-                    print("🔄 尝试使用 BBDown 下载...", flush=True)
-                    return self._download_with_bbdown(url, force_redownload)
-                except Exception as e2:
-                    print(f"❌ BBDown 下载失败: {e2}", flush=True)
-                    raise Exception(f"B站视频下载失败（已尝试 yt-dlp 和 BBDown）")
-            
-            # 3. 小红书降级方案：XHS-Downloader
-            elif platform == "xiaohongshu":
-                try:
-                    print("🔄 尝试使用 XHS-Downloader 下载...", flush=True)
-                    return self._download_with_xhs(url, force_redownload)
-                except Exception as e2:
-                    print(f"❌ XHS-Downloader 下载失败: {e2}", flush=True)
-                    raise Exception(f"小红书视频下载失败（已尝试 yt-dlp 和 XHS-Downloader）")
-            
-            # 其他平台直接抛出异常
-            raise Exception(f"{platform} 平台视频下载失败: {e}")
+        if result is None:
+            # 尝试下载
+            try:
+                # 1. 首选方案：yt-dlp（支持大多数平台）
+                result = self._download_with_ytdlp(url, platform, force_redownload)
+            except Exception as e:
+                print(f"⚠️  yt-dlp 下载失败: {e}", flush=True)
+                
+                # 2. B站降级方案：BBDown
+                if platform == "bilibili":
+                    try:
+                        print("🔄 尝试使用 BBDown 下载...", flush=True)
+                        result = self._download_with_bbdown(url, force_redownload)
+                    except Exception as e2:
+                        print(f"❌ BBDown 下载失败: {e2}", flush=True)
+                        raise Exception(f"B站视频下载失败（已尝试 yt-dlp 和 BBDown）")
+                
+                # 3. 小红书降级方案：XHS-Downloader
+                elif platform == "xiaohongshu":
+                    try:
+                        print("🔄 尝试使用 XHS-Downloader 下载...", flush=True)
+                        result = self._download_with_xhs(url, force_redownload)
+                    except Exception as e2:
+                        print(f"❌ XHS-Downloader 下载失败: {e2}", flush=True)
+                        raise Exception(f"小红书视频下载失败（已尝试 yt-dlp 和 XHS-Downloader）")
+                
+                # 其他平台直接抛出异常
+            if result is None:
+                 raise Exception(f"{platform} 平台视频下载失败")
+
+        # 尝试截图 (如果文件已存在但没有截图，也可以补截图)
+        if result and result.file_path:
+            try:
+                # 截图文件名: 视频文件名_screenshot.png
+                screenshot_path = result.file_path.parent / f"{result.file_path.stem}_screenshot.png"
+                if not screenshot_path.exists() or force_redownload:
+                    self._capture_screenshot(url, screenshot_path)
+                
+                if screenshot_path.exists():
+                    result.screenshot_path = screenshot_path
+            except Exception as e:
+                print(f"⚠️  截图步骤异常（不影响视频下载）: {e}", file=output_stream, flush=True)
+
+        return result
+
     
     def _detect_platform(self, url: str) -> str:
         """检测视频平台"""
@@ -437,7 +500,7 @@ class VideoDownloader:
         # ── 进度条状态（在 progress_hook 闭包中共享） ──────────────────────
         _state = {
             "pbar": None,           # 当前活跃进度条
-            "cur_file": "",         # 当前正在下载的文件名
+            "cur_file": None,       # 当前正在下载的文件名 (None 表示尚未开始)
             "last_bytes": 0,        # 上次已下载字节数（用于增量更新）
         }
 
@@ -445,6 +508,8 @@ class VideoDownloader:
             """创建一个新的 tqdm 进度条"""
             if not TQDM_AVAILABLE:
                 return None
+            # 强制刷新 stderr 缓冲区
+            sys.stderr.flush()
             common = dict(
                 desc=desc,
                 file=sys.stderr,
@@ -452,6 +517,8 @@ class VideoDownloader:
                 unit='B',
                 unit_scale=True,
                 unit_divisor=1024,
+                leave=True, # 保留进度条
+                miniters=1, # 频繁更新
             )
             if total:
                 return tqdm(total=total, **common)
@@ -460,7 +527,9 @@ class VideoDownloader:
 
         def progress_hook(d: dict):
             status = d.get("status")
-            filename = os.path.basename(d.get("filename", ""))
+            # 确保获取到一个显示名称，即使 filename 为空
+            raw_fn = d.get("filename")
+            filename = os.path.basename(raw_fn) if raw_fn else "downloading_video"
 
             if status == "downloading":
                 total     = d.get("total_bytes") or d.get("total_bytes_estimate")
@@ -468,22 +537,32 @@ class VideoDownloader:
                 speed     = d.get("speed")       # bytes/s
                 eta       = d.get("eta")          # seconds
 
-                # 新文件开始下载时，关闭旧进度条并新建
-                if filename != _state["cur_file"]:
+                # 新文件开始下载时，或是首次创建进度条
+                current_file = _state["cur_file"]
+                if current_file is None or filename != current_file:
                     if _state["pbar"] is not None:
                         _state["pbar"].close()
+                        sys.stderr.flush()
                     _state["cur_file"]  = filename
                     _state["last_bytes"] = 0
-                    label = filename if len(filename) <= 35 else f"…{filename[-34:]}"
+                    
+                    label = filename if len(filename) <= 30 else f"…{filename[-29:]}"
                     _state["pbar"] = _make_pbar(f"下载 {label}", total)
 
                 pbar = _state["pbar"]
                 if pbar is not None:
+                    # 如果这好像是一个新的total，重置进度条
+                    if total and pbar.total is not None and abs(pbar.total - total) > 1024:
+                        pbar.reset(total=total)
+                        _state["last_bytes"] = 0
+                        downloaded = d.get("downloaded_bytes", 0)
+
                     # 用增量更新，避免因估算值跳动导致进度条倒退
-                    delta = downloaded - _state["last_bytes"]
-                    if delta > 0:
+                    if downloaded > _state["last_bytes"]:
+                        delta = downloaded - _state["last_bytes"]
                         pbar.update(delta)
                         _state["last_bytes"] = downloaded
+                    
                     # 附加速度 / ETA 信息
                     postfix = {}
                     if speed and speed > 0:
@@ -492,7 +571,8 @@ class VideoDownloader:
                         m, s = divmod(int(eta), 60)
                         postfix["ETA"] = f"{m:02d}:{s:02d}"
                     if postfix:
-                        pbar.set_postfix(postfix, refresh=False)
+                        # refresh=True 强制尽快刷新显示
+                        pbar.set_postfix(postfix, refresh=True)
 
             elif status == "finished":
                 pbar = _state["pbar"]
@@ -501,13 +581,15 @@ class VideoDownloader:
                     if pbar.total and pbar.n < pbar.total:
                         pbar.update(pbar.total - pbar.n)
                     pbar.close()
+                    sys.stderr.flush()
                 _state["pbar"]      = None
-                _state["cur_file"]  = ""
+                _state["cur_file"]  = None
                 _state["last_bytes"] = 0
 
             elif status == "error":
                 if _state["pbar"] is not None:
                     _state["pbar"].close()
+                    sys.stderr.flush()
                     _state["pbar"] = None
 
         # ── 第一步：仅获取元数据（不下载） ────────────────────────────────

@@ -428,7 +428,108 @@ class ArchiveProcessor:
         chinese_chars = len([c for c in text if '一' <= c <= '鿿'])
         other_chars = len(text) - chinese_chars
         # 粗略估算：中文 1.5 tokens/char，英文 4 chars/token
-        return int(chinese_chars * 1.5 + other_chars / 4)
+        count = int(chinese_chars * 1.5 + other_chars / 4)
+        return count
+
+
+    def _get_archive_prompt(self, content_type="detailed"):
+        """获取归档报告的提示词"""
+        
+        # 基础提示词 (对应 download-run 的 default_prompt_text)
+        default_prompt = """
+请基于以下网页和 OCR 识别内容(如果有），生成一份**详细的内容概括**。
+
+**⚠️ 识别错误修正**：
+- 网页内容和OCR文本可能存在同音字/词识别错误
+- 请根据上下文**主动修正**这些错误，特别是：
+  * 专业术语（技术名词、学术概念）
+  * 人名、地名、机构名
+  * 英文缩写和术语
+  * 数字、单位、参数
+- 修正后使用准确、规范的表达
+
+**⚠️ 内容清洗：忽略广告干扰**
+- 请识别并**完全忽略**网页中的广告、推荐链接、侧边栏无关内容
+- 典型例子：购买链接、广告图、相关推荐、"点击关注"等
+- 确保输出内容仅关于网页的核心主题知识
+
+要求：
+1. **逐段详细展开**：按网页内容的逻辑顺序，详细描述每个主要部分
+2. **保留关键细节**：
+   - 具体的数字、数据、参数（修正识别错误后的准确值）
+   - 人名、地名、专业术语（确保拼写和表达准确）
+   - 具体的操作步骤、流程
+   - 引用的原话、关键句子（纠正明显的识别错误）
+   - 代码片段、命令、公式
+3. **完整性优先**：宁可内容多一些，也不要遗漏重要信息
+4. **结构清晰**：使用层级标题和列表组织内容
+
+输出格式：
+## 详细内容概括
+
+### 第一部分：[主题名称]
+（详细描述这部分的内容...）
+
+### 第二部分：[主题名称]
+（详细描述这部分的内容...）
+
+### 关键信息汇总
+- 重要数据：...
+- 关键术语：...
+- 操作步骤：...
+
+### 原文关键句摘录
+> "原句1..."
+> "原句2..."
+"""
+
+        # 深度详细提示词 (对应 download-run 的 gemini_prompt_text)
+        detailed_prompt = """
+请基于以下网页和 OCR 识别内容(如果有），生成一份**极致详细、内容全面**的深度内容概括。
+
+**⚠️ 我们的目标是：生成一份无需查看原网页就能获取所有细节的完整档案。不要在意长度，尽可能多地保留信息。**
+
+**🔍 1. 深度内容解析**
+- **逐字逐句的细节保留**：不仅要概括大意，更要还原作者的具体论述逻辑、举例说明、数据支撑。
+- **所有关键信息**：任何数字、年份、人名、书名、工具名、代码片段、配置参数，都必须准确记录。
+- **情感与语境**：如果作者表达了强烈观点、幽默、反讽或情绪变化，请在描述中体现。
+- **不要省略**：不要使用"..."或"略过"等简写，把内容如实写出来。
+
+**⚠️ 2. 识别错误修正与清洗**
+- **智能纠错**：根据上下文主动修正 OCR 或网页提取的同音字/错别字。
+- **屏蔽广告**：完全忽略网页中的广告（如电商链接、推广图）、求关注等无关内容。
+- **术语规范**：将口语化的表达转换为专业、规范的书面术语。
+
+**📝 3. 输出结构要求**
+请按照网页内容的逻辑顺序，将内容划分为多个详细的章节。对于每个章节：
+- **小标题**：清晰的主题。
+- **详细段落**：使用长段落详细阐述，而不是简短的 bullet points。
+- **引用原话**：对于金句或核心观点，请直接引用（修正错别字后）。
+
+**📊 4. 专项信息提取**
+在文末请单独整理：
+- **数据汇总**：所有出现的统计数据、价格、参数。
+- **知识图谱**：提到的所有概念、理论、法则。
+- **行动指南**：如果网页包含教程，列出一步步的操作指南。
+
+请忽略 Token 限制，尽可能详尽地输出。
+
+以下是输出格式参考：
+## 📖 深度详细内容概括（完整版）
+
+### 章节一：背景与核心论点
+（这里需要非常详细的描述，解释作者的出发点，引用的背景故事，提出的核心矛盾...）
+
+### 章节二：深度解析技术原理
+（详细解释原理的每一个步骤，不要遗漏任何技术细节...）
+...
+
+### 💡 核心知识点与数据汇总
+...
+"""
+        if content_type == "detailed":
+            return detailed_prompt
+        return default_prompt
     
     def _split_content_by_tokens(self, content: str, max_tokens: int) -> list:
         """
@@ -505,45 +606,35 @@ class ArchiveProcessor:
             content_tokens = self._estimate_tokens(content)
             print(f"  📊 内容估算 tokens: {content_tokens:,}")
             
-            # 如果超过阈值，启动长文本模式
+            # 使用与 process_video.py 统一的 logic
+            # 如果超过 5 万 token，启动更强的详细模式 (原 Long report threshold 是 10万)
+            long_text_triggered = content_tokens > 50000
+
+            if long_text_triggered:
+                print(f"  🔄 文本较长 (>{50000} tokens)，使用增强提示词模式")
+                # 使用详细提示词
+                prompt_text = self._get_archive_prompt("detailed")
+                # 增加 token 限制 (process_video.py 使用 GROQ_DETAIL_MAX_TOKENS = 12000)
+                max_tokens = int(os.getenv("GROQ_DETAIL_MAX_TOKENS", "12000"))
+            else:
+                # 正常提示词
+                prompt_text = self._get_archive_prompt("default")
+            
+            # 仍然保留原有的超长文本(>10万)分段逻辑作为 fallback 或者结合使用？
+            # 用户的意图是 "参考 download-run 的提示词和token数量限制".
+            # download-run 是 > 5万 就用 gemini prompt + 12000 tokens output.
+            # archive-run 原本有分段逻辑. 分段逻辑对于极长文本是有用的.
+            # 如果仅仅是 > 5万，但没到上下文窗口限制(128k)，可以一次性处理。
+            
             if content_tokens > self.LONG_TEXT_THRESHOLD:
-                print(f"  🔄 启动长文本分段处理模式")
+                print(f"  🔄 内容极长 (>{self.LONG_TEXT_THRESHOLD} tokens)，启动分段处理模式")
                 return self._generate_report_long_text(
                     client, model, content, output_dir, 
                     max_tokens, temperature
                 )
-            
-            # 短文本模式：直接处理
-            prompt = f"""
-请将以下网页内容整理成一份**结构化 Markdown 知识档案**。
 
-**⚠️ 重要：识别错误修正**
-- 网页可能存在排版问题或OCR识别错误
-- 请主动识别并修正同音字/词错误，特别是专业术语
-- 使用准确、专业的术语表达
-
-你需要：
-1. **使用 Markdown** 输出（标题、列表、引用、表格等）
-2. 提取主要观点和核心内容
-3. 自动识别"主题/章节"并结构化总结
-4. 提取重要数据：数字、规则、引用、日期等
-5. 生成标签和摘要：
-   - **标签（tags）**：3-6个高度概括的主题标签，如"技术"、"教育"、"人文"等
-   - **摘要**：不超过50个字的系统性内容概括
-
-推荐结构：
-## 摘要
-（不超过50字的核心内容概括）
-
-## 主要内容
-## 关键观点
-## 重要信息
-## 标签
-格式：标签: 标签1, 标签2, 标签3
-
-以下是网页内容：
-{content}
-"""
+            # 构建最终 User Prompt
+            prompt = f"{prompt_text}\n\n以下是网页内容：\n{content}"
 
             response = client.chat.completions.create(
                 model=model,
@@ -551,8 +642,8 @@ class ArchiveProcessor:
                     {
                         "role": "system",
                         "content": """你是一个专业的内容整理助手，具备智能纠错能力。
-                        你的任务是从网页内容中提取核心信息，生成结构化的知识档案。
-                        确保输出使用准确、专业的术语表达。"""
+                        你的任务是从网页内容中提取所有重要信息，识别并修正OCR和提取错误，生成详尽、完整的内容概括。
+                        确保使用准确、专业、规范的术语表达。"""
                     },
                     {
                         "role": "user",

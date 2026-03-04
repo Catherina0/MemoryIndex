@@ -502,16 +502,16 @@ download-run: ensure-venv
 	@echo "🔊 流程: 下载 → 音频提取 → Groq转写 → AI总结"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@# 下载视频（只运行一次），从输出中提取文件路径
-	@DOWNLOAD_OUTPUT=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" 2>&1); \
-	DOWNLOAD_EXIT=$$?; \
-	echo "$$DOWNLOAD_OUTPUT"; \
+	@# 先下载视频（保持实时进度条显示）
+	@cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"
+	@DOWNLOAD_EXIT=$$?; \
 	if [ $$DOWNLOAD_EXIT -ne 0 ]; then \
 		echo "❌ 下载失败"; \
 		exit 1; \
-	fi; \
-	echo ""; \
-	VIDEO_PATH=$$(echo "$$DOWNLOAD_OUTPUT" | tail -n 1 | $(PYTHON) -c "import json, sys; data = json.load(sys.stdin); print(data['file_path'])" 2>/dev/null); \
+	fi
+	@echo ""
+	@# 获取已下载的文件路径（再次运行，此时应直接返回结果）
+	@VIDEO_PATH=$$(cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --json 2>/dev/null | $(PYTHON) -c "import json, sys; print(json.load(sys.stdin)['file_path'])"); \
 	if [ -z "$$VIDEO_PATH" ]; then \
 		echo "❌ 无法从下载输出中提取文件路径"; \
 		exit 1; \
