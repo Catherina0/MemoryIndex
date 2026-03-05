@@ -1496,7 +1496,7 @@ def process_video(
     transcript_raw_path = session_dir / "transcript_raw.md"
     report_path = session_dir / "report.md"
     
-    print(f"\n📁 输出目录: {session_dir}")
+    print(f"\n📁 输出目录: file://{session_dir}")
     print(f"   时间戳: {timestamp}\n")
 
     # 获取视频时长
@@ -1509,80 +1509,111 @@ def process_video(
     current_fps = 1
     
     # 1.5 尝试识别封面/截图内容 (无论是否开启 frames OCR)
-    cover_ocr_text = ""
+    screenshot_ocr_text = ""
     if cover_image_path and cover_image_path.exists():
-        # 保存封面图片到 session 目录
+        # 保存截图/封面图片到 session 目录
         try:
             import shutil
-            dest_cover_path = session_dir / f"cover{cover_image_path.suffix}"
+            dest_cover_path = session_dir / f"screenshot{cover_image_path.suffix}"
             shutil.copy(cover_image_path, dest_cover_path)
-            print(f"   🖼️  封面图片已保存: {dest_cover_path.name}")
+            print(f"   🖼️  网页截图/封面图片已保存: {dest_cover_path.name}")
         except Exception as e:
-            print(f"   ⚠️  保存封面图片失败: {e}")
+            print(f"   ⚠️  保存网页截图/封面图片失败: {e}")
 
         print(f"\n🖼️  正在识别网页截图/封面文字: {cover_image_path.name} ...")
         try:
-            import tempfile
             import shutil
             
-            # 使用临时文件夹处理单张图片(复用 folder 接口)
-            with tempfile.TemporaryDirectory() as temp_cover_dir:
-                temp_dir_path = Path(temp_cover_dir)
-                
-                # 如果有 split_long_image，使用分割
-                processed_images = False
-                if split_long_image:
-                    try:
-                        chunks = split_long_image(cover_image_path, output_dir=temp_dir_path)
-                        if chunks:
-                            processed_images = True
-                            print(f"   ℹ️  封面已分割为 {len(chunks)} 个片段")
-                    except Exception as e:
-                        print(f"   ⚠️  封面分割失败: {e}")
-
-                if not processed_images:
-                    # Vision OCR 和 PaddleOCR 文件夹模式通常期望特定的文件名格式或扫描所有图片
-                    # 为了兼容性，重命名为 frame_0001.png
-                    temp_cover_file = temp_dir_path / "frame_0001.png"
-                    shutil.copy(cover_image_path, temp_cover_file)
-                
-                selected_engine = ocr_engine or OCR_ENGINE
-                temp_ocr_text = ""
-                
-                if selected_engine == 'vision':
-                    # Vision OCR (macOS)
-                    if init_vision_ocr:
-                        ocr_instance = init_vision_ocr(lang=ocr_lang)
-                        # Vision OCR helper 需要 output_path 参数
-                        temp_ocr_text = ocr_folder_vision(ocr_instance, temp_dir_path, output_path=None, debug=False)
-                    else:
-                        print("   ⚠️  Vision OCR 模块未加载")
+            # 使用 session 目录下的 cover_frames 文件夹处理封面图片，不再使用系统临时目录
+            temp_dir_path = session_dir / "cover_frames"
+            temp_dir_path.mkdir(parents=True, exist_ok=True)
+            
+            # 如果有 split_long_image，使用分割
+            if split_long_image:
+                try:
+                    chunks = split_long_image(cover_image_path, output_dir=temp_dir_path)
+                    if chunks:
+                        for idx, chunk_path in enumerate(chunks):
+                            # 强制使用 .png, 兼容 ocr_vision 中硬编码的 "frame_*.png"
+                            target_path = temp_dir_path / f"frame_{idx+1:04d}.png"
+                            if chunk_path != target_path:
+                                if chunk_path.exists() and chunk_path.parent == temp_dir_path:
+                                    # 如果因为扩展名不同，需要转换格式
+                                    if chunk_path.suffix.lower() != ".png":
+                                        from PIL import Image
+                                        with Image.open(chunk_path) as img:
+                                            img.save(target_path)
+                                        chunk_path.unlink()
+                                    else:
+                                        chunk_path.rename(target_path)
+                                else:
+                                    # Original file returned, copy or convert it
+                                    if chunk_path.suffix.lower() != ".png":
+                                        from PIL import Image
+                                        with Image.open(chunk_path) as img:
+                                            img.save(target_path)
+                                    else:
+                                        shutil.copy(chunk_path, target_path)
                         
-                elif selected_engine == 'paddle':
-                    # PaddleOCR
-                    if init_ocr:
-                        ocr_instance = init_ocr(
-                            lang=ocr_lang, use_gpu=use_gpu, 
-                            det_model=ocr_det_model, rec_model=ocr_rec_model
-                        )
-                        temp_ocr_text = ocr_folder_to_text(
-                            ocr_instance, str(temp_dir_path),
-                            min_score=0.3, debug=False, use_preprocessing=True
-                        )
+                        if len(chunks) > 1:
+                            print(f"   ℹ️  封面已分割为 {len(chunks)} 个片段")
+                except Exception as e:
+                    print(f"   ⚠️  封面分割/处理失败: {e}")
+                    # 回退到单图复制
+                    temp_cover_file = temp_dir_path / "frame_0001.png"
+                    if cover_image_path.suffix.lower() != ".png":
+                        from PIL import Image
+                        with Image.open(cover_image_path) as img:
+                            img.save(temp_cover_file)
                     else:
-                        print("   ⚠️  PaddleOCR 模块未加载")
-                
-                if temp_ocr_text.strip():
-                    cover_ocr_text = temp_ocr_text
-                    print(f"   ✅ 网页截图/封面识别成功: {len(cover_ocr_text)} 字符")
-                    
-                    # 保存封面 OCR 结果
-                    cover_ocr_path = session_dir / "cover_ocr.md"
-                    with open(cover_ocr_path, "w", encoding="utf-8") as f:
-                        f.write(f"# 网页截图/封面 OCR 结果\n\n{cover_ocr_text}")
+                        shutil.copy(cover_image_path, temp_cover_file)
+            else:
+                # 回退到单图复制
+                temp_cover_file = temp_dir_path / "frame_0001.png"
+                if cover_image_path.suffix.lower() != ".png":
+                    from PIL import Image
+                    with Image.open(cover_image_path) as img:
+                        img.save(temp_cover_file)
                 else:
-                    print("   ℹ️  网页截图/封面未识别到文字")
+                    shutil.copy(cover_image_path, temp_cover_file)
+            
+            selected_engine = ocr_engine or OCR_ENGINE
+            temp_ocr_text = ""
+            
+            if selected_engine == 'vision':
+                # Vision OCR (macOS)
+                if init_vision_ocr:
+                    ocr_instance = init_vision_ocr(lang=ocr_lang)
+                    # Vision OCR helper 需要 output_path 参数
+                    temp_ocr_text = ocr_folder_vision(ocr_instance, temp_dir_path, output_path=None, debug=False)
+                else:
+                    print("   ⚠️  Vision OCR 模块未加载")
                     
+            elif selected_engine == 'paddle':
+                # PaddleOCR
+                if init_ocr:
+                    ocr_instance = init_ocr(
+                        lang=ocr_lang, use_gpu=use_gpu, 
+                        det_model=ocr_det_model, rec_model=ocr_rec_model
+                    )
+                    temp_ocr_text = ocr_folder_to_text(
+                        ocr_instance, str(temp_dir_path),
+                        min_score=0.3, debug=False, use_preprocessing=True
+                    )
+                else:
+                    print("   ⚠️  PaddleOCR 模块未加载")
+            
+            if temp_ocr_text.strip():
+                screenshot_ocr_text = temp_ocr_text
+                print(f"   ✅ 网页截图/封面识别成功: {len(screenshot_ocr_text)} 字符")
+                
+                # 保存封面 OCR 结果
+                screenshot_ocr_path = session_dir / "screenshot_ocr.md"
+                with open(screenshot_ocr_path, "w", encoding="utf-8") as f:
+                    f.write(f"# 网页截图/封面 OCR 结果\n\n{screenshot_ocr_text}")
+            else:
+                print("   ℹ️  网页截图/封面未识别到文字")
+                
         except Exception as e:
             print(f"   ⚠️  网页截图/封面 OCR 过程出错: {e}")
 
@@ -1775,8 +1806,8 @@ def process_video(
     if with_frames and ocr_text:
         combined_text_parts.append(f"\n\n=== OCR from Frames ===\n{ocr_text}\n")
 
-    if cover_ocr_text:
-        combined_text_parts.append(f"\n\n=== OCR from Webpage Screenshot/Cover ===\n{cover_ocr_text}\n")
+    if screenshot_ocr_text:
+        combined_text_parts.append(f"\n\n=== OCR from Webpage Screenshot/Cover ===\n{screenshot_ocr_text}\n")
 
     combined_text = "\n".join(combined_text_parts)
 
@@ -1816,8 +1847,9 @@ def process_video(
     )
     
     report_path.write_text(report_content, encoding="utf-8")
-    print(f"\n📄 报告已保存到: {report_path}")
-    print(f"📁 完整输出目录: {session_dir}")
+    # 使用引号包裹路径或拼接 file:// 协议，以便终端在遇到路径中的逗号等特殊字符时仍能正确生成可点击链接
+    print(f"\n📄 报告已保存到: file://{report_path}")
+    print(f"📁 完整输出目录: file://{session_dir}")
     
     # 9.5 使用 LLM 生成语义化的文件夹名称并重命名
     print("\n>> 使用 LLM 生成语义化文件夹名...")
@@ -1830,6 +1862,7 @@ def process_video(
             session_dir.rename(new_session_dir)
             session_dir = new_session_dir  # 更新引用
             print(f"   ✅ 文件夹已重命名为: {session_dir.name}")
+            print(f"   🔗 新输出目录: file://{session_dir}")
             
             # 更新路径引用
             report_path = session_dir / "report.md"
