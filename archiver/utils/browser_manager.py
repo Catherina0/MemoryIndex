@@ -72,11 +72,13 @@ class BrowserManager:
     _instance: Optional['BrowserManager'] = None
     _browser: Optional['Chromium'] = None
     _initialized: bool = False
+    _temp_dirs: list[Path] = []
     
     def __new__(cls):
         """单例模式"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance._temp_dirs = []
         return cls._instance
     
     def __init__(self):
@@ -148,7 +150,12 @@ class BrowserManager:
         persistent_data_path.mkdir(exist_ok=True, parents=True)
 
         if headless:
-            browser_data_path = Path(tempfile.mkdtemp(prefix="memidx_headless_"))
+            # 在项目目录下新建 temp_file 文件夹以供存放临时 cookie 避免权限问题
+            project_root = Path(__file__).parent.parent.parent
+            temp_dir_base = project_root / "temp_file"
+            temp_dir_base.mkdir(exist_ok=True, parents=True)
+            browser_data_path = Path(tempfile.mkdtemp(prefix="memidx_headless_", dir=str(temp_dir_base)))
+            self._temp_dirs.append(browser_data_path)
             logger.info(f"无头模式：使用临时用户目录 {browser_data_path}")
             # 将持久化目录中的 Cookies 拷贝到临时目录，保留登录态
             _copy_cookies_to_temp(persistent_data_path, browser_data_path)
@@ -187,7 +194,11 @@ class BrowserManager:
             logger.warning("尝试使用临时用户数据目录重试...")
             
             # 重试时同样拷贝 Cookie，保留登录态
-            _retry_tmp = Path(tempfile.mkdtemp(prefix="memory_index_browser_"))
+            project_root = Path(__file__).parent.parent.parent
+            temp_dir_base = project_root / "temp_file"
+            temp_dir_base.mkdir(exist_ok=True, parents=True)
+            _retry_tmp = Path(tempfile.mkdtemp(prefix="memory_index_browser_", dir=str(temp_dir_base)))
+            self._temp_dirs.append(_retry_tmp)
             _copy_cookies_to_temp(persistent_data_path, _retry_tmp)
             options.set_user_data_path(str(_retry_tmp))
             
@@ -263,7 +274,7 @@ class BrowserManager:
     
     def cleanup(self):
         """
-        清理资源：关闭浏览器进程
+        清理资源：关闭浏览器进程并清理临时目录
         
         注意：
         - 此方法会在程序退出时自动调用（通过 atexit）
@@ -277,6 +288,18 @@ class BrowserManager:
                 logger.info("✓ 浏览器已彻底关闭")
             except Exception as e:
                 logger.error(f"关闭浏览器时出错: {e}")
+        
+        # 清理临时目录
+        if hasattr(self, '_temp_dirs') and self._temp_dirs:
+            import shutil
+            for tmp_dir in self._temp_dirs:
+                try:
+                    if tmp_dir.exists():
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                        logger.info(f"已清理临时目录: {tmp_dir}")
+                except Exception as e:
+                    logger.debug(f"清理临时目录 {tmp_dir} 失败: {e}")
+            self._temp_dirs.clear()
     
     def is_alive(self) -> bool:
         """

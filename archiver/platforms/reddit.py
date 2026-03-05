@@ -12,9 +12,9 @@ class RedditAdapter(PlatformAdapter):
         """获取Reddit的默认配置"""
         return PlatformConfig(
             name="reddit",
-            content_selector="shreddit-post, .Post, [slot='post-media-container']",
+            content_selector="#main-content, shreddit-post, .Post, [slot='post-media-container']",
             exclude_selector="shreddit-comment-tree, .comment, .promotedlink",
-            wait_for_selector="shreddit-post",
+            wait_for_selector="#main-content, shreddit-post",
             requires_login=False,
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         )

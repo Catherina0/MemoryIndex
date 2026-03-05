@@ -1,5 +1,5 @@
 # Makefile for Video Report Pipeline
-# 使用方法：make <target> VIDEO=/path/to/video.mp4
+# 使用方法：make <target> Path=/path/to/video.mp4
 
 .PHONY: help setup test clean run run-ocr install check ensure-venv url-clean tg-bot-stop \
         report transcript ocr \
@@ -84,13 +84,13 @@ help:
 	@echo ""
 	@echo "🚀 快速开始："
 	@echo "  make setup                          初始化环境"
-	@echo "  make run VIDEO=视频路径              处理视频（音频转写+AI摘要）"
-	@echo "  make ocr VIDEO=视频路径              处理视频（音频+OCR+AI摘要）"
+	@echo "  make run Path=视频路径              处理视频（音频转写+AI摘要）"
+	@echo "  make ocr Path=视频路径              处理视频（音频+OCR+AI摘要）"
 	@echo "  make download URL=视频链接           下载在线视频"
 	@echo ""
 	@echo "📹 视频处理："
-	@echo "  make run VIDEO=路径                  音频转写 + AI摘要"
-	@echo "  make ocr VIDEO=路径                  音频转写 + OCR识别 + AI摘要"
+	@echo "  make run Path=路径                  音频转写 + AI摘要"
+	@echo "  make ocr Path=路径                  音频转写 + OCR识别 + AI摘要"
 	@echo "  make download URL=链接               下载视频到 videos/"
 	@echo "  make download-run URL=链接           下载后立即处理（音频模式）"
 	@echo "  make download-ocr URL=链接           下载后立即处理（完整模式）"
@@ -131,8 +131,8 @@ help:
 	@echo "  make clean                           清理输出文件"
 	@echo ""
 	@echo "📝 示例："
-	@echo "  make run VIDEO=~/meeting.mp4"
-	@echo "  make ocr VIDEO=lecture.mp4 OCR_WORKERS=4"
+	@echo "  make run Path=~/meeting.mp4"
+	@echo "  make ocr Path=lecture.mp4 OCR_WORKERS=4"
 	@echo "  make download URL=https://www.youtube.com/watch?v=xxx"
 	@echo "  make archive URL=https://zhihu.com/question/123"
 	@echo "  make search Q=\"机器学习\""
@@ -234,7 +234,7 @@ install-paddle-ocr: ensure-venv
 	@echo "📦 安装 PaddleOCR 及相关依赖..."
 	@$(PIP) install paddlepaddle>=3.0.0 paddleocr>=2.7.0 opencv-python
 	@echo "✅ PaddleOCR 安装完成"
-	@echo "💡 使用方法：make ocr VIDEO=xxx.mp4 OCR_ENGINE=paddle"
+	@echo "💡 使用方法：make ocr Path=xxx.mp4 OCR_ENGINE=paddle"
 
 # 运行环境测试
 test: ensure-venv
@@ -336,15 +336,15 @@ check: ensure-venv
 #   LLM=oss|gemini         - 指定总结模型 (默认自动)
 #   ASR=v3|turbo           - 指定语音识别模型 (默认 v3)
 run: ensure-venv
-	@if [ -z "$(VIDEO)" ]; then \
+	@if [ -z "$(Path)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
-		echo "用法：make run VIDEO=/path/to/video.mp4 [LLM=oss|gemini] [ASR=v3|turbo]"; \
+		echo "用法：make run Path=/path/to/video.mp4 [LLM=oss|gemini] [ASR=v3|turbo]"; \
 		exit 1; \
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🎬 处理视频（音频模式）"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📹 视频: $(VIDEO)"
+	@echo "📹 视频: $(Path)"
 	@if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi
 	@if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi
 	@echo "🔊 流程: 音频提取 → Groq转写 → AI总结"
@@ -352,7 +352,7 @@ run: ensure-venv
 	@echo ""
 	@export LLM_PROVIDER=$(LLM) && \
 	 export ASR_MODEL_TYPE=$(ASR) && \
-	 $(PYTHON) core/process_video.py "$(VIDEO)"
+	 $(PYTHON) core/process_media.py "$(Path)"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ 处理完成！"
@@ -375,11 +375,11 @@ ocr-legacy:
 	@$(MAKE) ocr LEGACY=1
 
 ocr: ensure-venv
-	@if [ -z "$(VIDEO)" ]; then \
+	@if [ -z "$(Path)" ]; then \
 		echo "❌ 错误：请指定视频路径"; \
-		echo "用法：make ocr VIDEO=/path/to/video.mp4"; \
-		echo "可选：make ocr VIDEO=xxx DET_MODEL=server REC_MODEL=server"; \
-		echo "可选：make ocr VIDEO=xxx OCR_WORKERS=3  # 使用3个进程"; \
+		echo "用法：make ocr Path=/path/to/video.mp4"; \
+		echo "可选：make ocr Path=xxx DET_MODEL=server REC_MODEL=server"; \
+		echo "可选：make ocr Path=xxx OCR_WORKERS=3  # 使用3个进程"; \
 		exit 1; \
 	fi
 	@DET=$${DET_MODEL:-mobile}; \
@@ -396,7 +396,7 @@ ocr: ensure-venv
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "🎬 处理视频（完整模式：OCR + 音频）"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "📹 视频: $(VIDEO)"; \
+	echo "📹 视频: $(Path)"; \
 	if [ "$(LLM)" = "gemini" ]; then echo "🧠 LLM模型: Gemini (强制)"; else echo "🧠 LLM模型: 自动 (OpenAI-120B / Gemini)"; fi; \
 	if [ "$(ASR)" = "turbo" ]; then echo "🎤 ASR模型: Whisper Large V3 Turbo"; else echo "🎤 ASR模型: Whisper Large V3 (Default)"; fi; \
 	if [ "$(LEGACY)" = "1" ]; then echo "📷 抽帧模式: 传统固定 1 FPS"; else echo "🚀 抽帧模式: 智能变化触发 & 融合"; fi; \
@@ -412,7 +412,7 @@ ocr: ensure-venv
 	echo ""; \
 	export LLM_PROVIDER=$(LLM) && \
 	export ASR_MODEL_TYPE=$(ASR) && \
-	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_video.py "$(VIDEO)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG $$LEGACY_FLAG; \
+	OCR_WORKERS=$$WORKERS $(PYTHON) core/process_media.py "$(Path)" --with-frames --ocr-det-model $$DET --ocr-rec-model $$REC $$GPU_FLAG $$LEGACY_FLAG; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "✅ 处理完成！"; \

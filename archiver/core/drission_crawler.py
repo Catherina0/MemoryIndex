@@ -493,10 +493,31 @@ class DrissionArchiver:
             _pre_screenshot_path = self.output_dir / f"_tmp_screenshot_{datetime.now().strftime('%H%M%S%f')}.png"
             try:
                 logger.info("📸 正在截取全页截图（内容提取前）...")
-                self.current_tab.get_screenshot(
-                    path=str(_pre_screenshot_path),
-                    full_page=True
-                )
+                
+                if platform_adapter.name == 'twitter':
+                    logger.info("  - 优化推特截图：设置视口为 2999x11212触发组件渲染...")
+                    # （因为有DPR缩放比，所以/2） 
+                    try:
+                        self.current_tab.set.window.size(1500, 6666)
+                    except Exception as e:
+                        logger.debug(f"调整窗口大小遇到错误 (忽略): {e}")
+                    
+                    time.sleep(1)
+                    # 滑动一段距离（让图片区域进入可视渲染线）
+                    self.current_tab.scroll.down(2000)
+                    time.sleep(1.5)
+                    # 进行一次截图（强制底层绘制过程完成）
+                    self.current_tab.get_screenshot(path=str(_pre_screenshot_path))
+                    # 然后再滑动一次，并最终截图
+                    self.current_tab.scroll.to_top()
+                    time.sleep(1)
+                    self.current_tab.get_screenshot(path=str(_pre_screenshot_path))
+                else:
+                    self.current_tab.get_screenshot(
+                        path=str(_pre_screenshot_path),
+                        full_page=True
+                    )
+                    
                 logger.info(f"✅ 截图已完成")
             except Exception as _e:
                 logger.warning(f"⚠️  预截图失败（将跳过截图）: {_e}")
@@ -728,7 +749,11 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ## 🖼️ 页面截图
 
 详见 [screenshot.png](screenshot.png)（全页长截图）
+"""
+            if screenshot_ocr_text.strip():
+                readme_content += "\n## 📝 截图识别文字\n\n详见 [screenshot_OCR.md](screenshot_OCR.md)（全页 OCR 识别结果）\n"
 
+            readme_content += """
 ---
 
 > 💡 **提示**: 使用 `report.md` 查看 LLM 处理后的结构化内容
