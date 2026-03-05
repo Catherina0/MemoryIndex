@@ -390,10 +390,49 @@ class ArchiveProcessor:
         
         # 对每张图片进行OCR
         ocr_results = []
-        for i, img_path in enumerate(image_files, 1):
+        
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(image_files, desc="OCR识别", unit="图", ncols=80)
+        except ImportError:
+            iterator = image_files
+
+        # 引入大图分割工具
+        from core.image_utils import split_long_image
+
+        for img_path in iterator:
             try:
-                print(f"    处理图片 {i}/{len(image_files)}: {img_path.name}")
-                text = ocr_image_vision(ocr_instance, str(img_path))
+                # 更新进度条描述
+                if hasattr(iterator, 'set_postfix'):
+                    iterator.set_postfix(file=img_path.name[-20:])
+
+                # 自动检测并分割大图
+                # 使用临时目录存放分割后的图片
+                temp_chunk_dir = img_path.parent / ".temp_ocr_chunks"
+                image_chunks = split_long_image(img_path, output_dir=temp_chunk_dir)
+                
+                chunk_texts = []
+                for chunk_path in image_chunks:
+                    chunk_text = ocr_image_vision(ocr_instance, str(chunk_path))
+                    if chunk_text and chunk_text.strip():
+                        chunk_texts.append(chunk_text.strip())
+                    
+                    # 如果是分割出来的临时文件，处理完后删除
+                    if chunk_path != img_path:
+                        try:
+                            chunk_path.unlink()
+                        except Exception:
+                            pass
+                
+                # 尝试删除临时目录（如果为空）
+                if temp_chunk_dir.exists():
+                    try:
+                        temp_chunk_dir.rmdir()
+                    except Exception:
+                        pass
+
+                text = "\n".join(chunk_texts)
+                
                 if text and text.strip():
                     ocr_results.append({
                         'image': img_path.name,

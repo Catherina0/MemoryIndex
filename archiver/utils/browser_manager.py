@@ -16,7 +16,46 @@ except ImportError:
     logging.warning("DrissionPage not installed. Run: pip install DrissionPage")
 
 
+import socket
+import tempfile
+
+def find_free_port():
+    """找到一个空闲端口"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        return s.getsockname()[1]
+
 logger = logging.getLogger(__name__)
+
+
+#region 辅助工具
+
+def _copy_cookies_to_temp(src_profile: Path, dst_profile: Path) -> None:
+    """
+    将持久化 Chrome 配置目录中的 Cookies 文件拷贝到临时目录，
+    使无头实例能复用已登录的会话，同时不与正在运行的浏览器争抢文件锁。
+    """
+    import shutil
+
+    # Chrome/Chromium 的 Cookies 通常位于 Default/ 子目录
+    cookie_files = ["Default/Cookies", "Default/Cookies-journal", "Default/Login Data"]
+    copied = []
+    for rel in cookie_files:
+        src = src_profile / rel
+        dst = dst_profile / rel
+        if src.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(str(src), str(dst))
+                copied.append(rel)
+            except Exception as e:
+                logger.debug(f"拷贝 {rel} 失败（非致命）: {e}")
+    if copied:
+        logger.info(f"无头模式：已从持久化目录拷贝登录 Cookies ({', '.join(copied)})")
+    else:
+        logger.info("无头模式：持久化目录暂无 Cookies，将以匿名模式运行")
+
+#endregion
 
 
 class BrowserManager:
@@ -58,7 +97,7 @@ class BrowserManager:
         获取全局浏览器实例（如果不存在则创建）
         
         Args:
-            browser_data_dir: 浏览器数据目录（存储 Cookies 和登录态）。如果为 None，默认使用 ~/.memory_index_browser_data以避免iCloud同步锁问题
+            browser_data_dir: 浏览器数据目录（存储 Cookies 和登录态）。如果为 None，默认使用 ./browser_data
             headless: 是否使用无头模式
             **kwargs: 其他浏览器配置参数
         
@@ -85,6 +124,14 @@ class BrowserManager:
         # Configure browser options
         options = ChromiumOptions()
         
+        # 显式分配端口，避免冲突
+        try:
+            port = find_free_port()
+            options.set_local_port(port)
+            logger.info(f"分配浏览器端口: {port}")
+        except Exception:
+            pass # 让 DrissionPage 自动处理
+        
         # 使用项目内的独立 Chromium
         project_chromium = Path(__file__).parent.parent.parent / "chromium/chrome-mac/Chromium.app"
         chromium_executable = project_chromium / "Contents/MacOS/Chromium"
@@ -94,20 +141,37 @@ class BrowserManager:
             options.set_browser_path(str(chromium_executable))
        
         # 设置用户数据目录
+        # 持久化目录用于保存登录态；无头模式下拷贝 Cookies 到临时目录避免文件锁冲突
         if browser_data_dir is None:
-            browser_data_dir = str(Path.home() / ".memory_index_browser_data")
-        browser_data_path = Path(browser_data_dir)
-        browser_data_path.mkdir(exist_ok=True, parents=True)
+            browser_data_dir = "./browser_data"
+        persistent_data_path = Path(browser_data_dir)
+        persistent_data_path.mkdir(exist_ok=True, parents=True)
+
+        if headless:
+            browser_data_path = Path(tempfile.mkdtemp(prefix="memidx_headless_"))
+            logger.info(f"无头模式：使用临时用户目录 {browser_data_path}")
+            # 将持久化目录中的 Cookies 拷贝到临时目录，保留登录态
+            _copy_cookies_to_temp(persistent_data_path, browser_data_path)
+        else:
+            browser_data_path = persistent_data_path
         options.set_user_data_path(str(browser_data_path.absolute()))
 
-        # 无头模式配置
+        # 无头模式配置（使用新版 headless 参数，避免旧版兼容性警告）
         if headless:
-            options.headless(True)
+            options.set_argument('--headless=new')
         
-        # 基础反爬虫配置 (参考最初提交)
+        # 反爬虫 + 防界面干扰配置（参考 7fdc58e 稳定版）
         options.set_argument('--no-sandbox')
         options.set_argument('--disable-dev-shm-usage')
         options.set_argument('--disable-blink-features=AutomationControlled')
+        options.set_argument('--disable-extensions')
+        options.set_argument('--disable-popup-blocking')
+        options.set_argument('--disable-notifications')
+        options.set_argument('--disable-infobars')
+        options.set_argument('--no-first-run')
+        options.set_argument('--no-default-browser-check')
+        # 允许所有来源连接调试端口 (解决 Handshake 404 问题)
+        options.set_argument('--remote-allow-origins=*')
         options.set_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         
          # 其他自定义配置
@@ -115,8 +179,31 @@ class BrowserManager:
             if hasattr(options, key):
                 getattr(options, key)(value)
         
-        # 创建浏览器
-        self._browser = Chromium(addr_or_opts=options)
+        # 创建浏览器 (带重试机制，应对用户数据目录锁定问题)
+        try:
+            self._browser = Chromium(addr_or_opts=options)
+        except Exception as e:
+            logger.warning(f"浏览器首次启动失败: {e}")
+            logger.warning("尝试使用临时用户数据目录重试...")
+            
+            # 重试时同样拷贝 Cookie，保留登录态
+            _retry_tmp = Path(tempfile.mkdtemp(prefix="memory_index_browser_"))
+            _copy_cookies_to_temp(persistent_data_path, _retry_tmp)
+            options.set_user_data_path(str(_retry_tmp))
+            
+            # 使用新端口
+            try:
+                new_port = find_free_port()
+                options.set_local_port(new_port)
+            except:
+                pass
+
+            try:
+                self._browser = Chromium(addr_or_opts=options)
+                logger.info(f"使用临时用户数据目录启动成功: {temp_user_data}")
+            except Exception as e2:
+                logger.error(f"浏览器启动彻底失败: {e2}")
+                raise e2
         
         logger.info(f"✓ 浏览器启动成功 (PID: {self._browser.process_id if hasattr(self._browser, 'process_id') else 'N/A'})")
         logger.info(f"  - 用户数据: {browser_data_dir}")

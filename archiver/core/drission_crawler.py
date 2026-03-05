@@ -289,9 +289,18 @@ class DrissionArchiver:
             
             # 3. 滚动加载懒加载内容
             logger.info("滚动页面以触发懒加载...")
-            self.current_tab.scroll.to_bottom()
-            time.sleep(2)
-            self.current_tab.scroll.to_top()
+            try:
+                self.current_tab.scroll.to_bottom()
+                time.sleep(2)
+                self.current_tab.scroll.to_top()
+            except Exception as _e:
+                logger.debug(f"标准滚动失败，尝试备用滚动: {_e}")
+                try:
+                    self.current_tab.run_js("window.scrollTo(0, document.body.scrollHeight || 10000);")
+                    time.sleep(2)
+                    self.current_tab.run_js("window.scrollTo(0, 0);")
+                except Exception as _e2:
+                    logger.debug(f"备用滚动也失败（忽略）: {_e2}")
             time.sleep(1)
             
             # 4. 全页截图
@@ -414,9 +423,18 @@ class DrissionArchiver:
             
             # 滚动页面确保懒加载内容加载完成
             logger.info("滚动页面加载懒加载内容...")
-            self.current_tab.scroll.to_bottom()
-            time.sleep(1)
-            self.current_tab.scroll.to_top()
+            try:
+                self.current_tab.scroll.to_bottom()
+                time.sleep(1)
+                self.current_tab.scroll.to_top()
+            except Exception as _e:
+                logger.debug(f"标准滚动失败，尝试备用滚动: {_e}")
+                try:
+                    self.current_tab.run_js("window.scrollTo(0, document.body.scrollHeight || 10000);")
+                    time.sleep(1)
+                    self.current_tab.run_js("window.scrollTo(0, 0);")
+                except Exception as _e2:
+                    logger.debug(f"备用滚动也失败（忽略）: {_e2}")
             time.sleep(1)
             
             # 获取页面标题
@@ -470,6 +488,20 @@ class DrissionArchiver:
                     ],
                 }
 
+            # 🆕 提前截图：在内容提取之前拍摄，避免反爬重定向导致截图为白页
+            # 此时页面已加载并滚动到顶部，是截图的最佳时机
+            _pre_screenshot_path = self.output_dir / f"_tmp_screenshot_{datetime.now().strftime('%H%M%S%f')}.png"
+            try:
+                logger.info("📸 正在截取全页截图（内容提取前）...")
+                self.current_tab.get_screenshot(
+                    path=str(_pre_screenshot_path),
+                    full_page=True
+                )
+                logger.info(f"✅ 截图已完成")
+            except Exception as _e:
+                logger.warning(f"⚠️  预截图失败（将跳过截图）: {_e}")
+                _pre_screenshot_path = None
+
             # 🆕 提前提取图片URL（从完整页面）
             full_page_html = self.current_tab.html
             logger.info("从完整页面提取图片URL...")
@@ -512,17 +544,23 @@ class DrissionArchiver:
             folder_path = self.output_dir / folder_name
             folder_path.mkdir(parents=True, exist_ok=True)
 
-            # 全页长截图
+            # 全页长截图：将预先截好的临时文件移动到最终位置
             screenshot_path = folder_path / "screenshot.png"
-            try:
-                logger.info("📸 正在截取全页截图...")
-                self.current_tab.get_screenshot(
-                    path=str(screenshot_path),
-                    full_page=True
-                )
+            if _pre_screenshot_path and Path(_pre_screenshot_path).exists():
+                import shutil
+                shutil.move(str(_pre_screenshot_path), str(screenshot_path))
                 logger.info(f"✅ 截图已保存: {screenshot_path.name}")
-            except Exception as e:
-                logger.warning(f"⚠️  截图失败（可忽略）: {e}")
+            else:
+                # 临时截图不存在，尝试再次截图（降级方案）
+                try:
+                    logger.info("📸 降级：重新尝试截图...")
+                    self.current_tab.get_screenshot(
+                        path=str(screenshot_path),
+                        full_page=True
+                    )
+                    logger.info(f"✅ 截图已保存: {screenshot_path.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  截图失败（可忽略）: {e}")
 
             # 下载图片
             logger.info("开始下载图片...")
@@ -1537,35 +1575,64 @@ OCR 文本可能存在识别错误，你必须根据上下文**主动识别并�
     
 
     def _perform_ocr_on_file(self, image_path: Path) -> str:
-        """对单张图片进行 OCR"""
+        """对单张图片进行 OCR (支持大图分割)"""
         if not image_path.exists():
             return ""
+            
+        # 尝试从 core 导入大图分割工具
+        try:
+            from core.image_utils import split_long_image
+        except ImportError:
+            split_long_image = None
+            logger.warning("⚠️  split_long_image utility not found, large images may fail")
         
         try:
-            # 尝试导入OCR模块 (简单兼容逻辑)
-            ocr_engine = "paddle"
+            # 优先使用 Vision OCR
             try:
                 from ocr.ocr_vision import init_vision_ocr, ocr_image_vision
-                ocr_engine = "vision"
-            except ImportError:
-                 try:
-                    from ocr.ocr_paddle import init_paddleocr, ocr_image_paddle
-                 except ImportError:
-                    return ""
-
-            import logging
-            # 临时屏蔽Paddle日志
-            logging.getLogger('ppocr').setLevel(logging.ERROR)
-            logging.getLogger('paddle').setLevel(logging.ERROR)
-
-            if ocr_engine == "vision":
                 ocr = init_vision_ocr(lang="ch", recognition_level="accurate")
-                result = ocr_image_vision(ocr, str(image_path))
-            else:
-                ocr = init_paddleocr(lang="ch", use_gpu=False)
-                result = ocr_image_paddle(ocr, str(image_path))
                 
-            return result or ""
+                # Vision OCR 大图处理逻辑
+                processed_text = ""
+                
+                if split_long_image:
+                    try:
+                        import tempfile
+                        with tempfile.TemporaryDirectory() as temp_chunk_dir:
+                            chunk_dir_path = Path(temp_chunk_dir)
+                            image_chunks = split_long_image(image_path, output_dir=chunk_dir_path)
+                            
+                            chunk_texts = []
+                            for chunk_path in image_chunks:
+                                chunk_text = ocr_image_vision(ocr, str(chunk_path))
+                                if chunk_text and chunk_text.strip():
+                                    chunk_texts.append(chunk_text.strip())
+                            
+                            processed_text = "\n\n".join(chunk_texts)
+                    except Exception as e:
+                        logger.warning(f"⚠️  Image split/OCR (Vision) failed: {e}")
+                        processed_text = ocr_image_vision(ocr, str(image_path))
+                else:
+                    processed_text = ocr_image_vision(ocr, str(image_path))
+                
+                return processed_text if processed_text else ""
+                
+            except ImportError:
+                # 降级到 PaddleOCR
+                try:
+                    from ocr.ocr_paddle import init_paddleocr, ocr_image_paddle
+                except ImportError:
+                    return ""
+                
+                import logging
+                logging.getLogger('ppocr').setLevel(logging.ERROR)
+                logging.getLogger('paddle').setLevel(logging.ERROR)
+                
+                ocr = init_paddleocr(lang="ch", use_gpu=False)
+                # PaddingOCR 暂时不支持大图分割逻辑，直接调用 (或后续需补充)
+                result = ocr_image_paddle(ocr, str(image_path))
+                return result or ""
+                
         except Exception as e:
             logger.warning(f"Screenshot OCR failed: {e}")
             return ""
@@ -1581,74 +1648,83 @@ OCR 文本可能存在识别错误，你必须根据上下文**主动识别并�
             合并后的OCR文本
         """
         if not images_dir.exists() or not images_dir.is_dir():
-            logger.warning(f"图片目录不存在: {images_dir}")
             return ""
         
+        # 获取所有图片
+        image_files = sorted(list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png")) + list(images_dir.glob("*.webp")))
+        if not image_files:
+            return ""
+            
+        logger.info(f"🔍 开始识别目录中的 {len(image_files)} 张图片...")
+        
+        # 尝试从 core 导入大图分割工具
         try:
-            # 尝试导入OCR模块
+            from core.image_utils import split_long_image
+        except ImportError:
+            split_long_image = None
+        
+        full_text = []
+
+        try:
+            # 优先 Vision
             try:
                 from ocr.ocr_vision import init_vision_ocr, ocr_image_vision
-                ocr_engine = "vision"
+                ocr = init_vision_ocr(lang="ch", recognition_level="accurate")
+                use_vision = True
             except ImportError:
-                logger.warning("Vision OCR 不可用，尝试使用 PaddleOCR")
+                # Paddle Fallback
                 try:
                     from ocr.ocr_paddle import init_paddleocr, ocr_image_paddle
-                    ocr_engine = "paddle"
                 except ImportError:
-                    logger.error("未找到可用的OCR引擎")
-                    return ""
-            
-            # 初始化OCR
-            if ocr_engine == "vision":
-                ocr = init_vision_ocr(lang="ch", recognition_level="accurate")
-                logger.info("使用 Apple Vision OCR")
-            else:
+                     logger.warning("OCR module missing")
+                     return ""
                 ocr = init_paddleocr(lang="ch", use_gpu=False)
-                logger.info("使用 PaddleOCR")
+                use_vision = False
             
-            # 获取所有图片文件
-            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
-            image_files = [
-                f for f in images_dir.iterdir() 
-                if f.is_file() and f.suffix.lower() in image_extensions
-            ]
+            import tempfile
             
-            if not image_files:
-                logger.warning(f"在 {images_dir} 中未找到图片文件")
-                return ""
-            
-            logger.info(f"找到 {len(image_files)} 张图片，开始识别...")
-            
-            # 对每张图片进行OCR
-            all_text = []
-            for i, image_file in enumerate(image_files, 1):
+            for img_path in image_files:
                 try:
-                    if ocr_engine == "vision":
-                        result = ocr_image_vision(ocr, str(image_file))
-                    else:
-                        result = ocr_image_paddle(ocr, str(image_file))
-                    
-                    if result and result.strip():
-                        all_text.append(f"## 图片 {i}: {image_file.name}\n\n{result}\n")
-                        logger.debug(f"  [{i}/{len(image_files)}] {image_file.name}: {len(result)} 字符")
-                    else:
-                        logger.debug(f"  [{i}/{len(image_files)}] {image_file.name}: 未识别到文字")
+                    logger.info(f"   OCR处理: {img_path.name}")
+                    if use_vision:
+                        # Vision OCR (支持分割)
+                        current_text = ""
+                        if split_long_image:
+                            try:
+                                with tempfile.TemporaryDirectory() as temp_chunk_dir:
+                                    chunk_dir_path = Path(temp_chunk_dir)
+                                    chunks = split_long_image(img_path, output_dir=chunk_dir_path)
+                                    
+                                    chunk_texts = []
+                                    for chunk in chunks:
+                                        t = ocr_image_vision(ocr, str(chunk))
+                                        if t and t.strip():
+                                            chunk_texts.append(t.strip())
+                                    current_text = "\n\n".join(chunk_texts)
+                            except Exception:
+                                current_text = ocr_image_vision(ocr, str(img_path))
+                        else:
+                             current_text = ocr_image_vision(ocr, str(img_path))
                         
+                        if current_text:
+                            full_text.append(f"### 图片文本: {img_path.name}\n{current_text}")
+                            
+                    else:
+                        # Paddle OCR (简易模式，暂不分割)
+                        t = ocr_image_paddle(ocr, str(img_path))
+                        if t:
+                             full_text.append(f"### 图片文本: {img_path.name}\n{t}")
+                             
                 except Exception as e:
-                    logger.warning(f"  [{i}/{len(image_files)}] {image_file.name}: OCR失败 - {e}")
+                    logger.warning(f"Failed to OCR {img_path.name}: {e}")
                     continue
             
-            if all_text:
-                combined_text = "\n\n".join(all_text)
-                logger.info(f"✅ OCR完成：共识别 {len(combined_text)} 字符")
-                return combined_text
-            else:
-                logger.warning("所有图片均未识别到文字")
-                return ""
-                
+            return "\n\n".join(full_text)
+            
         except Exception as e:
-            logger.error(f"OCR处理失败: {e}")
+            logger.warning(f"OCR directory processing failed: {e}")
             return ""
+
     
     def close(self):
         """

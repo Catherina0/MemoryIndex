@@ -92,6 +92,13 @@ except ImportError:
 load_dotenv()
 
 
+# 尝试从 core 导入大图分割工具
+try:
+    from core.image_utils import split_long_image
+except ImportError:
+    split_long_image = None
+    print("⚠️  Warning: split_long_image utility not found")
+
 # ========== 路径/目录处理 ==========
 def ensure_dir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
@@ -1521,10 +1528,23 @@ def process_video(
             # 使用临时文件夹处理单张图片(复用 folder 接口)
             with tempfile.TemporaryDirectory() as temp_cover_dir:
                 temp_dir_path = Path(temp_cover_dir)
-                # Vision OCR 和 PaddleOCR 文件夹模式通常期望特定的文件名格式或扫描所有图片
-                # 为了兼容性，重命名为 frame_0001.png
-                temp_cover_file = temp_dir_path / "frame_0001.png"
-                shutil.copy(cover_image_path, temp_cover_file)
+                
+                # 如果有 split_long_image，使用分割
+                processed_images = False
+                if split_long_image:
+                    try:
+                        chunks = split_long_image(cover_image_path, output_dir=temp_dir_path)
+                        if chunks:
+                            processed_images = True
+                            print(f"   ℹ️  封面已分割为 {len(chunks)} 个片段")
+                    except Exception as e:
+                        print(f"   ⚠️  封面分割失败: {e}")
+
+                if not processed_images:
+                    # Vision OCR 和 PaddleOCR 文件夹模式通常期望特定的文件名格式或扫描所有图片
+                    # 为了兼容性，重命名为 frame_0001.png
+                    temp_cover_file = temp_dir_path / "frame_0001.png"
+                    shutil.copy(cover_image_path, temp_cover_file)
                 
                 selected_engine = ocr_engine or OCR_ENGINE
                 temp_ocr_text = ""

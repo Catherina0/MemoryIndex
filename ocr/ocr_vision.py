@@ -28,7 +28,10 @@ VISION_OCR_SCRIPT = Path(__file__).parent / "vision_ocr.swift"
 # 编译后的二进制文件路径
 VISION_OCR_BIN = Path(__file__).parent / "vision_ocr_bin"
 # 画布裁剪最大尺寸（超过此尺寸将进行裁剪识别）
-MAX_CANVAS_SIZE = 3000
+# Apple Vision Framework 在 1600px 以内识别效果最佳；长图（高宽比 > 3）也会触发分块
+MAX_CANVAS_SIZE = 1600
+# 长图检测：高宽比超过此值时强制分块（即使单边未超过 MAX_CANVAS_SIZE）
+LONG_IMAGE_RATIO = 3
 
 
 class VisionOCR:
@@ -122,7 +125,9 @@ class VisionOCR:
         rec_texts = []
         rec_scores = []
         
-        print(f"ℹ️  Vision OCR: 检测到大图 ({width}x{height})，启动切片识别模式...")
+        ratio = max(width, height) / max(min(width, height), 1)
+        mode = "细长图" if ratio >= LONG_IMAGE_RATIO else "大图"
+        print(f"ℹ️  Vision OCR: 检测到{mode} ({width}x{height}, 宽高比={ratio:.1f})，启动切片识别模式...")
         
         # Calculate grid steps
         v_steps = (height + MAX_CANVAS_SIZE - 1) // MAX_CANVAS_SIZE
@@ -153,8 +158,8 @@ class VisionOCR:
                     try:
                         region.save(tmp_path, format="PNG")
                         
-                        # Recursive call (minimal overhead)
-                        chunk_res = self.ocr(tmp_path, **kwargs)
+                        # 递归调用时传 _skip_tiling=True，避免切片后再次触发分块检测
+                        chunk_res = self.ocr(tmp_path, _skip_tiling=True, **kwargs)
                         
                         if chunk_res and chunk_res[0]:
                             chunk_texts = chunk_res[0].get("rec_texts", [])
@@ -189,6 +194,7 @@ class VisionOCR:
         self,
         image_path: str,
         cls: bool = True,  # 兼容参数（Vision 自动处理方向）
+        _skip_tiling: bool = False,  # 内部参数：切片递归调用时置 True，跳过尺寸检测防止无限递归
         **kwargs
     ) -> List:
         """
@@ -206,16 +212,21 @@ class VisionOCR:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"图片不存在: {image_path}")
 
-        # 大图自动切片逻辑
-        if PIL_AVAILABLE:
+        # 大图 / 细长图自动切片逻辑（_skip_tiling=True 时跳过，避免切片递归时无限循环）
+        if not _skip_tiling and PIL_AVAILABLE:
             try:
                 with Image.open(image_path) as img:
                     width, height = img.size
                     
-                    if width > MAX_CANVAS_SIZE or height > MAX_CANVAS_SIZE:
-                        # 递归调用时避免无限循环（通过检查临时文件后缀或其他机制，或者直接在 _ocr_tiled 里面手动分割）
+                    # 超过单边阈值，或者高宽比过大（细长图），都触发分块
+                    is_oversized = width > MAX_CANVAS_SIZE or height > MAX_CANVAS_SIZE
+                    is_long_image = (
+                        (height >= width * LONG_IMAGE_RATIO and height > MAX_CANVAS_SIZE // 2)
+                        or (width >= height * LONG_IMAGE_RATIO and width > MAX_CANVAS_SIZE // 2)
+                    )
+                    if is_oversized or is_long_image:
                         # 这里我们直接调用 _ocr_tiled，它使用 crop 和 tempfile
-                        # 只有原始大图才会进这个 IF 分支
+                        # 只有原始大图/长图才会进这个 IF 分支
                         return self._ocr_tiled(img, width, height, **kwargs)
             except Exception as e:
                 # 常见错误：非图片文件、格式不支持等
