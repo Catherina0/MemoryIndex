@@ -862,129 +862,139 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 article_selectors = [
                     "[data-testid='twitterArticleRichTextView']",  # Draft.js 富文本容器 (优先)
                     "[data-testid='twitterArticleReadView']",      # 阅读视图容器
-                    "[data-testid='longformRichTextComponent']",   # 长文组件
-                    "[data-testid='article']",  # 通用文章容器
+                    "[data-testid='longformRichTextComponent']"    # 长文组件
                 ]
                 
-                article_view = None
                 for selector in article_selectors:
-                    article_view = self.current_tab.ele(selector)
+                    article_view = self.current_tab.ele(f"css:{selector}")
                     if article_view:
-                        logger.info(f"  - 找到 Twitter Article 容器 {selector}")
+                        logger.info(f"  - 找到 Twitter Article长文容器 {selector}")
                         return article_view.html
 
-                # 2. 尝试查找标准推文 (Standard Tweet)
-                # 优先查找 tweetDetail (详情页主推文)
-                article = None
+                # 2. 收集对话线: 获取 inline_reply_offscreen 上方的所有推文
+                nodes = self.current_tab.eles('css:article, [data-testid="inline_reply_offscreen"]')
                 
-                # 尝试 tweetDetail
-                tweet_detail = self.current_tab.ele("[data-testid='tweetDetail']")
-                if tweet_detail:
-                    # 在详情容器中找 tweet article
-                    article = tweet_detail.ele("tag:article")
-                    if article:
-                        logger.info("  - 在 tweetDetail 中找到主推文 article")
-                
-                # 如果没找到，尝试遍历所有 article 找 data-testid="tweet"
-                if not article:
-                    articles = self.current_tab.eles('tag:article')
-                    for a in articles:
-                        if a.attrs.get('data-testid') == 'tweet':
-                            article = a
-                            break
-                
-                if article:
-                    logger.info(f"  - 找到主推文容器 article[data-testid='{article.attrs.get('data-testid', 'unknown')}']")
+                valid_articles = []
+                for node in nodes:
+                    if node.attrs.get('data-testid') == 'inline_reply_offscreen':
+                        logger.info("  - 遇到回复框 inline_reply_offscreen，停止收集后续推文")
+                        break
                     
-                    # ⚠️ Special check for Article inside tweet article
-                    # 长文章/Twitter Article 可能嵌套在 tweet article 内部
-                    # 优先检查 RichText 视图
-                    long_article_components = [
-                        "[data-testid='twitterArticleRichTextView']",
-                        "[data-testid='twitterArticleReadView']",
-                        "[data-testid='longformRichTextComponent']",
-                        ".DraftEditor-root"
-                    ]
-                    
-                    for comp_selector in long_article_components:
-                        long_view = article.ele(comp_selector)
-                        if long_view:
-                            logger.info(f"  - ✅ 在 article 内部找到长文章组件: {comp_selector}")
-                            return long_view.html
+                    if node.tag == 'article':
+                        valid_articles.append(node)
+                
+                if not valid_articles:
+                    logger.warning("  - ❌ 未找到任何推文容器 article")
+                    return ""
 
+                logger.info(f"  - 找到 {len(valid_articles)} 个层级推文（对话线）")
+                
+                thread_html_parts = []
+                
+                for idx, article in enumerate(valid_articles):
                     parts = []
-                    # 1. 提取正文 - Try CSS first, then XPath
-                    text_div = article.ele("[data-testid='tweetText']")
-                    if not text_div:
-                        logger.warning("  - CSS找不tweetText, 尝试XPath...")
-                        text_div = article.ele("xpath:.//*[@data-testid='tweetText']")
+                    logger.info(f"  - 开始处理推文 {idx + 1}/{len(valid_articles)}...")
                     
-                    # 尝试查找包含 lang 属性的 div (通常是推文正文)
-                    if not text_div:
-                        # 只有在 article 内部查找的 div[lang] 才是真正文
-                        # 且要排除 span, 因为有些标签也带 lang
-                        text_div = article.ele("css:div[lang]")
-                        if text_div:
-                            logger.info("  - 通过 div[lang] 找到推文正文")
-                    
-                    if text_div:
-                        parts.append(text_div.html)
-                        logger.info(f"  - 找到推文正文 (长度: {len(text_div.text)})")
-                    else:
-                        logger.warning("  - ❌ 未找到推文正文 [data-testid='tweetText']")
-                        
-                        # 如果没有找到正文，也没有长文章视图，尝试整个 article 内容作为兜底
-                        # 避免完全空白
-                        if not parts: 
-                             logger.warning("  - ⚠️ 尝试使用整个 article 作为内容兜底")
-                             parts.append(article.html)
-
-                    # 2. 提取图片容器
-                    # Try CSS first, then XPath, then manual scan
-                    photos = article.eles("[data-testid='tweetPhoto']")
-                    if not photos:
-                        logger.info("  - CSS未找到图片, 尝试XPath...")
-                        photos = article.eles("xpath:.//*[@data-testid='tweetPhoto']")
-                    
-                    if photos:
-                        logger.info(f"  - 找到 {len(photos)} 个图片容器")
-                        for p in photos:
-                            html_part = p.html
-                            # Ensure high res images in HTML to match downloader logic
-                            if 'name=' in html_part:
-                                import re
-                                html_part = re.sub(r'name=(small|medium|360x360|900x900)', 'name=large', html_part)
-                            parts.append(html_part)
-                    else:
-                        logger.info("  - ❌ 未找到图片容器 (tweetPhoto)")
-                        # Fallback: Find all images in article and filter avatars
-                        imgs = article.eles("tag:img")
-                        valid_imgs = []
-                        for img in imgs:
-                            src = img.attrs.get('src', '')
-                            if 'profile_images' in src or 'emoji' in src:
-                                continue
-                            if src:
-                                # Wrap in simple img tag if container not found
-                                valid_imgs.append(f'<img src="{src}" />')
-                        
-                        if valid_imgs:
-                             logger.info(f"  -由于未找到容器，直接提取了 {len(valid_imgs)} 张正文图片")
-                             parts.extend(valid_imgs)
+                    # 辅助函数：提取文字和图片
+                    def extract_tweet_content(container, prefix=""):
+                        c_parts = []
+                        # 提取正文
+                        logger.info(f"{prefix}    - 尝试提取正文...")
+                        text_div = container.ele("css:[data-testid='tweetText']", timeout=0.5)
+                        if not text_div:
+                            text_div = container.ele("xpath:.//*[@data-testid='tweetText']", timeout=0.5)
+                        if not text_div:
+                            text_div = container.ele("css:div[lang]", timeout=0.5)
                             
+                        if text_div:
+                            logger.info(f"{prefix}    - 找到正文 (长度: {len(text_div.text)})")
+                            c_parts.append(text_div.html)
+                        else:
+                            logger.warning(f"{prefix}    - ❌ 未找到正文 [data-testid='tweetText']")
+                            
+                        # 提取图片
+                        logger.info(f"{prefix}    - 尝试查找图片...")
+                        photos = container.eles("css:[data-testid='tweetPhoto']", timeout=0.5)
+                        if not photos:
+                            photos = container.eles("xpath:.//*[@data-testid='tweetPhoto']", timeout=0.5)
+                            
+                        if photos:
+                            logger.info(f"{prefix}    - 找到 {len(photos)} 个图片容器")
+                            for p in photos:
+                                html_part = p.html
+                                if 'name=' in html_part:
+                                    import re
+                                    html_part = re.sub(r'name=(small|medium|360x360|900x900)', 'name=large', html_part)
+                                c_parts.append(html_part)
+                        else:
+                            logger.info(f"{prefix}    - ❌ 未找到图片容器，尝试扫描普通 img 标签...")
+                            # 兜底：直接找img
+                            imgs = container.eles("css:img", timeout=0.5)
+                            valid_imgs = []
+                            for img in imgs:
+                                src = img.attrs.get('src', '')
+                                if 'profile_images' in src or 'emoji' in src:
+                                    continue
+                                if src:
+                                    valid_imgs.append(f'<img src="{src}" />')
+                            if valid_imgs:
+                                logger.info(f"{prefix}    - 扫描到 {len(valid_imgs)} 张有效图片")
+                                c_parts.extend(valid_imgs)
+                        
+                        return c_parts
+
+                    # 检查是否有长文组件在 tweet 内部
+                    has_long_article = False
+                    logger.info(f"  - [{idx + 1}] 检查是否为长文章结构...")
+                    for comp_selector in article_selectors:
+                        long_view = article.ele(f"css:{comp_selector}", timeout=0.5)
+                        if long_view:
+                            logger.info(f"  - [{idx + 1}] ✅ 在 article 内部找到长文章组件: {comp_selector}")
+                            parts.append(long_view.html)
+                            has_long_article = True
+                            break
+                            
+                    if not has_long_article:
+                        # 提取当前推文的内容
+                        main_content = extract_tweet_content(article, f"  - [{idx + 1}]")
+                        
+                        # 提取引用推文 (Quote Tweet)
+                        quote_html = ""
+                        logger.info(f"  - [{idx + 1}] 检查是否有嵌套的引用推文 (Quote Tweet)...")
+                        quote_container = article.ele('css:div[role="link"]', timeout=0.5)
+                        if quote_container:
+                            logger.info(f"  - [{idx + 1}] 发现引用推文区域，进行下钻提取...")
+                            quote_parts = extract_tweet_content(quote_container, f"  - [引用]")
+                            if quote_parts:
+                                logger.info(f"  - [{idx + 1}] ✅ 成功提取引用推文内容")
+                                quote_html = f"<blockquote>{'<br>'.join(quote_parts)}</blockquote>"
+                                
+                                # 将主推文的正文与引用的内容分离开，去重防止嵌套重复抓取
+                                clean_main = []
+                                for part in main_content:
+                                    if part not in quote_parts:
+                                        clean_main.append(part)
+                                main_content = clean_main
+                                
+                        parts.extend(main_content)
+                        if quote_html:
+                            parts.append(quote_html)
+
                     if parts:
-                        combined_html = "\n<br>\n".join(parts)
-                        return combined_html
+                        thread_html_parts.append("\n<br>\n".join(parts))
+                        logger.info(f"  - [{idx + 1}] ✅ 当前层级合并完成\n")
+                    else:
+                        # 兜底
+                        logger.warning(f"  - [{idx + 1}] ⚠️ 提取不到明确正文，使用整块内容兜底\n")
+                        thread_html_parts.append(article.html)
+
+                if thread_html_parts:
+                    # 使用 <hr> 分割多条推文，以便在 Markdown 中显示分割线
+                    combined_html = "\n<hr>\n".join(thread_html_parts)
+                    return combined_html
                 else:
-                    logger.warning("  - ❌ 未找到主推文容器 article[data-testid='tweet']")
-                    # DEBUG: Check what articles actually exist
-                    arts = self.current_tab.eles('tag:article')
-                    logger.info(f"DEBUG: Found {len(arts)} generic articles in Crawler Session")
-                    for i, a in enumerate(arts[:3]):
-                        logger.info(f"DEBUG Art {i} Attrs: {a.attrs}")
-                    
-                    # DEBUG: Check title again
-                    logger.info(f"DEBUG Page Title: {self.current_tab.title}")
+                    logger.warning("  - ❌ 未提取到推文正文")
+
 
             except Exception as e:
                 logger.warning(f"Twitter 纯净提取失败: {e}, 将尝试通用选择器")
