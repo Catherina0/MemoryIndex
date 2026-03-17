@@ -7,6 +7,13 @@
 ───────────────────────────────────────────────────────────────
 /Users/catherina/Documents/GitHub/knowledge/
 
+✨ 新特性（2025-03-18）🆕 【前后端 Web 系统】
+───────────────────────────────────────────────────────────────
+• 🎨 React 前端应用 - 现代化 UI，支持搜索、浏览、统计分析
+• 📚 FastAPI 后端服务 - REST API，完整支持搜索、内容管理、标签、统计
+• ⚡ 一键启动脚本 - bash start-dev.sh 同时启动前后端
+• 🌐 Web 界面功能 - 首页/搜索/详情/统计四大页面
+
 ✨ 新特性（2026-03-02）🆕
 ───────────────────────────────────────────────────────────────
 • 🤖 Telegram Bot - 随时随地通过手机管理知识库，发链接自动归档
@@ -243,6 +250,31 @@ make check          # 检查配置状态
 make clean          # 清理输出文件
 make show-report    # 查看最新报告
 make list-reports   # 列出所有报告
+
+🌐 Web 前后端系统【新】
+───────────────────────────────────────────────────────────────
+bash start-dev.sh              # ⚡ 一键启动前端 + 后端
+
+🎨 前端应用（http://localhost:3000）：
+  /          # 首页 - 统计和概览
+  /search    # 搜索页 - 全文搜索
+  /dashboard # 统计页 - 数据分析
+
+📚 后端 API（http://localhost:8000）：
+  /docs              # 📖 交互式 API 文档
+  /api/search        # 搜索
+  /api/videos        # 视频列表
+  /api/archives      # 网页列表
+  /api/stats         # 统计
+  /api/health        # 健康检查
+
+示例 API 调用：
+  curl "http://localhost:8000/api/search?q=ai"
+  curl "http://localhost:8000/api/stats"
+
+💻 分别启动（调试用）：
+  python -m backend.main       # 后端（8000）
+  cd frontend && npm run dev   # 前端（3000）
 
 �️  数据库快捷命令🆕
 ───────────────────────────────────────────────────────────────

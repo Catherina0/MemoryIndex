@@ -40,14 +40,34 @@ memoryindex.egg-info/
 # Project outputs
 output/
 reports/
+Report/
 temp/
 temp_*/
+test_temp/
 *.tmp
 
 # Test directories
 test_archived/
 test_images/
 tests/__pycache__/
+test_fix/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Backend
+backend/__pycache__/
+backend/*.pyc
+
+# Temporary and build files
+*.egg-info/
+dist/
+build/
+.tox/
+*.tar.gz
+*.zip
 tests/*.pyc
 
 # Debug files

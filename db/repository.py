@@ -544,6 +544,87 @@ class VideoRepository:
                     tags_str
                 ))
     
+    def count(self) -> int:
+        """统计视频总数"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("SELECT COUNT(*) as count FROM videos")
+            return cursor.fetchone()['count']
+    
+    def get_average_duration(self) -> float:
+        """获取平均视频时长（秒）"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT AVG(duration_seconds) as avg_duration 
+                FROM videos 
+                WHERE duration_seconds IS NOT NULL
+            """)
+            row = cursor.fetchone()
+            return row['avg_duration'] or 0.0
+    
+    def list_videos(self, limit: int = 100, offset: int = 0, sort: str = "recent") -> tuple:
+        """
+        列出视频，返回 (videos_list, total_count) 元组
+        
+        Args:
+            limit: 数量限制
+            offset: 分页偏移
+            sort: 排序方式 (recent/oldest)
+        
+        Returns:
+            tuple: (视频字典列表, 总数)
+        """
+        with self._get_conn() as conn:
+            # 构建排序条件
+            if sort == "oldest":
+                order_by = "ORDER BY v.created_at ASC"
+            else:  # 默认 recent
+                order_by = "ORDER BY v.created_at DESC"
+            
+            # 统计总数
+            cursor = conn.execute("SELECT COUNT(*) as count FROM videos")
+            total = cursor.fetchone()['count']
+            
+            # 获取视频列表及其摘要
+            query = f"""
+                SELECT 
+                    v.id, v.title, v.source_type, v.duration_seconds, v.created_at,
+                    (
+                        SELECT GROUP_CONCAT(t.name, ', ')
+                        FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE vt.video_id = v.id
+                    ) as tags,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type = 'report'
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) as report_content
+                FROM videos v
+                {order_by}
+                LIMIT ? OFFSET ?
+            """
+            
+            cursor = conn.execute(query, (limit, offset))
+            
+            results = []
+            for row in cursor.fetchall():
+                # 提取摘要
+                summary = extract_summary_from_report(row['report_content']) if row['report_content'] else '暂无摘要'
+                
+                results.append({
+                    'id': row['id'],
+                    'title': row['title'] or '未命名',
+                    'source_type': row['source_type'],
+                    'duration': row['duration_seconds'] or 0,
+                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'summary': summary,
+                    'created_at': row['created_at']
+                })
+            
+            return results, total
+    
     # 辅助方法
     def _row_to_video(self, row: dict, conn) -> Video:
         """将数据库行转换为 Video 对象"""
@@ -601,3 +682,394 @@ class VideoRepository:
             sequence=row['sequence'],
             created_at=row['created_at'] if isinstance(row['created_at'], datetime) else (datetime.fromisoformat(row['created_at']) if row['created_at'] else None),
         )
+
+
+#region 网页归档存储库
+
+class ArchiveRepository:
+    """归档内容数据访问层"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path
+    
+    @contextmanager
+    def _get_conn(self):
+        """获取数据库连接的上下文管理器"""
+        conn = get_connection(self.db_path)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    
+    def get_archive(self, archive_id: int) -> Optional[Dict[str, Any]]:
+        """获取归档内容"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM videos 
+                WHERE id = ? AND source_type LIKE '%archive%'
+            """, (archive_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            # 获取报告/内容
+            cursor = conn.execute("""
+                SELECT artifact_type, content_text FROM artifacts
+                WHERE video_id = ? AND artifact_type IN ('report', 'transcript')
+                ORDER BY created_at DESC LIMIT 1
+            """, (archive_id,))
+            artifact_row = cursor.fetchone()
+            
+            result = {
+                'id': row['id'],
+                'title': row['title'],
+                'source_type': row['source_type'],
+                'source_url': row['source_url'],
+                'created_at': row['created_at'],
+                'summary': '暂无内容',
+                'content': artifact_row['content_text'] if artifact_row else '暂无内容'
+            }
+            
+            # 获取标签
+            cursor = conn.execute("""
+                SELECT t.name FROM tags t
+                JOIN video_tags vt ON t.id = vt.tag_id
+                WHERE vt.video_id = ?
+            """, (archive_id,))
+            result['tags'] = [r['name'] for r in cursor.fetchall()]
+            
+            return result
+    
+    def list_archives(self, limit: int = 20, offset: int = 0, sort: str = "recent") -> tuple:
+        """
+        列出网页归档
+        
+        Returns:
+            tuple: (归档列表, 总数)
+        """
+        with self._get_conn() as conn:
+            # 排序条件
+            if sort == "oldest":
+                order_by = "ORDER BY v.created_at ASC"
+            else:  # 默认 recent
+                order_by = "ORDER BY v.created_at DESC"
+            
+            # 统计网页归档总数
+            cursor = conn.execute("""
+                SELECT COUNT(*) as count FROM videos 
+                WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+            """)
+            total = cursor.fetchone()['count']
+            
+            # 获取归档列表
+            query = f"""
+                SELECT 
+                    v.id, v.title, v.source_type, v.created_at,
+                    (
+                        SELECT GROUP_CONCAT(t.name, ', ')
+                        FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE vt.video_id = v.id
+                    ) as tags,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type IN ('report', 'transcript')
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) as content
+                FROM videos v
+                WHERE v.source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+                {order_by}
+                LIMIT ? OFFSET ?
+            """
+            
+            cursor = conn.execute(query, (limit, offset))
+            
+            results = []
+            for row in cursor.fetchall():
+                summary = extract_summary_from_report(row['content']) if row['content'] else '暂无摘要'
+                
+                results.append({
+                    'id': row['id'],
+                    'title': row['title'] or '未命名',
+                    'source_type': row['source_type'],
+                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'summary': summary,
+                    'created_at': row['created_at']
+                })
+            
+            return results, total
+    
+    def count(self) -> int:
+        """统计归档总数"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT COUNT(*) as count FROM videos 
+                WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+            """)
+            return cursor.fetchone()['count']
+
+#endregion
+
+#region 标签存储库
+
+class TagRepository:
+    """标签数据访问层"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path
+    
+    @contextmanager
+    def _get_conn(self):
+        """获取数据库连接的上下文管理器"""
+        conn = get_connection(self.db_path)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    
+    def count(self) -> int:
+        """统计标签总数"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            return cursor.fetchone()['count']
+    
+    def get_all_tags(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取所有标签"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT id, name, category, count FROM tags
+                ORDER BY count DESC, name ASC
+                LIMIT ?
+            """, (limit,))
+            
+            return [
+                {
+                    'id': row['id'],
+                    'name': row['name'],
+                    'count': row['count'] or 0,
+                    'category': row['category']
+                }
+                for row in cursor.fetchall()
+            ]
+    
+    def get_top_tags(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """获取热门标签"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    t.id, t.name, t.category,
+                    COUNT(vt.video_id) as count
+                FROM tags t
+                LEFT JOIN video_tags vt ON t.id = vt.tag_id
+                GROUP BY t.id
+                ORDER BY count DESC, t.name ASC
+                LIMIT ?
+            """, (limit,))
+            
+            return [
+                {
+                    'id': row['id'],
+                    'name': row['name'],
+                    'count': row['count'],
+                    'category': row['category']
+                }
+                for row in cursor.fetchall()
+            ]
+    
+    def get_tag_stats(self) -> Dict[str, int]:
+        """获取标签统计"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            total_tags = cursor.fetchone()['count']
+            
+            cursor = conn.execute("SELECT COUNT(DISTINCT tag_id) as count FROM video_tags")
+            used_tags = cursor.fetchone()['count']
+            
+            return {
+                'total_tags': total_tags,
+                'used_tags': used_tags
+            }
+
+#endregion
+
+#region 搜索存储库
+
+class SearchRepository:
+    """全文搜索数据访问层"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path
+    
+    @contextmanager
+    def _get_conn(self):
+        """获取数据库连接的上下文管理器"""
+        conn = get_connection(self.db_path)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    
+    def search(self, query: str, tags: Optional[List[str]] = None,
+               source_type: Optional[str] = None, limit: int = 20, offset: int = 0) -> tuple:
+        """执行全文搜索"""
+        with self._get_conn() as conn:
+            # 构建 FTS 查询
+            results = []
+            
+            # 简单的全文搜索（不支持 FTS5 高级句法时的降级方案）
+            sql = """
+                SELECT DISTINCT 
+                    v.id, v.title, v.source_type, v.created_at,
+                    f.source_field,
+                    (
+                        SELECT GROUP_CONCAT(t.name, ', ')
+                        FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE vt.video_id = v.id
+                    ) as tags
+                FROM videos v
+                LEFT JOIN fts_content f ON v.id = f.video_id
+                WHERE 1=1
+            """
+            
+            params = []
+            
+            # 关键词搜索
+            if query:
+                sql += " AND (v.title LIKE ? OR f.content LIKE ?)"
+                wildcard_query = f"%{query}%"
+                params.extend([wildcard_query, wildcard_query])
+            
+            # 标签过滤
+            if tags and len(tags) > 0:
+                placeholders = ','.join(['?' for _ in tags])
+                sql += f"""
+                    AND v.id IN (
+                        SELECT DISTINCT vt.video_id FROM video_tags vt
+                        JOIN tags t ON vt.tag_id = t.id
+                        WHERE t.name IN ({placeholders})
+                    )
+                """
+                params.extend(tags)
+            
+            # 来源类型过滤
+            if source_type:
+                sql += " AND v.source_type = ?"
+                params.append(source_type)
+            
+            # 统计总数
+            count_sql = "SELECT COUNT(DISTINCT v.id) as count FROM (" + sql + ")"
+            cursor = conn.execute(count_sql, params)
+            total = cursor.fetchone()['count']
+            
+            # 分页和排序
+            sql += " ORDER BY v.created_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            cursor = conn.execute(sql, params)
+            
+            for row in cursor.fetchall():
+                results.append({
+                    'id': row['id'],
+                    'type': 'video' if row['source_type'] not in ('web_archive', 'zhihu', 'reddit') else 'archive',
+                    'title': row['title'],
+                    'summary': '暂无摘要',
+                    'source_type': row['source_type'],
+                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'created_at': row['created_at']
+                })
+            
+            return results, total
+    
+    def index_content(self, video_id: int, content: str, metadata: Dict[str, Any]) -> bool:
+        """索引内容"""
+        return True
+
+#endregion
+
+#region 统计存储库
+
+class StatsRepository:
+    """统计数据访问层"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path
+    
+    @contextmanager
+    def _get_conn(self):
+        """获取数据库连接的上下文管理器"""
+        conn = get_connection(self.db_path)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取全站统计"""
+        with self._get_conn() as conn:
+            # 统计视频
+            cursor = conn.execute("SELECT COUNT(*) as count FROM videos WHERE source_type NOT IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')")
+            total_videos = cursor.fetchone()['count']
+            
+            # 统计归档
+            cursor = conn.execute("SELECT COUNT(*) as count FROM videos WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')")
+            total_archives = cursor.fetchone()['count']
+            
+            # 统计标签
+            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            total_tags = cursor.fetchone()['count']
+            
+            # 统计产物
+            cursor = conn.execute("SELECT COUNT(*) as count FROM artifacts")
+            total_artifacts = cursor.fetchone()['count']
+            
+            return {
+                "total_videos": total_videos,
+                "total_archives": total_archives,
+                "total_artifacts": total_artifacts,
+                "total_tags": total_tags
+            }
+    
+    def get_time_series_stats(self, days: int = 30) -> List[Dict[str, Any]]:
+        """获取时间序列统计数据"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    DATE(created_at) as date,
+                    COUNT(*) as count,
+                    source_type
+                FROM videos
+                WHERE created_at >= datetime('now', '-' || ? || ' days')
+                GROUP BY DATE(created_at), source_type
+                ORDER BY date ASC
+            """, (days,))
+            
+            return [
+                {
+                    'date': row['date'],
+                    'count': row['count'],
+                    'source_type': row['source_type']
+                }
+                for row in cursor.fetchall()
+            ]
+
+#endregion

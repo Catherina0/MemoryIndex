@@ -56,10 +56,17 @@ MemoryIndex 采用**角色化 AI 代理系统**，每个代理负责特定的知
 *   **中文优化**：集成 jieba 分词，支持中文模糊搜索
 *   **增量更新**：自动检测 `/docs/` 文件夹变化，智能更新索引
 
+### 💻 现代化前端和 API（新增）
+*   **React 前端**：美观响应式界面，支持搜索、浏览、标签过滤
+*   **FastAPI 后端**：高性能 REST API，支持全文搜索和内容管理
+*   **Web 应用**：http://localhost:3000 快速浏览和管理知识库
+*   **API 文档**：http://localhost:8000/docs 交互式 Swagger 文档
+
 ### 🏗️ 系统架构（系统架构师）
-*   **模块化设计**：`cli`、`core`、`archiver`、`ocr`、`db` 清晰分离
+*   **模块化设计**：`cli`、`core`、`archiver`、`ocr`、`db`、`backend`、`frontend` 清晰分离
 *   **一键安装**：支持 Homebrew Formula 和 PyPI 包分发
 *   **测试隔离**：临时测试和修复脚本统一存放在 `test_fix/` 目录
+*   **前后端分离**：后端 FastAPI + 前端 React 独立运行和部署
 
 ---
 
@@ -213,6 +220,48 @@ make clean
 
 ---
 
+## 🌐 Web 界面（新增 - 完全可选）
+
+### 快速启动前后端系统
+
+```bash
+# 一键启动前端 + 后端
+bash start-dev.sh
+```
+
+随后访问：
+- 🎨 **前端**：http://localhost:3000
+- 📚 **后端 API 文档**：http://localhost:8000/docs
+
+### 前端功能
+
+✨ 现代化 React Web 应用，功能包括：
+
+- **首页仪表板**：知识库统计、热门标签、最近添加的内容
+- **搜索页**：全文搜索、标签多选过滤、分页浏览
+- **内容详情**：查看视频转写、OCR 文本、AI 生成报告
+- **统计分析**：详细数据统计和标签使用频次
+
+### 后端 REST API
+
+FastAPI 提供的 REST API 端点（可与任何前端或第三方工具集成）：
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/search` | GET | 全文搜索 |
+| `/api/videos` | GET | 列出所有视频 |
+| `/api/archives` | GET | 列出所有网页 |
+| `/api/content/{id}` | GET | 获取内容详情 |
+| `/api/tags` | GET | 获取所有标签 |
+| `/api/stats` | GET | 获取统计信息 |
+| `/api/health` | GET | 健康检查 |
+
+### 详细文档
+
+- 📖 [前端快速启动指南](Docs/FRONTEND_QUICKSTART.md)
+- 📖 [前端开发指南](Docs/FRONTEND_GUIDE.md)
+- 📖 [后端 API 文档](Docs/BACKEND_API_GUIDE.md)
+
 ### 📦 使用 `memidx` 命令（Homebrew 分发版本）
 
 如果你通过 Homebrew 安装了 MemoryIndex，可以直接使用 `memidx` 命令：
@@ -251,11 +300,31 @@ MemoryIndex/
 │   └── paddle_fallback.py # 非 macOS 平台的 PaddleOCR
 ├── db/                    # 知识库管理员的索引存储
 │   └── whoosh_index/      # Whoosh 全文索引文件
+├── backend/               # FastAPI 后端服务
+│   ├── main.py            # API 应用入口
+│   ├── models.py          # 数据模型定义
+│   ├── services.py        # 业务逻辑服务层
+│   └── .gitignore
+├── frontend/              # React 前端应用
+│   ├── src/
+│   │   ├── api/           # API 客户端
+│   │   ├── components/    # UI 组件
+│   │   ├── pages/         # 页面
+│   │   ├── store/         # 状态管理 (Zustand)
+│   │   └── App.tsx
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── .gitignore
 ├── docs/                  # 🎯 统一输出目录（所有 Markdown 文件）
 │   ├── videos/            # 视频处理结果
 │   └── archived/          # 网页归档结果
+├── Docs/                  # 项目文档和指南
+│   ├── FRONTEND_GUIDE.md  # 前端开发指南
+│   ├── BACKEND_API_GUIDE.md # 后端 API 文档
+│   └── FRONTEND_QUICKSTART.md # 前端快速启动
 ├── test_fix/              # 临时测试和修复脚本（已加入 .gitignore）
 ├── Formula/               # Homebrew 分发配置
+├── start-dev.sh           # 一键启动前后端脚本
 └── Makefile               # 统一命令接口
 ```
 
@@ -263,6 +332,8 @@ MemoryIndex/
 *   `/docs/`：所有生成的 Markdown 文档的最终存储位置，便于版本控制和同步
 *   `/archiver/platforms/`：包含知乎、Reddit、Twitter 等平台的 CSS 选择器映射表
 *   `/ocr/`：macOS 使用 Swift 原生 Vision OCR，其他平台回退到 PaddleOCR
+*   `/backend/`：FastAPI REST API 服务
+*   `/frontend/`：React Web 应用
 *   `/test_fix/`：开发过程中的临时脚本，不会被 Git 跟踪
 
 ## ⚠️ 平台兼容性说明
