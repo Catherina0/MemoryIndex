@@ -24,9 +24,9 @@ from db.repository import (
 from db.models import Video, SourceType, ProcessingStatus
 from backend.models import (
     SearchResultResponse, VideoDetailResponse, StatsResponse,
-    TagResponse, ContentListResponse
+    TagResponse, ContentListResponse, ImportRequest, ImportResponse
 )
-from backend.services import SearchService, ContentService, StatsService
+from backend.services import SearchService, ContentService, StatsService, ImportService
 import logging
 
 # 配置日志
@@ -46,6 +46,7 @@ stats_repo = StatsRepository()
 search_service = SearchService(search_repo, video_repo, archive_repo)
 content_service = ContentService(video_repo, archive_repo)
 stats_service = StatsService(stats_repo, tag_repo, video_repo, archive_repo)
+import_service = ImportService(video_repo, archive_repo)
 
 # #endregion
 
@@ -203,6 +204,41 @@ async def get_statistics():
     except Exception as e:
         logger.error(f"获取统计信息错误: {str(e)}")
         raise HTTPException(status_code=500, detail="获取统计信息失败")
+
+# #endregion
+
+# #region 导入 API
+
+@app.post("/api/import", response_model=ImportResponse)
+async def import_content(import_req: ImportRequest):
+    """
+    导入内容（URL）
+    
+    Args:
+        import_req: ImportRequest 对象
+            - url: 要导入的 URL
+            - content_type: 内容类型（auto/video/archive，默认 auto）
+            - use_ocr: 是否启用 OCR（默认 false）
+    
+    Returns:
+        ImportResponse 对象
+    """
+    try:
+        result = import_service.import_content(
+            url=import_req.url,
+            content_type=import_req.content_type,
+            use_ocr=import_req.use_ocr
+        )
+        
+        return ImportResponse(
+            status=result['status'],
+            content_id=result.get('content_id'),
+            message=result['message'],
+            content_type=result.get('content_type')
+        )
+    except Exception as e:
+        logger.error(f"导入 API 错误: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"导入失败: {str(e)}")
 
 # #endregion
 

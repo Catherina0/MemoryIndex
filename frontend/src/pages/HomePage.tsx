@@ -4,10 +4,22 @@ import { getStats, listVideos, listArchives } from '@/api/client'
 import ContentPreview from '@/components/ContentPreview'
 import SearchBar from '@/components/SearchBar'
 
+const logger = {
+  error: (msg: string, err: any) => console.error(msg, err),
+}
+
 export default function HomePage() {
   const [stats, setStats] = useState(null)
   const [recentVideos, setRecentVideos] = useState([])
   const [loading, setLoading] = useState(true)
+  
+  // 链接导入表单状态
+  const [importUrl, setImportUrl] = useState('')
+  const [contentType, setContentType] = useState('auto')
+  const [useOcr, setUseOcr] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importSuccess, setImportSuccess] = useState('')
 
   useEffect(() => {
     const loadData = async () => {
@@ -27,6 +39,55 @@ export default function HomePage() {
 
     loadData()
   }, [])
+  
+  const handleImport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!importUrl.trim()) {
+      setImportError('请输入链接')
+      return
+    }
+    
+    setIsImporting(true)
+    setImportError('')
+    setImportSuccess('')
+    
+    try {
+      const response = await fetch('/api/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: importUrl.trim(),
+          content_type: contentType,
+          use_ocr: useOcr,
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error(`API 返回错误: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      if (data.status === 'error') {
+        setImportError(data.message)
+      } else {
+        setImportSuccess(data.message)
+        setImportUrl('')
+        setContentType('auto')
+        setUseOcr(false)
+        // 3 秒后清除成功消息
+        setTimeout(() => setImportSuccess(''), 3000)
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '导入失败，请稍后重试'
+      setImportError(errorMsg)
+      logger.error('导入错误:', err)
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   return (
     <div className="space-y-12">
@@ -41,6 +102,79 @@ export default function HomePage() {
         <div className="max-w-2xl mx-auto">
           <SearchBar onSearch={() => {}} placeholder="在这里开始搜索..." />
         </div>
+      </section>
+      
+      {/* 快速导入区域 */}
+      <section className="max-w-2xl mx-auto w-full bg-blue-50 rounded-lg p-8 border border-blue-200">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">🔗 快速导入</h2>
+        <form onSubmit={handleImport} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              链接地址
+            </label>
+            <input
+              type="url"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="粘贴视频或网页链接 (YouTube, Bilibili, Twitter, etc.)"
+              disabled={isImporting}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                内容类型
+              </label>
+              <select
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value)}
+                disabled={isImporting}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+              >
+                <option value="auto">自动检测</option>
+                <option value="video">视频</option>
+                <option value="archive">网页</option>
+              </select>
+            </div>
+            
+            <div className="flex items-end">
+              <label className="flex items-center space-x-2 text-sm text-gray-700 cursor-pointer h-full">
+                <input
+                  type="checkbox"
+                  checked={useOcr}
+                  onChange={(e) => setUseOcr(e.target.checked)}
+                  disabled={isImporting}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>启用 OCR 识别</span>
+              </label>
+            </div>
+            
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={isImporting || !importUrl.trim()}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {isImporting ? '处理中...' : '导入'}
+              </button>
+            </div>
+          </div>
+          
+          {importError && (
+            <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+              {importError}
+            </div>
+          )}
+          
+          {importSuccess && (
+            <div className="p-3 bg-green-100 border border-green-300 text-green-700 rounded-lg text-sm">
+              ✓ {importSuccess}
+            </div>
+          )}
+        </form>
       </section>
 
       {/* 统计概览 */}
@@ -94,7 +228,7 @@ export default function HomePage() {
         <section>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900">📹 最近添加的视频</h2>
-            <Link to="/search" className="text-blue-600 hover:text-blue-800 font-medium">
+            <Link to="/archives" className="text-blue-600 hover:text-blue-800 font-medium">
               查看全部 →
             </Link>
           </div>

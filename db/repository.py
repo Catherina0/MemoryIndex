@@ -564,30 +564,37 @@ class VideoRepository:
     def list_videos(self, limit: int = 100, offset: int = 0, sort: str = "recent") -> tuple:
         """
         列出视频，返回 (videos_list, total_count) 元组
+        排除网页来源的视频
         
         Args:
             limit: 数量限制
             offset: 分页偏移
-            sort: 排序方式 (recent/oldest)
+            sort: 排序方式 (recent/oldest/duration)
         
         Returns:
             tuple: (视频字典列表, 总数)
         """
         with self._get_conn() as conn:
+            # 定义网页来源类型
+            web_sources = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+            
             # 构建排序条件
             if sort == "oldest":
                 order_by = "ORDER BY v.created_at ASC"
+            elif sort == "duration":
+                order_by = "ORDER BY v.duration_seconds DESC NULLS LAST"
             else:  # 默认 recent
                 order_by = "ORDER BY v.created_at DESC"
             
-            # 统计总数
-            cursor = conn.execute("SELECT COUNT(*) as count FROM videos")
+            # 统计总数（排除网页）
+            placeholders = ','.join(['?' for _ in web_sources])
+            cursor = conn.execute(f"SELECT COUNT(*) as count FROM videos WHERE source_type NOT IN ({placeholders})", web_sources)
             total = cursor.fetchone()['count']
             
-            # 获取视频列表及其摘要
+            # 获取视频列表及其摘要（排除网页）
             query = f"""
                 SELECT 
-                    v.id, v.title, v.source_type, v.duration_seconds, v.created_at,
+                    v.id, v.title, v.source_type, v.duration_seconds, v.file_size_bytes, v.created_at,
                     (
                         SELECT GROUP_CONCAT(t.name, ', ')
                         FROM video_tags vt
@@ -602,11 +609,13 @@ class VideoRepository:
                         LIMIT 1
                     ) as report_content
                 FROM videos v
+                WHERE v.source_type NOT IN ({placeholders})
                 {order_by}
                 LIMIT ? OFFSET ?
             """
             
-            cursor = conn.execute(query, (limit, offset))
+            params = list(web_sources) + [limit, offset]
+            cursor = conn.execute(query, params)
             
             results = []
             for row in cursor.fetchall():
@@ -618,9 +627,11 @@ class VideoRepository:
                     'title': row['title'] or '未命名',
                     'source_type': row['source_type'],
                     'duration': row['duration_seconds'] or 0,
+                    'file_size': row['file_size_bytes'] or 0,
                     'tags': row['tags'].split(', ') if row['tags'] else [],
                     'summary': summary,
-                    'created_at': row['created_at']
+                    'created_at': row['created_at'],
+                    'type': 'video'
                 })
             
             return results, total
@@ -749,10 +760,18 @@ class ArchiveRepository:
         """
         列出网页归档
         
+        Args:
+            limit: 数量限制
+            offset: 分页偏移
+            sort: 排序方式 (recent/oldest)
+        
         Returns:
             tuple: (归档列表, 总数)
         """
         with self._get_conn() as conn:
+            # 定义网页来源
+            web_sources = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+            
             # 排序条件
             if sort == "oldest":
                 order_by = "ORDER BY v.created_at ASC"
@@ -760,16 +779,17 @@ class ArchiveRepository:
                 order_by = "ORDER BY v.created_at DESC"
             
             # 统计网页归档总数
-            cursor = conn.execute("""
+            placeholders = ','.join(['?' for _ in web_sources])
+            cursor = conn.execute(f"""
                 SELECT COUNT(*) as count FROM videos 
-                WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
-            """)
+                WHERE source_type IN ({placeholders})
+            """, web_sources)
             total = cursor.fetchone()['count']
             
-            # 获取归档列表
+            # 获取归档列表（包含摘要和元数据）
             query = f"""
                 SELECT 
-                    v.id, v.title, v.source_type, v.created_at,
+                    v.id, v.title, v.source_type, v.source_url, v.file_size_bytes, v.created_at,
                     (
                         SELECT GROUP_CONCAT(t.name, ', ')
                         FROM video_tags vt
@@ -784,24 +804,29 @@ class ArchiveRepository:
                         LIMIT 1
                     ) as content
                 FROM videos v
-                WHERE v.source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+                WHERE v.source_type IN ({placeholders})
                 {order_by}
                 LIMIT ? OFFSET ?
             """
             
-            cursor = conn.execute(query, (limit, offset))
+            params = list(web_sources) + [limit, offset]
+            cursor = conn.execute(query, params)
             
             results = []
             for row in cursor.fetchall():
+                # 正确提取摘要
                 summary = extract_summary_from_report(row['content']) if row['content'] else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
                     'title': row['title'] or '未命名',
                     'source_type': row['source_type'],
+                    'source_url': row['source_url'],
+                    'file_size': row['file_size_bytes'] or 0,
                     'tags': row['tags'].split(', ') if row['tags'] else [],
                     'summary': summary,
-                    'created_at': row['created_at']
+                    'created_at': row['created_at'],
+                    'type': 'archive'
                 })
             
             return results, total

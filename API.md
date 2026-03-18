@@ -27,6 +27,7 @@
 | `/api/content/{id}` | GET | 获取内容详情（content_type=video/archive） |
 | `/api/tags` | GET | 获取所有标签（limit） |
 | `/api/stats` | GET | 统计信息（total_videos, total_archives, top_tags） |
+| `/api/import` | POST | 导入内容（url, content_type, use_ocr）【新】 |
 | `/api/health` | GET | 健康检查 |
 
 **参数示例**：
@@ -39,7 +40,70 @@ curl "http://localhost:8000/api/content/1?content_type=video"
 
 # 获取统计
 curl "http://localhost:8000/api/stats"
+
+# 导入内容【新】
+curl -X POST http://localhost:8000/api/import \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=test", "content_type": "auto", "use_ocr": true}'
 ```
+
+#### POST /api/import - 导入内容【新】
+
+**功能**：导入 URL（视频/网页），自动检测类型
+
+**请求体**：
+```json
+{
+  "url": "https://www.youtube.com/watch?v=abc123",
+  "content_type": "auto",
+  "use_ocr": true
+}
+```
+
+**请求参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| url | string | - | 要导入的 URL（必需） |
+| content_type | string | auto | auto\|video\|archive |
+| use_ocr | boolean | false | 是否启用 OCR 识别 |
+
+**响应示例**（成功）：
+```json
+{
+  "status": "queued",
+  "content_id": null,
+  "message": "已将 video 添加到处理队列，请稍候...",
+  "content_type": "video"
+}
+```
+
+**响应示例**（错误）：
+```json
+{
+  "status": "error",
+  "content_id": null,
+  "message": "无效的 URL 格式",
+  "content_type": null
+}
+```
+
+**自动检测规则**：
+
+| 域名 | 检测结果 |
+|------|---------|
+| youtube.com, youtu.be | video |
+| bilibili.com, b23.tv | video |
+| vimeo.com | video |
+| qq.com/video, iqiyi.com | video |
+| 其他所有 | archive |
+
+**相关代码**：
+- `backend/services.py`: `ImportService` 类
+- `backend/models.py`: `ImportRequest`, `ImportResponse` 类
+- `backend/main.py`: POST /api/import 端点
+
+---
 
 ### frontend/ - React Web 应用
 
@@ -47,8 +111,9 @@ curl "http://localhost:8000/api/stats"
 
 | 页面 | URL | 功能 |
 |------|-----|------|
-| 首页 | `/` | 知识库概览、统计、最近内容 |
+| 首页 | `/` | 知识库概览、统计、最近内容、快速导入【新】 |
 | 搜索 | `/search` | 全文搜索、标签过滤、分页 |
+| 存档库 | `/archives` | 视频/网页浏览、排序、标签筛选【新】 |
 | 详情 | `/content/{id}` | 完整内容（转写、OCR、报告） |
 | 统计 | `/dashboard` | 数据统计和分析 |
 

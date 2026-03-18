@@ -83,9 +83,12 @@ export interface ContentListItem {
   title: string
   summary?: string
   source_type: string
+  source_url?: string
   tags: string[]
   created_at: string
   type: 'video' | 'archive'
+  duration?: number  // 视频时长（秒）
+  file_size?: number  // 文件大小（字节）
 }
 
 export interface ContentListResponse {

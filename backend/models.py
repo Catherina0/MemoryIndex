@@ -92,9 +92,12 @@ class ContentItemBase(BaseModel):
     title: str
     summary: Optional[str] = None
     source_type: str
+    source_url: Optional[str] = None
     tags: List[str] = []
     created_at: datetime
-    type: str
+    type: str  # 'video' 或 'archive'
+    duration: Optional[float] = None  # 视频时长（秒）
+    file_size: Optional[int] = None  # 文件大小（字节）
 
 class ContentListResponse(BaseModel):
     """内容列表响应"""
@@ -148,6 +151,39 @@ class StatsResponse(BaseModel):
                     {"id": 1, "name": "AI", "count": 20, "category": "技术"}
                 ],
                 "last_updated": "2025-03-18T00:00:00Z"
+            }
+        }
+
+# #endregion
+
+# #region 导入相关模型
+
+class ImportRequest(BaseModel):
+    """导入请求"""
+    url: str = Field(..., description="要导入的 URL")
+    content_type: str = Field(
+        default='auto',
+        description="内容类型: auto/video/archive"
+    )
+    use_ocr: bool = Field(
+        default=False,
+        description="是否启用 OCR"
+    )
+
+class ImportResponse(BaseModel):
+    """导入响应"""
+    status: str = Field(..., description="状态: queued/processing/completed/error")
+    content_id: Optional[int] = Field(None, description="新建内容的 ID")
+    message: str = Field(..., description="状态消息")
+    content_type: Optional[str] = Field(None, description="检测到的内容类型")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "queued",
+                "content_id": None,
+                "message": "已将 video 添加到处理队列，请稍候...",
+                "content_type": "video"
             }
         }
 

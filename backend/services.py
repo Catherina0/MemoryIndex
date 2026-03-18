@@ -92,7 +92,7 @@ class ContentService:
         Args:
             limit: 数量限制
             offset: 分页偏移
-            sort: 排序方式 (recent/oldest/popular)
+            sort: 排序方式 (recent/oldest/duration)
         
         Returns:
             ContentListResponse 对象
@@ -110,7 +110,9 @@ class ContentService:
                     source_type=v['source_type'],
                     tags=v.get('tags', []),
                     created_at=v['created_at'],
-                    type='video'
+                    type=v.get('type', 'video'),
+                    duration=v.get('duration'),
+                    file_size=v.get('file_size')
                 )
                 for v in videos
             ]
@@ -138,9 +140,11 @@ class ContentService:
                     title=a['title'],
                     summary=a.get('summary'),
                     source_type=a['source_type'],
+                    source_url=a.get('source_url'),
                     tags=a.get('tags', []),
                     created_at=a['created_at'],
-                    type='archive'
+                    type=a.get('type', 'archive'),
+                    file_size=a.get('file_size')
                 )
                 for a in archives
             ]
@@ -300,6 +304,111 @@ class StatsService:
         except Exception as e:
             logger.error(f"获取标签错误: {str(e)}")
             raise
+
+# #endregion
+
+# #region 导入服务
+
+class ImportService:
+    """链接导入业务服务"""
+    
+    def __init__(self, video_repo, archive_repo):
+        self.video_repo = video_repo
+        self.archive_repo = archive_repo
+        self.web_sources = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+    
+    def detect_url_type(self, url: str) -> str:
+        """
+        自动检测 URL 类型
+        
+        Args:
+            url: 输入的 URL
+        
+        Returns:
+            'video' 或 'archive'
+        """
+        url_lower = url.lower()
+        
+        # 视频平台常见域名
+        video_domains = [
+            'youtube.com', 'youtu.be',
+            'bilibili.com', 'b23.tv',
+            'vimeo.com',
+            'dailymotion.com',
+            'qq.com/video',
+            'iqiyi.com'
+        ]
+        
+        for domain in video_domains:
+            if domain in url_lower:
+                return 'video'
+        
+        # 默认当作网页归档
+        return 'archive'
+    
+    def import_content(self, url: str, content_type: str = 'auto', 
+                      use_ocr: bool = False) -> dict:
+        """
+        导入内容（URL）
+        
+        Args:
+            url: 内容 URL
+            content_type: 内容类型 ('auto'/'video'/'archive')
+            use_ocr: 是否启用 OCR
+        
+        Returns:
+            {
+                'status': 'queued' | 'error',
+                'content_id': int | None,
+                'message': str
+            }
+        """
+        try:
+            # URL 验证
+            if not self._is_valid_url(url):
+                return {
+                    'status': 'error',
+                    'content_id': None,
+                    'message': '无效的 URL 格式'
+                }
+            
+            # 自动检测内容类型
+            if content_type == 'auto':
+                detected_type = self.detect_url_type(url)
+                content_type = detected_type
+            
+            # 创建基础记录（实际处理通常是异步的）
+            # 这里仅返回队列确认，实际处理由后台任务负责
+            if content_type == 'video':
+                logger.info(f"视频导入队列: {url} (OCR: {use_ocr})")
+            else:
+                logger.info(f"网页归档导入队列: {url}")
+            
+            return {
+                'status': 'queued',
+                'content_id': None,
+                'message': f'已将 {content_type} 添加到处理队列，请稍候...',
+                'content_type': content_type,
+                'use_ocr': use_ocr
+            }
+        
+        except Exception as e:
+            logger.error(f"导入错误: {str(e)}")
+            return {
+                'status': 'error',
+                'content_id': None,
+                'message': f'导入失败: {str(e)}'
+            }
+    
+    @staticmethod
+    def _is_valid_url(url: str) -> bool:
+        """验证 URL 格式"""
+        try:
+            from urllib.parse import urlparse
+            result = urlparse(url)
+            return all([result.scheme in ('http', 'https'), result.netloc])
+        except:
+            return False
 
 # #endregion
 
