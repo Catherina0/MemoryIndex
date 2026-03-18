@@ -145,7 +145,7 @@ export default function ArchiveListPage() {
                 : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
             }`}
           >
-            视频 ({total})
+            视频
           </button>
           <button
             onClick={() => { setActiveTab('archives'); setCurrentPage(1) }}
@@ -155,7 +155,7 @@ export default function ArchiveListPage() {
                 : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
             }`}
           >
-            网页 ({total})
+            网页
           </button>
         </div>
 

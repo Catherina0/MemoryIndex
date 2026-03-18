@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getStats, listVideos, listArchives } from '@/api/client'
+import { getStats, listVideos, listArchives, type ContentListItem } from '@/api/client'
 import ContentPreview from '@/components/ContentPreview'
 import SearchBar from '@/components/SearchBar'
 
@@ -9,8 +9,9 @@ const logger = {
 }
 
 export default function HomePage() {
-  const [stats, setStats] = useState(null)
-  const [recentVideos, setRecentVideos] = useState([])
+  const [stats, setStats] = useState<any>(null)
+  const [recentVideos, setRecentVideos] = useState<ContentListItem[]>([])
+  const [recentArchives, setRecentArchives] = useState<ContentListItem[]>([])
   const [loading, setLoading] = useState(true)
   
   // 链接导入表单状态
@@ -24,12 +25,14 @@ export default function HomePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, videosRes] = await Promise.all([
+        const [statsData, videosRes, archivesRes] = await Promise.all([
           getStats(),
           listVideos(3, 0, 'recent'),
+          listArchives(3, 0, 'recent'),
         ])
         setStats(statsData)
         setRecentVideos(videosRes.items)
+        setRecentArchives(archivesRes.items)
       } catch (err) {
         console.error('加载数据失败:', err)
       } finally {
@@ -69,6 +72,7 @@ export default function HomePage() {
       }
       
       const data = await response.json()
+      console.log('Import API response:', data)
       
       if (data.status === 'error') {
         setImportError(data.message)
@@ -235,6 +239,23 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {recentVideos.map((video) => (
               <ContentPreview key={`video-${video.id}`} content={video} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 最近添加的网页 */}
+      {!loading && recentArchives.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">📄 最近保存的网页</h2>
+            <Link to="/archives?type=archives" className="text-blue-600 hover:text-blue-800 font-medium">
+              查看全部 →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {recentArchives.map((archive) => (
+              <ContentPreview key={`archive-${archive.id}`} content={archive} />
             ))}
           </div>
         </section>

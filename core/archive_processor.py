@@ -236,10 +236,20 @@ class ArchiveProcessor:
             print(f"✅ 创建归档记录: ID={db_id}")
             
             # 4. 保存原始内容
+            raw_content = archive_result.get('content', '')
+            if not raw_content and archive_result.get('markdown_path'):
+                try:
+                    with open(archive_result.get('markdown_path'), 'r', encoding='utf-8') as f:
+                        raw_content = f.read()
+                except Exception:
+                    pass
+            if not raw_content and archive_result.get('output_path'):
+                raw_content = self._read_archived_content(str(archive_result.get('output_path')))
+            
             content_artifact = Artifact(
                 video_id=db_id,
                 artifact_type=ArtifactType.TRANSCRIPT,  # 复用transcript类型存储网页内容
-                content_text=archive_result.get('content', ''),
+                content_text=raw_content,
                 content_json={
                     'url': url,
                     'title': archive_result.get('title'),

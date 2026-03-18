@@ -140,7 +140,7 @@ async def search(
 async def list_videos(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", regex="^(recent|oldest|popular)$")
+    sort: str = Query("recent", pattern="^(recent|oldest|popular)$")
 ):
     """列出所有视频"""
     try:
@@ -153,7 +153,7 @@ async def list_videos(
 async def list_archives(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", regex="^(recent|oldest|popular)$")
+    sort: str = Query("recent", pattern="^(recent|oldest|popular)$")
 ):
     """列出所有网页归档"""
     try:
@@ -165,7 +165,7 @@ async def list_archives(
 @app.get("/api/content/{content_id}", response_model=VideoDetailResponse)
 async def get_content_detail(
     content_id: int,
-    content_type: str = Query("video", regex="^(video|archive)$")
+    content_type: str = Query("video", pattern="^(video|archive)$")
 ):
     """获取内容详情"""
     try:

@@ -179,6 +179,21 @@ class ContentService:
                 artifact_type = artifact.artifact_type.value if hasattr(artifact.artifact_type, 'value') else artifact.artifact_type
                 if artifact_type == 'transcript':
                     transcript = artifact.content_text
+                    if artifact.content_json and 'segments' in artifact.content_json:
+                        segments = artifact.content_json['segments']
+                        if isinstance(segments, list) and len(segments) > 0:
+                            formatted_segments = []
+                            for seg in segments:
+                                start = seg.get('start', 0)
+                                end = seg.get('end', 0)
+                                text = seg.get('text', '').strip()
+                                
+                                start_m, start_s = divmod(int(start), 60)
+                                end_m, end_s = divmod(int(end), 60)
+                                time_str = f"[{start_m:02d}:{start_s:02d} - {end_m:02d}:{end_s:02d}]"
+                                formatted_segments.append(f"**{time_str}**  \n{text}")
+                            
+                            transcript = "\n\n".join(formatted_segments)
                 elif artifact_type == 'ocr':
                     ocr_text = artifact.content_text
                 elif artifact_type == 'report':
@@ -187,11 +202,12 @@ class ContentService:
             # 转换 Video 对象为字典
             video_dict = video.to_dict()
             
+            from db.repository import extract_summary_from_report
             return VideoDetailResponse(
                 id=video_dict['id'],
                 type='video',
                 title=video_dict['title'],
-                summary='暂无摘要',
+                summary=extract_summary_from_report(report) if report else '暂无摘要',
                 source_type=video_dict['source_type'],
                 source_url=video_dict.get('source_url'),
                 created_at=video_dict['created_at'],
@@ -226,9 +242,9 @@ class ContentService:
                 source_url=archive.get('source_url'),
                 created_at=archive['created_at'],
                 tags=archive.get('tags', []),
-                transcript=archive.get('content'),
-                ocr_text=None,
-                report=archive.get('content')
+                transcript=archive.get('transcript'),
+                ocr_text=archive.get('ocr_text'),
+                report=archive.get('report')
             )
         except ValueError as e:
             raise

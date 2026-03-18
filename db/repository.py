@@ -721,20 +721,34 @@ class ArchiveRepository:
         with self._get_conn() as conn:
             cursor = conn.execute("""
                 SELECT * FROM videos 
-                WHERE id = ? AND source_type LIKE '%archive%'
+                WHERE id = ? AND source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
             """, (archive_id,))
             row = cursor.fetchone()
             
             if not row:
                 return None
             
-            # 获取报告/内容
+            # 获取所有 artifact
             cursor = conn.execute("""
                 SELECT artifact_type, content_text FROM artifacts
-                WHERE video_id = ? AND artifact_type IN ('report', 'transcript')
-                ORDER BY created_at DESC LIMIT 1
+                WHERE video_id = ?
             """, (archive_id,))
-            artifact_row = cursor.fetchone()
+            artifacts = cursor.fetchall()
+            
+            transcript_text = None
+            report_text = None
+            ocr_text = None
+            
+            for art in artifacts:
+                atype = art['artifact_type']
+                if atype == 'transcript':
+                    transcript_text = art['content_text']
+                elif atype == 'report':
+                    report_text = art['content_text']
+                elif atype == 'ocr':
+                    ocr_text = art['content_text']
+            
+            content_text = report_text or transcript_text or '暂无内容'
             
             result = {
                 'id': row['id'],
@@ -742,8 +756,11 @@ class ArchiveRepository:
                 'source_type': row['source_type'],
                 'source_url': row['source_url'],
                 'created_at': row['created_at'],
-                'summary': '暂无内容',
-                'content': artifact_row['content_text'] if artifact_row else '暂无内容'
+                'summary': extract_summary_from_report(content_text) if content_text and content_text != '暂无内容' else '暂无摘要',
+                'content': content_text,
+                'transcript': transcript_text,
+                'report': report_text,
+                'ocr_text': ocr_text
             }
             
             # 获取标签
