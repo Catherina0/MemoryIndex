@@ -5,7 +5,8 @@ MemoryIndex 后端 API 服务
 提供 REST API 接口，连接前端与核心功能
 """
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -56,7 +57,14 @@ import_service = ImportService(video_repo, archive_repo)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info("🚀 MemoryIndex API 服务器启动")
+    
+    # 启动后台任务处理器
+    from backend.background_worker import start_background_worker
+    start_background_worker()
+    logger.info("✅ 后台任务处理器已启动")
+    
     yield
+    
     logger.info("🛑 MemoryIndex API 服务器关闭")
 
 app = FastAPI(
@@ -162,6 +170,49 @@ async def list_archives(
         logger.error(f"获取归档列表错误: {str(e)}")
         raise HTTPException(status_code=500, detail="获取归档列表失败")
 
+@app.get("/api/content/{content_id}/media")
+async def stream_content_media(content_id: int, request: Request):
+    """流式传输视频媒体文件"""
+    try:
+        video = video_repo.get_video_by_id(content_id)
+        if not video:
+            raise HTTPException(status_code=404, detail="视频未找到")
+            
+        file_path = video.file_path
+        if not file_path:
+            raise HTTPException(status_code=404, detail="视频文件路径不存在")
+            
+        project_root = Path(__file__).parent.parent
+        abs_path = project_root / file_path
+        
+        # If it's a directory, try to find mp4 file inside
+        if abs_path.is_dir():
+            mp4_files = list(abs_path.glob("*.mp4"))
+            if mp4_files:
+                abs_path = mp4_files[0]
+            else:
+                raise HTTPException(status_code=404, detail="目录中未找到视频文件")
+                
+        if not abs_path.exists() or not abs_path.is_file():
+            raise HTTPException(status_code=404, detail="视频文件不存在")
+            
+        # 简单使用 FileResponse 提供基础的范围请求支持
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(str(abs_path))
+        if not content_type:
+            content_type = "video/mp4"
+            
+        return FileResponse(
+            abs_path,
+            media_type=content_type,
+            filename=abs_path.name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取媒体文件错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取媒体文件失败")
+
 @app.get("/api/content/{content_id}", response_model=VideoDetailResponse)
 async def get_content_detail(
     content_id: int,
@@ -239,6 +290,147 @@ async def import_content(import_req: ImportRequest):
     except Exception as e:
         logger.error(f"导入 API 错误: {str(e)}")
         raise HTTPException(status_code=400, detail=f"导入失败: {str(e)}")
+
+# 新增：四个明确的功能端点（前端直接调用）
+
+@app.post("/api/download-run", response_model=ImportResponse)
+async def download_run(import_req: ImportRequest):
+    """
+    下载视频 + 仅音频处理（快速模式）
+    对应 make download-run
+    """
+    logger.info(f"🎬 [API] 下载并快速处理视频: {import_req.url}")
+    try:
+        result = import_service.import_content(
+            url=import_req.url,
+            content_type='video',
+            use_ocr=False
+        )
+        logger.info(f"✅ [API] 视频处理已队列: {result['message']}")
+        return ImportResponse(
+            status=result['status'],
+            content_id=result.get('content_id'),
+            message=result['message'],
+            content_type='video'
+        )
+    except Exception as e:
+        logger.error(f"❌ [API] 下载视频失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"下载失败: {str(e)}")
+
+@app.post("/api/download-ocr", response_model=ImportResponse)
+async def download_ocr(import_req: ImportRequest):
+    """
+    下载视频 + 完整处理（+ OCR + 文字识别）
+    对应 make download-ocr
+    """
+    logger.info(f"🎬 [API] 下载并完整处理视频（OCR）: {import_req.url}")
+    try:
+        result = import_service.import_content(
+            url=import_req.url,
+            content_type='video',
+            use_ocr=True
+        )
+        logger.info(f"✅ [API] 视频处理已队列（启用OCR）: {result['message']}")
+        return ImportResponse(
+            status=result['status'],
+            content_id=result.get('content_id'),
+            message=result['message'],
+            content_type='video'
+        )
+    except Exception as e:
+        logger.error(f"❌ [API] 下载视频失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"下载失败: {str(e)}")
+
+@app.post("/api/archive-run", response_model=ImportResponse)
+async def archive_run(import_req: ImportRequest):
+    """
+    归档网页 + 生成报告（快速模式）
+    对应 make archive-run
+    """
+    logger.info(f"🕸️  [API] 归档网页并生成报告: {import_req.url}")
+    try:
+        result = import_service.import_content(
+            url=import_req.url,
+            content_type='archive',
+            use_ocr=False
+        )
+        logger.info(f"✅ [API] 网页处理已队列: {result['message']}")
+        return ImportResponse(
+            status=result['status'],
+            task_id=result.get('task_id'),
+            content_id=result.get('content_id'),
+            message=result['message'],
+            content_type='archive'
+        )
+    except Exception as e:
+        logger.error(f"❌ [API] 归档网页失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"归档失败: {str(e)}")
+
+@app.post("/api/archive-ocr", response_model=ImportResponse)
+async def archive_ocr(import_req: ImportRequest):
+    """
+    归档网页 + OCR识别 + 生成报告
+    对应 make archive-ocr
+    """
+    logger.info(f"🕸️  [API] 归档网页并进行OCR识别: {import_req.url}")
+    try:
+        result = import_service.import_content(
+            url=import_req.url,
+            content_type='archive',
+            use_ocr=True
+        )
+        logger.info(f"✅ [API] 网页处理已队列（启用OCR）: {result['message']}")
+        return ImportResponse(
+            status=result['status'],
+            task_id=result.get('task_id'),
+            content_id=result.get('content_id'),
+            message=result['message'],
+            content_type='archive'
+        )
+    except Exception as e:
+        logger.error(f"❌ [API] 归档网页失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"归档失败: {str(e)}")
+
+# #endregion
+
+# #region 任务管理 API
+
+@app.get("/api/tasks/stats", response_model=dict)
+async def get_tasks_stats():
+    """
+    获取任务统计信息
+    
+    Returns:
+        包含 total/pending/processing/completed/error 数量信息
+    """
+    from backend.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    stats = task_manager.get_statistics()
+    logger.info(f"📊 [API] 获取任务统计: {stats}")
+    return stats
+
+@app.get("/api/tasks/{task_id}", response_model=dict)
+async def get_task_status(task_id: str):
+    """
+    查询任务状态
+    
+    Args:
+        task_id: 任务ID
+    
+    Returns:
+        任务状态对象（包含进度、日志等）
+    """
+    from backend.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    task = task_manager.get_task(task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    
+    logger.info(f"📊 [API] 查询任务状态: {task_id} (状态: {task.status.value}, 进度: {task.progress}%)")
+    return task.to_dict()
 
 # #endregion
 

@@ -203,6 +203,49 @@ class ContentService:
             video_dict = video.to_dict()
             
             from db.repository import extract_summary_from_report
+            
+            # 查找并读取该目录下的 README.md (如果存在)
+            readme_text = None
+            if video_dict.get('file_path'):
+                project_root = Path(__file__).parent.parent
+                vid_path = project_root / video_dict['file_path']
+                # file_path might be the mp4 file or the directory itself. Let's find the parent dir or if it's a directory
+                readme_path = None
+                
+                # Check for mp4 or dir
+                if vid_path.is_file():
+                    # 查找对应 output 目录下的 README.md
+                    import sqlite3
+                    with self.video_repo._get_conn() as conn:
+                        cursor = conn.execute("SELECT content_hash FROM videos WHERE id = ?", (video_id,))
+                        row = cursor.fetchone()
+                        if row:
+                            # 尝试在 output 目录下寻找包含该内容或者相关结构的可能目录
+                            # 简化起见，直接在 output 下寻找包含相同 hash 相关的文件夹？或用视频ID
+                            pass
+                else:
+                    # 如果 vid_path 是个目录 (对于有些记录可能填的是目录)
+                    if vid_path.is_dir():
+                        readme_path = vid_path / "README.md"
+                
+                # 另外一种找 README.md 的方式：所有生成物都在 output/xxx 目录下，其实对于视频一般是存在 output 某目录。
+                # 我们的 artifacts 有 file_path，通过 artifact 的 file_path 更容易找到父目录！
+                # 遍历 artifacts，看有没有文件在 output 目录
+                for artifact in artifacts:
+                    if artifact.file_path:
+                        a_path = project_root / artifact.file_path
+                        if a_path.exists():
+                            possible_readme = a_path.parent / "README.md"
+                            if possible_readme.exists():
+                                readme_path = possible_readme
+                                break
+                                
+                if readme_path and readme_path.exists():
+                    try:
+                        readme_text = readme_path.read_text(encoding='utf-8')
+                    except Exception as e:
+                        logger.warning(f"无法读取 README.md: {e}")
+
             return VideoDetailResponse(
                 id=video_dict['id'],
                 type='video',
@@ -215,6 +258,7 @@ class ContentService:
                 transcript=transcript,
                 ocr_text=ocr_text,
                 report=report,
+                readme_text=readme_text,
                 duration_seconds=video_dict.get('duration_seconds'),
                 file_path=video_dict.get('file_path')
             )
@@ -232,6 +276,33 @@ class ContentService:
             archive = self.archive_repo.get_archive(archive_id)
             if not archive:
                 raise ValueError(f"归档 {archive_id} 不存在")
+                
+            raw_archive = None
+            readme_text = None
+            if archive.get('file_path'):
+                project_root = Path(__file__).parent.parent
+                arc_path = project_root / archive['file_path']
+                logger.info(f"[Archive {archive_id}] Attempting to load files from: {arc_path}, exists={arc_path.exists()}")
+                if arc_path.is_dir():
+                    raw_path = arc_path / "archive_raw.md"
+                    logger.info(f"[Archive {archive_id}] Checking archive_raw.md at: {raw_path}, exists={raw_path.exists()}")
+                    if raw_path.exists():
+                        try:
+                            raw_archive = raw_path.read_text(encoding='utf-8')
+                            logger.info(f"[Archive {archive_id}] Successfully loaded archive_raw.md ({len(raw_archive)} bytes)")
+                        except Exception as e:
+                            logger.warning(f"[Archive {archive_id}] 无法读取 archive_raw.md: {e}")
+                    
+                    readme_path = arc_path / "README.md"
+                    logger.info(f"[Archive {archive_id}] Checking README.md at: {readme_path}, exists={readme_path.exists()}")
+                    if readme_path.exists():
+                        try:
+                            readme_text = readme_path.read_text(encoding='utf-8')
+                            logger.info(f"[Archive {archive_id}] Successfully loaded README.md ({len(readme_text)} bytes)")
+                        except Exception as e:
+                            logger.warning(f"[Archive {archive_id}] 无法读取 README.md: {e}")
+                else:
+                    logger.warning(f"[Archive {archive_id}] file_path is not a directory: {arc_path}")
             
             return VideoDetailResponse(
                 id=archive['id'],
@@ -244,7 +315,10 @@ class ContentService:
                 tags=archive.get('tags', []),
                 transcript=archive.get('transcript'),
                 ocr_text=archive.get('ocr_text'),
-                report=archive.get('report')
+                report=archive.get('report'),
+                raw_archive=raw_archive,
+                readme_text=readme_text,
+                file_path=archive.get('file_path')
             )
         except ValueError as e:
             raise
@@ -375,15 +449,19 @@ class ImportService:
         Returns:
             {
                 'status': 'queued' | 'error',
+                'task_id': str,
                 'content_id': int | None,
                 'message': str
             }
         """
         try:
+            from backend.task_manager import get_task_manager
+            
             # URL 验证
             if not self._is_valid_url(url):
                 return {
                     'status': 'error',
+                    'task_id': None,
                     'content_id': None,
                     'message': '无效的 URL 格式'
                 }
@@ -393,25 +471,34 @@ class ImportService:
                 detected_type = self.detect_url_type(url)
                 content_type = detected_type
             
-            # 创建基础记录（实际处理通常是异步的）
-            # 这里仅返回队列确认，实际处理由后台任务负责
+            # 创建并注册任务
+            task_manager = get_task_manager()
+            task_id = task_manager.create_task(
+                task_type=content_type,
+                url=url,
+                use_ocr=use_ocr
+            )
+            
+            # 返回任务 ID
             if content_type == 'video':
-                logger.info(f"视频导入队列: {url} (OCR: {use_ocr})")
+                logger.info(f"📹 [导入] 视频任务已创建 (Task: {task_id}, URL: {url}, OCR: {use_ocr})")
             else:
-                logger.info(f"网页归档导入队列: {url}")
+                logger.info(f"🕸️  [导入] 网页任务已创建 (Task: {task_id}, URL: {url})")
             
             return {
                 'status': 'queued',
+                'task_id': task_id,
                 'content_id': None,
-                'message': f'已将 {content_type} 添加到处理队列，请稍候...',
+                'message': f'✅ 已创建 {content_type} 处理任务 (ID: {task_id})',
                 'content_type': content_type,
                 'use_ocr': use_ocr
             }
         
         except Exception as e:
-            logger.error(f"导入错误: {str(e)}")
+            logger.error(f"❌ 导入错误: {str(e)}")
             return {
                 'status': 'error',
+                'task_id': None,
                 'content_id': None,
                 'message': f'导入失败: {str(e)}'
             }

@@ -23,6 +23,16 @@ bash start-dev.sh  # 一键启动两个服务
 ```
 
 ### 📊 核心 API 端点
+
+**导入类（前端直接调用，2026-03-19 新增）**
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 下载视频（快速）| `POST /api/download-run` | 对应 `make download-run` |
+| 下载视频（完整）| `POST /api/download-ocr` | 对应 `make download-ocr` |
+| 归档网页（快速）| `POST /api/archive-run` | 对应 `make archive-run` |
+| 归档网页（完整）| `POST /api/archive-ocr` | 对应 `make archive-ocr` |
+
+**查询类（现有）**
 | 功能 | 端点 |
 |------|------|
 | 搜索 | `GET /api/search?q=...` |
@@ -31,6 +41,26 @@ bash start-dev.sh  # 一键启动两个服务
 | 内容详情 | `GET /api/content/{id}` |
 | 标签列表 | `GET /api/tags` |
 | 统计数据 | `GET /api/stats` |
+
+**前端简化流程**
+- ✅ 前端自动检测 URL 类型（视频/网页）
+- ✅ 前端根据 OCR 选项选择端点
+- ✅ 前端仅发送 `{url}` 给后端
+- ✅ 后端记录详细日志到 terminal
+
+**请求示例**
+```bash
+# 方式1：curl 测试
+curl -X POST http://localhost:8000/api/download-ocr \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=..."}'
+
+# 方式2：前端表单
+1. 打开 http://localhost:3000
+2. 输入链接
+3. 选择处理模式（快速/完整 OCR）
+4. 点击导入
+```
 
 ## 主要功能
 | 功能 | 命令 | 说明 |
@@ -54,6 +84,14 @@ bash start-dev.sh  # 一键启动两个服务
 
 ## 常见命令速查
 ```bash
+# 系统启动
+bash start-dev.sh                           # 一键启动前后端
+
+# 测试新 API 端点（2026-03-19 新增）
+node test_temp/20260319_frontend_logic_test.js  # 前端逻辑测试
+python test_temp/20260319_test_new_api_endpoints.py  # 后端 API 测试
+bash test_temp/20260319_demo_new_endpoints.sh  # 演示脚本
+
 # 视频处理（最常用）
 make run Path=~/Downloads/video.mp4        # 音频转写 + AI 摘要（快）
 make ocr Path=~/Downloads/video.mp4        # OCR + 音频 + 摘要（慢，推荐）

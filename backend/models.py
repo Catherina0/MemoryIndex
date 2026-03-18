@@ -68,6 +68,8 @@ class VideoDetailResponse(BaseModel):
     transcript: Optional[str] = None
     ocr_text: Optional[str] = None
     report: Optional[str] = None
+    raw_archive: Optional[str] = None
+    readme_text: Optional[str] = None
     artifacts: Optional[List[ArtifactDetail]] = None
     
     # 视频特有字段
@@ -173,6 +175,7 @@ class ImportRequest(BaseModel):
 class ImportResponse(BaseModel):
     """导入响应"""
     status: str = Field(..., description="状态: queued/processing/completed/error")
+    task_id: Optional[str] = Field(None, description="后端任务ID")
     content_id: Optional[int] = Field(None, description="新建内容的 ID")
     message: str = Field(..., description="状态消息")
     content_type: Optional[str] = Field(None, description="检测到的内容类型")
@@ -181,9 +184,55 @@ class ImportResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "status": "queued",
+                "task_id": "abc12345",
                 "content_id": None,
-                "message": "已将 video 添加到处理队列，请稍候...",
+                "message": "✅ 已创建 video 处理任务 (ID: abc12345)",
                 "content_type": "video"
+            }
+        }
+
+class TaskLog(BaseModel):
+    """任务日志"""
+    timestamp: str
+    level: str  # info, warning, error
+    message: str
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应"""
+    task_id: str
+    task_type: str
+    status: str  # pending, processing, completed, error
+    url: str
+    use_ocr: bool
+    progress: int  # 0-100
+    current_step: str
+    
+    # 时间信息
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    
+    # 结果
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    logs: List[TaskLog] = []
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": "abc12345",
+                "task_type": "archive",
+                "status": "processing",
+                "url": "https://x.com/...",
+                "use_ocr": False,
+                "progress": 45,
+                "current_step": "正在下载网页",
+                "created_at": "2025-03-19T10:00:00",
+                "started_at": "2025-03-19T10:00:02",
+                "logs": [
+                    {"timestamp": "2025-03-19T10:00:00", "level": "info", "message": "🔄 开始处理"},
+                    {"timestamp": "2025-03-19T10:00:02", "level": "info", "message": "下载中..."}
+                ]
             }
         }
 

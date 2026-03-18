@@ -8,6 +8,14 @@ const logger = {
   error: (msg: string, err: any) => console.error(msg, err),
 }
 
+interface TaskStatus {
+  task_id: string
+  status: string
+  progress: number
+  current_step: string
+  error_message?: string
+}
+
 export default function HomePage() {
   const [stats, setStats] = useState<any>(null)
   const [recentVideos, setRecentVideos] = useState<ContentListItem[]>([])
@@ -21,6 +29,11 @@ export default function HomePage() {
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
+  
+  // 任务追踪状态
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null)
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
@@ -43,6 +56,63 @@ export default function HomePage() {
     loadData()
   }, [])
   
+  // 轮询任务状态
+  useEffect(() => {
+    if (!taskId) {
+      return
+    }
+    
+    const pollTaskStatus = async () => {
+      try {
+        const response = await fetch(`/api/tasks/${taskId}`)
+        if (!response.ok) {
+          console.error(`获取任务状态失败: ${response.status}`)
+          return
+        }
+        
+        const data = await response.json()
+        console.log(`📊 [前端] 任务状态: ${data.status}, 进度: ${data.progress}%`)
+        setTaskStatus(data)
+        
+        // 任务完成或出错时停止轮询
+        if (data.status === 'completed' || data.status === 'error') {
+          if (pollingInterval) {
+            clearInterval(pollingInterval)
+            setPollingInterval(null)
+          }
+          
+          if (data.status === 'completed') {
+            setImportSuccess(`✅ 任务完成！(进度: 100%)`)
+            // 5 秒后清除成功消息
+            setTimeout(() => {
+              setImportSuccess('')
+              setTaskId(null)
+              setTaskStatus(null)
+            }, 5000)
+          } else {
+            setImportError(`❌ 任务失败: ${data.error_message || '未知错误'}`)
+          }
+          setIsImporting(false)
+        }
+      } catch (err) {
+        console.error('轮询任务状态错误:', err)
+      }
+    }
+    
+    // 立即检查一次
+    pollTaskStatus()
+    
+    // 然后每 1 秒轮询一次
+    const interval = setInterval(pollTaskStatus, 1000)
+    setPollingInterval(interval)
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [taskId, pollingInterval])
+  
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!importUrl.trim()) {
@@ -53,17 +123,49 @@ export default function HomePage() {
     setIsImporting(true)
     setImportError('')
     setImportSuccess('')
+    setTaskId(null)
+    setTaskStatus(null)
     
     try {
-      const response = await fetch('/api/import', {
+      // 决定调用哪个 API 端点及其函数名
+      let endpoint = ''
+      let actionName = ''
+      
+      // 自动检测内容类型
+      const detection_url = importUrl.trim().toLowerCase()
+      let detected_type = contentType
+      
+      if (contentType === 'auto') {
+        const video_domains = [
+          'youtube.com', 'youtu.be',
+          'bilibili.com', 'b23.tv',
+          'vimeo.com', 'dailymotion.com',
+          'qq.com', 'iqiyi.com'
+        ]
+        detected_type = video_domains.some(d => detection_url.includes(d)) ? 'video' : 'archive'
+      }
+      
+      // 根据内容类型和 OCR 选择端点
+      if (detected_type === 'video') {
+        endpoint = useOcr ? '/api/download-ocr' : '/api/download-run'
+        actionName = useOcr ? '🎬 下载视频（完整处理）' : '🎬 下载视频（快速处理）'
+      } else {
+        endpoint = useOcr ? '/api/archive-ocr' : '/api/archive-run'
+        actionName = useOcr ? '🕸️ 归档网页（OCR识别）' : '🕸️ 归档网页（快速处理）'
+      }
+      
+      console.log(`📡 [前端] ${actionName}`)
+      console.log(`📍 调用端点: ${endpoint}`)
+      console.log(`🔗 链接: ${importUrl.trim()}`)
+      console.log(`⚙️ 参数: OCR=${useOcr}`)
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           url: importUrl.trim(),
-          content_type: contentType,
-          use_ocr: useOcr,
         }),
       })
       
@@ -72,24 +174,35 @@ export default function HomePage() {
       }
       
       const data = await response.json()
-      console.log('Import API response:', data)
+      console.log(`✅ [前端] API 响应:`, data)
       
       if (data.status === 'error') {
+        console.error(`❌ [前端] 错误: ${data.message}`)
         setImportError(data.message)
+        setIsImporting(false)
       } else {
-        setImportSuccess(data.message)
-        setImportUrl('')
-        setContentType('auto')
-        setUseOcr(false)
-        // 3 秒后清除成功消息
-        setTimeout(() => setImportSuccess(''), 3000)
+        // 成功收到 task_id，开始任务追踪
+        if (data.task_id) {
+          console.log(`✅ [前端] 任务已创建: ${data.task_id}`)
+          setImportSuccess(`✅ ${data.message}`)
+          setTaskId(data.task_id)
+          setImportUrl('')
+          setContentType('auto')
+          setUseOcr(false)
+          // 不立即清除成功消息，等待任务完成
+        } else {
+          console.warn(`⚠️ [前端] 响应中没有 task_id`)
+          setImportSuccess(data.message)
+          setIsImporting(false)
+          setTimeout(() => setImportSuccess(''), 3000)
+        }
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导入失败，请稍后重试'
+      console.error(`❌ [前端] 异常错误:`, err)
       setImportError(errorMsg)
-      logger.error('导入错误:', err)
-    } finally {
       setIsImporting(false)
+      logger.error('导入错误:', err)
     }
   }
 
@@ -174,8 +287,71 @@ export default function HomePage() {
           )}
           
           {importSuccess && (
-            <div className="p-3 bg-green-100 border border-green-300 text-green-700 rounded-lg text-sm">
-              ✓ {importSuccess}
+            <div className="space-y-3">
+              <div className="p-3 bg-green-100 border border-green-300 text-green-700 rounded-lg text-sm">
+                ✓ {importSuccess}
+              </div>
+              
+              {/* 任务进度显示 */}
+              {taskStatus && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">
+                      {taskStatus.current_step}
+                    </span>
+                    <span className="text-sm text-gray-600">
+                      {taskStatus.progress}%
+                    </span>
+                  </div>
+                  
+                  {/* 进度条 */}
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        taskStatus.status === 'error' 
+                          ? 'bg-red-500' 
+                          : taskStatus.status === 'completed'
+                          ? 'bg-green-500'
+                          : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${taskStatus.progress}%` }}
+                    ></div>
+                  </div>
+                  
+                  {/* 状态标签 */}
+                  <div className="flex items-center space-x-2 text-sm">
+                    {taskStatus.status === 'processing' && (
+                      <>
+                        <span className="animate-spin">⏳</span>
+                        <span className="text-gray-600">处理中...</span>
+                      </>
+                    )}
+                    {taskStatus.status === 'pending' && (
+                      <>
+                        <span>⏳</span>
+                        <span className="text-gray-600">等待处理...</span>
+                      </>
+                    )}
+                    {taskStatus.status === 'completed' && (
+                      <>
+                        <span>✅</span>
+                        <span className="text-green-600 font-medium">已完成</span>
+                      </>
+                    )}
+                    {taskStatus.status === 'error' && (
+                      <>
+                        <span>❌</span>
+                        <span className="text-red-600 font-medium">处理失败</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  {/* 任务ID */}
+                  <div className="text-xs text-gray-500 border-t border-gray-200 pt-2">
+                    Task ID: {taskStatus.task_id}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </form>

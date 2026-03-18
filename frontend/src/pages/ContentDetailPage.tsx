@@ -13,7 +13,7 @@ export default function ContentDetailPage() {
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
-  const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'ocr' | 'report'>('summary')
+  const [activeTab, setActiveTab] = useState<string>('summary')
 
   useEffect(() => {
     const loadContent = async () => {
@@ -55,15 +55,83 @@ export default function ContentDetailPage() {
     return <div className="text-center py-12 text-gray-600">内容不存在</div>
   }
 
+  console.log('[ContentDetailPage] Content loaded:', {
+    id: content.id,
+    type: contentType,
+    title: content.title,
+    has_readme: !!content.readme_text,
+    readme_length: content.readme_text?.length || 0,
+    has_raw_archive: !!content.raw_archive,
+    raw_archive_length: content.raw_archive?.length || 0,
+    has_transcript: !!content.transcript,
+    has_ocr: !!content.ocr_text,
+    file_path: content.file_path
+  })
+
   const tabs = [
     { id: 'summary', label: '摘要', content: content.summary || '暂无摘要' },
-    { id: 'transcript', label: contentType === 'archive' ? '网页内容' : '转写文本', content: content.transcript },
-    { id: 'ocr', label: 'OCR 文本', content: content.ocr_text },
-    { id: 'report', label: '详细报告', content: content.report },
-  ].filter((tab) => tab.content) as Array<{ id: 'summary' | 'transcript' | 'ocr' | 'report'; label: string; content: string }>
+  ]
+
+  if (contentType === 'archive') {
+    // 网页归档：分别展示 readme, archive raw, transcript 和 ocr raw
+    console.log('[Archive Tab Building]', {
+      has_readme: !!content.readme_text,
+      has_raw_archive: !!content.raw_archive,
+      has_transcript: !!content.transcript,
+      has_ocr: !!content.ocr_text
+    })
+    
+    if (content.readme_text) {
+      console.log('[Archive] Adding README tab')
+      tabs.push({ id: 'readme', label: 'README', content: content.readme_text })
+    }
+    
+    if (content.raw_archive) {
+      console.log('[Archive] Adding raw_archive tab')
+      tabs.push({ id: 'raw_archive', label: '网页原文', content: content.raw_archive })
+    } else if (content.transcript) {
+      console.log('[Archive] Adding transcript tab (fallback)')
+      tabs.push({ id: 'transcript', label: '网页原文', content: content.transcript })
+    }
+    
+    if (content.ocr_text) {
+      console.log('[Archive] Adding OCR tab')
+      tabs.push({ id: 'ocr', label: 'OCR 识别内容', content: content.ocr_text })
+    }
+    
+    console.log('[Archive] Final tabs:', tabs.map(t => ({ id: t.id, label: t.label })))
+  } else {
+    // 视频：展示 README 和 transcript 和 ocr
+    if (content.readme_text) {
+      tabs.push({ id: 'readme', label: '项目信息 (README)', content: content.readme_text })
+    }
+    if (content.transcript) {
+      tabs.push({ id: 'transcript', label: '转写文本', content: content.transcript })
+    }
+    if (content.ocr_text) {
+      tabs.push({ id: 'ocr', label: 'OCR 文本', content: content.ocr_text })
+    }
+  }
+
+  if (content.report) {
+    tabs.push({ id: 'report', label: '详细报告', content: content.report })
+  }
+
+  const currentTabContent = tabs.find((t) => t.id === activeTab)?.content || tabs[0]?.content || ''
 
   return (
     <div className="max-w-4xl mx-auto">
+      {/* 视频播放器 (如果存在且为视频) */}
+      {contentType === 'video' && content.file_path && (
+        <div className="bg-black rounded-lg shadow-md mb-6 overflow-hidden">
+          <video 
+            controls 
+            className="w-full max-h-[60vh] object-contain"
+            src={`/api/content/${content.id}/media`} 
+          />
+        </div>
+      )}
+
       {/* 标题和基本信息 */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex items-start justify-between mb-4">
@@ -149,12 +217,14 @@ export default function ContentDetailPage() {
 
           {/* 标签页内容 */}
           <div className="p-6">
-            <div className="prose prose-sm md:prose-base lg:prose-lg max-w-none prose-img:rounded-xl prose-a:text-blue-600 hover:prose-a:text-blue-800 whitespace-pre-wrap text-gray-700 leading-relaxed overflow-x-auto">
+            <div className={`prose prose-sm md:prose-base lg:prose-lg max-w-none prose-img:rounded-xl prose-a:text-blue-600 hover:prose-a:text-blue-800 prose-table:border prose-th:bg-gray-50 prose-th:p-2 prose-th:border prose-td:p-2 prose-td:border text-gray-700 leading-relaxed overflow-x-auto ${
+              activeTab === 'report' || activeTab === 'content' ? '' : 'whitespace-pre-wrap'
+            }`}>
               <ReactMarkdown
                 rehypePlugins={[rehypeRaw]}
                 remarkPlugins={[remarkGfm]}
               >
-                {tabs.find((t) => t.id === activeTab)?.content || ''}
+                {currentTabContent}
               </ReactMarkdown>
             </div>
           </div>

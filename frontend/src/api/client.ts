@@ -74,6 +74,8 @@ export interface ContentDetail {
   transcript?: string
   ocr_text?: string
   report?: string
+  raw_archive?: string
+  readme_text?: string
   duration_seconds?: number
   file_path?: string
 }

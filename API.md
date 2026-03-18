@@ -103,6 +103,96 @@ curl -X POST http://localhost:8000/api/import \
 - `backend/models.py`: `ImportRequest`, `ImportResponse` 类
 - `backend/main.py`: POST /api/import 端点
 
+#### 任务管理 API（用于追踪导入进度）【新】
+
+**功能**：查询后台任务的处理进度、状态、日志
+
+##### GET /api/tasks/{task_id} - 查询任务状态【新】
+
+**功能**：获取指定任务的详细信息和实时进度
+
+**参数**：
+- `task_id` (path）：任务 ID（由 POST /api/archive-run 返回）
+
+**响应示例**（处理中）：
+```json
+{
+  "task_id": "2565a5ba",
+  "task_type": "archive",
+  "status": "processing",
+  "url": "https://x.com/test",
+  "use_ocr": false,
+  "progress": 45,
+  "current_step": "🔍 正在解析网页内容",
+  "created_at": "2026-03-19T10:00:00",
+  "started_at": "2026-03-19T10:00:02",
+  "completed_at": null,
+  "logs": [
+    {
+      "timestamp": "2026-03-19T10:00:00",
+      "level": "info",
+      "message": "🔄 开始处理: archive (https://x.com/test)"
+    },
+    {
+      "timestamp": "2026-03-19T10:00:02",
+      "level": "info",
+      "message": "📥 正在下载网页..."
+    }
+  ]
+}
+```
+
+**响应示例**（已完成）：
+```json
+{
+  "task_id": "2565a5ba",
+  "status": "completed",
+  "progress": 100,
+  "current_step": "✅ 任务完成",
+  "completed_at": "2026-03-19T10:00:15",
+  "result": {
+    "url": "https://x.com/test",
+    "type": "archive",
+    "status": "saved"
+  }
+}
+```
+
+**状态值**：
+- `pending`: 等待处理
+- `processing`: 正在处理
+- `completed`: 已完成
+- `error`: 处理失败
+- `cancelled`: 已取消
+
+**进度百分比**：
+- 0%: 初始化
+- 20-40%: 下载/解析
+- 50-80%: 识别/分析
+- 90-100%: 保存/完成
+
+##### GET /api/tasks/stats - 获取任务统计【新】
+
+**功能**：获取所有任务的统计信息
+
+**响应示例**：
+```json
+{
+  "total": 10,
+  "pending": 1,
+  "processing": 0,
+  "completed": 8,
+  "error": 1
+}
+```
+
+**相关代码**：
+- `backend/task_manager.py`: Task, TaskManager 类
+- `backend/background_worker.py`: BackgroundTaskWorker 类
+- `backend/models.py`: TaskStatusResponse 类
+- `backend/main.py`: GET /api/tasks/{task_id}, GET /api/tasks/stats 端点
+- `frontend/src/pages/HomePage.tsx`: 任务进度显示组件
+
 ---
 
 ### frontend/ - React Web 应用

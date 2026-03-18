@@ -755,6 +755,7 @@ class ArchiveRepository:
                 'title': row['title'],
                 'source_type': row['source_type'],
                 'source_url': row['source_url'],
+                'file_path': row['file_path'],
                 'created_at': row['created_at'],
                 'summary': extract_summary_from_report(content_text) if content_text and content_text != '暂无内容' else '暂无摘要',
                 'content': content_text,
