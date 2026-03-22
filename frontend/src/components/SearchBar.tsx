@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSearchStore } from '@/store'
 
@@ -12,7 +12,7 @@ export default function SearchBar({ onSearch, placeholder = '搜索内容...' }:
   const { setQuery, setSelectedTags, setCurrentPage } = useSearchStore()
   const [input, setInput] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
 
     if (!input.trim()) {

@@ -1,5 +1,3 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
 import type { SearchResult } from '@/api/client'
 
 interface ContentCardProps {
@@ -35,7 +33,7 @@ export default function ContentCard({ result }: ContentCardProps) {
           </h3>
 
           {result.summary && (
-            <p className="text-gray-600 text-sm line-clamp-3 mb-3">{result.summary}</p>
+            <p className="text-gray-600 text-sm whitespace-pre-wrap break-words mb-3">{result.summary}</p>
           )}
 
           {result.tags.length > 0 && (

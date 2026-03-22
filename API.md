@@ -209,6 +209,8 @@ curl -X POST http://localhost:8000/api/import \
 
 **技术栈**：React 18 + TypeScript + Tailwind CSS + Zustand + Axios
 
+**摘要显示约定**：首页预览、存档库列表等摘要区域直接显示完整 `summary` 文本；后端提取摘要时不再追加 `...`。
+
 **核心文件**：
 - `src/api/client.ts` - API 请求客户端
 - `src/components/` - UI 组件

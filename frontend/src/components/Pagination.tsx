@@ -1,4 +1,4 @@
-import React from 'react'
+import { Fragment } from 'react'
 
 interface PaginationProps {
   currentPage: number
@@ -38,7 +38,7 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
 
       {/* 页码 */}
       {pages.map((page, index) => (
-        <React.Fragment key={index}>
+        <Fragment key={index}>
           {page === '...' ? (
             <span className="px-2 py-2 text-gray-500">...</span>
           ) : (
@@ -53,7 +53,7 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
               {page}
             </button>
           )}
-        </React.Fragment>
+        </Fragment>
       ))}
 
       {/* 下一页 */}

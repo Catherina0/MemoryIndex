@@ -108,6 +108,7 @@ help:
 	@echo "  make url-clean URL=链接              URL 反追踪 & 短链接还原"
 	@echo ""
 	@echo "🔍 搜索与管理："
+	@echo "  make db-list                        列出数据库中的所有记录"
 	@echo "  make search Q=\"关键词\"              全文搜索"
 	@echo "  make search-tags TAGS=\"标签1 标签2\"  按标签搜索"
 	@echo "  make db-show ID=1                    查看视频详情"

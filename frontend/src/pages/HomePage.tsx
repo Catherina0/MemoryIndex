@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { getStats, listVideos, listArchives, type ContentListItem } from '@/api/client'
 import ContentPreview from '@/components/ContentPreview'
@@ -14,6 +14,12 @@ interface TaskStatus {
   progress: number
   current_step: string
   error_message?: string
+  error?: string
+  logs?: Array<{
+    timestamp: string
+    level: string
+    message: string
+  }>
 }
 
 export default function HomePage() {
@@ -29,11 +35,10 @@ export default function HomePage() {
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
-  
+
   // 任务追踪状态
   const [taskId, setTaskId] = useState<string | null>(null)
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
@@ -55,13 +60,11 @@ export default function HomePage() {
 
     loadData()
   }, [])
-  
+
   // 轮询任务状态
   useEffect(() => {
-    if (!taskId) {
-      return
-    }
-    
+    if (!taskId) return
+
     const pollTaskStatus = async () => {
       try {
         const response = await fetch(`/api/tasks/${taskId}`)
@@ -76,11 +79,6 @@ export default function HomePage() {
         
         // 任务完成或出错时停止轮询
         if (data.status === 'completed' || data.status === 'error') {
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-          
           if (data.status === 'completed') {
             setImportSuccess(`✅ 任务完成！(进度: 100%)`)
             // 5 秒后清除成功消息
@@ -90,7 +88,7 @@ export default function HomePage() {
               setTaskStatus(null)
             }, 5000)
           } else {
-            setImportError(`❌ 任务失败: ${data.error_message || '未知错误'}`)
+            setImportError(`❌ 任务失败: ${data.error_message || data.error || '未知错误'}`)
           }
           setIsImporting(false)
         }
@@ -103,17 +101,12 @@ export default function HomePage() {
     pollTaskStatus()
     
     // 然后每 1 秒轮询一次
-    const interval = setInterval(pollTaskStatus, 1000)
-    setPollingInterval(interval)
-    
-    return () => {
-      if (interval) {
-        clearInterval(interval)
-      }
-    }
-  }, [taskId, pollingInterval])
-  
-  const handleImport = async (e: React.FormEvent) => {
+    const interval = window.setInterval(pollTaskStatus, 1000)
+
+    return () => window.clearInterval(interval)
+  }, [taskId])
+
+  const handleImport = async (e: FormEvent) => {
     e.preventDefault()
     if (!importUrl.trim()) {
       setImportError('请输入链接')
@@ -175,7 +168,7 @@ export default function HomePage() {
       
       const data = await response.json()
       console.log(`✅ [前端] API 响应:`, data)
-      
+
       if (data.status === 'error') {
         console.error(`❌ [前端] 错误: ${data.message}`)
         setImportError(data.message)
@@ -350,6 +343,30 @@ export default function HomePage() {
                   <div className="text-xs text-gray-500 border-t border-gray-200 pt-2">
                     Task ID: {taskStatus.task_id}
                   </div>
+
+                  {taskStatus.logs && taskStatus.logs.length > 0 && (
+                    <div className="border-t border-gray-200 pt-3">
+                      <div className="bg-gray-900 text-gray-100 rounded p-3 font-mono text-xs max-h-48 overflow-y-auto">
+                        {taskStatus.logs.map((log, idx) => (
+                          <div key={idx} className="mb-1">
+                            <span
+                              className={
+                                log.level === 'error' || log.level === 'ERROR'
+                                  ? 'text-red-400'
+                                  : log.level === 'warning' || log.level === 'WARNING'
+                                  ? 'text-yellow-400'
+                                  : 'text-green-400'
+                              }
+                            >
+                              [{log.level}]
+                            </span>{' '}
+                            <span className="text-gray-400">{log.timestamp}</span>{' '}
+                            {log.message}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -388,7 +405,7 @@ export default function HomePage() {
             <div className="mt-6 pt-6 border-t border-gray-200">
               <p className="text-sm font-medium text-gray-600 mb-3">🔥 热门标签：</p>
               <div className="flex flex-wrap gap-2">
-                {stats.top_tags.slice(0, 8).map((tag) => (
+                {stats.top_tags.slice(0, 8).map((tag: any) => (
                   <Link
                     key={tag.id}
                     to={`/search?tags=${tag.name}`}

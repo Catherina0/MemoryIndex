@@ -19,7 +19,7 @@ from .models import (
 
 
 def extract_summary_from_report(report_text: str) -> str:
-    """从AI报告中提取摘要（不超过50字）"""
+    """从 AI 报告中提取摘要，保留完整文本。"""
     if not report_text:
         return "暂无摘要"
     
@@ -37,9 +37,6 @@ def extract_summary_from_report(report_text: str) -> str:
             extracted = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', extracted)
             # 移除多余空白
             extracted = ' '.join(extracted.split())
-            # 限制长度为50字
-            if len(extracted) > 50:
-                extracted = extracted[:50] + '...'
             return extracted
     
     # 如果没找到摘要章节，尝试提取第一段非标题内容
@@ -50,8 +47,6 @@ def extract_summary_from_report(report_text: str) -> str:
             # 移除Markdown格式
             line = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', line)
             line = ' '.join(line.split())
-            if len(line) > 50:
-                return line[:50] + '...'
             return line
     
     return "暂无摘要"

@@ -1,7 +1,5 @@
-import React from 'react'
 import { useSearchStore } from '@/store'
 import type { Tag } from '@/api/client'
-import clsx from 'clsx'
 
 interface TagFilterProps {
   tags: Tag[]

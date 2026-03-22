@@ -59,12 +59,14 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 MemoryIndex API 服务器启动")
     
     # 启动后台任务处理器
-    from backend.background_worker import start_background_worker
+    from backend.background_worker import start_background_worker, stop_background_worker
+
     start_background_worker()
     logger.info("✅ 后台任务处理器已启动")
     
     yield
     
+    stop_background_worker()
     logger.info("🛑 MemoryIndex API 服务器关闭")
 
 app = FastAPI(
@@ -148,7 +150,7 @@ async def search(
 async def list_videos(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", pattern="^(recent|oldest|popular)$")
+    sort: str = Query("recent", pattern="^(recent|oldest|duration)$")
 ):
     """列出所有视频"""
     try:
@@ -161,7 +163,7 @@ async def list_videos(
 async def list_archives(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", pattern="^(recent|oldest|popular)$")
+    sort: str = Query("recent", pattern="^(recent|oldest)$")
 ):
     """列出所有网页归档"""
     try:
@@ -283,6 +285,7 @@ async def import_content(import_req: ImportRequest):
         
         return ImportResponse(
             status=result['status'],
+            task_id=result.get('task_id'),
             content_id=result.get('content_id'),
             message=result['message'],
             content_type=result.get('content_type')
@@ -309,6 +312,7 @@ async def download_run(import_req: ImportRequest):
         logger.info(f"✅ [API] 视频处理已队列: {result['message']}")
         return ImportResponse(
             status=result['status'],
+            task_id=result.get('task_id'),
             content_id=result.get('content_id'),
             message=result['message'],
             content_type='video'
@@ -333,6 +337,7 @@ async def download_ocr(import_req: ImportRequest):
         logger.info(f"✅ [API] 视频处理已队列（启用OCR）: {result['message']}")
         return ImportResponse(
             status=result['status'],
+            task_id=result.get('task_id'),
             content_id=result.get('content_id'),
             message=result['message'],
             content_type='video'

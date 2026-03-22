@@ -113,7 +113,7 @@ export async function getContentDetail(
 export async function listVideos(
   limit = 20,
   offset = 0,
-  sort: 'recent' | 'oldest' | 'popular' = 'recent'
+  sort: 'recent' | 'oldest' | 'duration' = 'recent'
 ): Promise<ContentListResponse> {
   const { data } = await apiClient.get<ContentListResponse>(
     `/videos?limit=${limit}&offset=${offset}&sort=${sort}`
@@ -124,7 +124,7 @@ export async function listVideos(
 export async function listArchives(
   limit = 20,
   offset = 0,
-  sort: 'recent' | 'oldest' | 'popular' = 'recent'
+  sort: 'recent' | 'oldest' = 'recent'
 ): Promise<ContentListResponse> {
   const { data } = await apiClient.get<ContentListResponse>(
     `/archives?limit=${limit}&offset=${offset}&sort=${sort}`

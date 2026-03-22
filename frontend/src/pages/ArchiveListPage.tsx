@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { listVideos, listArchives, listTags, type Tag, type ContentListItem } from '@/api/client'
-import ContentCard from '@/components/ContentCard'
 import Pagination from '@/components/Pagination'
 
 export default function ArchiveListPage() {
@@ -36,17 +35,18 @@ export default function ArchiveListPage() {
       setIsLoading(true)
       try {
         const offset = (currentPage - 1) * itemsPerPage
+        const archiveSort = sortBy === 'duration' ? 'recent' : sortBy
         
         let response
         if (activeTab === 'videos') {
           response = await listVideos(itemsPerPage, offset, sortBy)
         } else if (activeTab === 'archives') {
-          response = await listArchives(itemsPerPage, offset, sortBy)
+          response = await listArchives(itemsPerPage, offset, archiveSort)
         } else {
           // 全部：先加载视频再加载网页
           const [videosRes, archivesRes] = await Promise.all([
             listVideos(itemsPerPage, offset, sortBy),
-            listArchives(itemsPerPage, offset, sortBy)
+            listArchives(itemsPerPage, offset, archiveSort)
           ])
           response = {
             items: [...videosRes.items, ...archivesRes.items],
@@ -164,7 +164,10 @@ export default function ArchiveListPage() {
           <label className="text-sm font-medium text-gray-700">排序：</label>
           <select
             value={sortBy}
-            onChange={(e) => { setSortBy(e.target.value as any); setCurrentPage(1) }}
+            onChange={(e) => {
+              setSortBy(e.target.value as 'recent' | 'oldest' | 'duration')
+              setCurrentPage(1)
+            }}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="recent">最近添加</option>
@@ -207,7 +210,7 @@ export default function ArchiveListPage() {
                       <h3 className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">
                         {item.title}
                       </h3>
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap break-words mb-3">
                         {item.summary || '暂无摘要'}
                       </p>
                       {item.tags.length > 0 && (

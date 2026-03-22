@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react'
-import { getStats, listVideos, listArchives } from '@/api/client'
+import { useState, useEffect } from 'react'
+import { getStats, listVideos, listArchives, type ContentListItem } from '@/api/client'
 import { useStatsStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import ContentPreview from '@/components/ContentPreview'
 
 export default function DashboardPage() {
   const { stats, setStats, isLoading, setIsLoading } = useStatsStore()
-  const [recentVideos, setRecentVideos] = useState([])
-  const [recentArchives, setRecentArchives] = useState([])
+  const [recentVideos, setRecentVideos] = useState<ContentListItem[]>([])
+  const [recentArchives, setRecentArchives] = useState<ContentListItem[]>([])
   const [loadingContent, setLoadingContent] = useState(true)
 
   useEffect(() => {

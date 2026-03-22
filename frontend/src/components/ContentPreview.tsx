@@ -1,4 +1,3 @@
-import React from 'react'
 import { Link } from 'react-router-dom'
 import type { ContentListItem } from '@/api/client'
 
@@ -19,7 +18,7 @@ export default function ContentPreview({ content }: ContentPreviewProps) {
         {content.title}
       </h3>
       {content.summary && (
-        <p className="text-sm text-gray-600 line-clamp-2 mb-3">{content.summary}</p>
+        <p className="text-sm text-gray-600 whitespace-pre-wrap break-words mb-3">{content.summary}</p>
       )}
       <div className="text-xs text-gray-500">
         {new Date(content.created_at).toLocaleDateString('zh-CN')}

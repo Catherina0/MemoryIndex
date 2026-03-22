@@ -10,6 +10,7 @@
 - 页面：首页、搜索、详情、统计
 - 技术：React 18 + TypeScript + Tailwind CSS
 - 状态管理：Zustand
+- 列表页与预览卡片中的摘要需要完整显示，不使用省略号
 
 ### 📚 后端服务（FastAPI）
 - URL：http://localhost:8000

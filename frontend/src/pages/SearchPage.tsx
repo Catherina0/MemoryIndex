@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { searchContent, listTags, type SearchResult, type Tag } from '@/api/client'
+import { searchContent, listTags, type Tag } from '@/api/client'
 import { useSearchStore } from '@/store'
 import SearchBar from '@/components/SearchBar'
 import ContentCard from '@/components/ContentCard'
