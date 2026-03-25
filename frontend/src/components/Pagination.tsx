@@ -1,3 +1,5 @@
+// #region Pagination 组件
+
 import { Fragment } from 'react'
 
 interface PaginationProps {
@@ -7,7 +9,7 @@ interface PaginationProps {
 }
 
 export default function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
-  const pages = []
+  const pages: (number | string)[] = []
   const startPage = Math.max(1, currentPage - 2)
   const endPage = Math.min(totalPages, currentPage + 2)
 
@@ -26,28 +28,33 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
   }
 
   return (
-    <div className="flex justify-center items-center gap-2">
+    <div className="flex justify-center items-center gap-1.5">
       {/* 上一页 */}
       <button
+        type="button"
+        title="上一页"
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
-        className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        上一页
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
       </button>
 
       {/* 页码 */}
       {pages.map((page, index) => (
         <Fragment key={index}>
           {page === '...' ? (
-            <span className="px-2 py-2 text-gray-500">...</span>
+            <span className="px-2 py-1.5 text-slate-400 text-sm">...</span>
           ) : (
             <button
+              type="button"
               onClick={() => onPageChange(page as number)}
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
+              className={`min-w-[36px] py-1.5 rounded-lg text-sm font-medium transition-all ${
                 page === currentPage
-                  ? 'bg-primary text-white'
-                  : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
               }`}
             >
               {page}
@@ -58,12 +65,18 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
 
       {/* 下一页 */}
       <button
+        type="button"
+        title="下一页"
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
-        className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        下一页
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
       </button>
     </div>
   )
 }
+
+// #endregion

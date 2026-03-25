@@ -1,9 +1,11 @@
+// #region ArchiveListPage - 资料库
+
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { listVideos, listArchives, listTags, type Tag, type ContentListItem } from '@/api/client'
+import ContentPreview from '@/components/ContentPreview'
 import Pagination from '@/components/Pagination'
 
-// #region ArchiveListPage
 export default function ArchiveListPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'videos' | 'archives'>('all')
   const [sortBy, setSortBy] = useState<'recent' | 'oldest'>('recent')
@@ -15,7 +17,7 @@ export default function ArchiveListPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [tags, setTags] = useState<Tag[]>([])
 
-  const itemsPerPage = 20
+  const itemsPerPage = 18
 
   // #region 加载标签
   useEffect(() => {
@@ -50,7 +52,6 @@ export default function ArchiveListPage() {
           allItems = res.items
           totalCount = res.total
         } else {
-          // "全部"标签：分别拉取各自的半页数据，合并后按时间排序
           const halfPage = Math.ceil(itemsPerPage / 2)
           const halfOffset = Math.floor(offset / 2)
 
@@ -60,7 +61,6 @@ export default function ArchiveListPage() {
           ])
 
           allItems = [...videosRes.items, ...archivesRes.items]
-          // 按创建时间排序
           allItems.sort((a, b) => {
             const ta = new Date(a.created_at).getTime()
             const tb = new Date(b.created_at).getTime()
@@ -70,7 +70,7 @@ export default function ArchiveListPage() {
           totalCount = videosRes.total + archivesRes.total
         }
 
-        // 标签过滤（客户端）
+        // 客户端标签过滤
         if (selectedTags.length > 0) {
           allItems = allItems.filter(item =>
             selectedTags.some(tag => item.tags.includes(tag))
@@ -103,32 +103,44 @@ export default function ArchiveListPage() {
 
   const totalPages = Math.ceil(total / itemsPerPage)
 
-  const tabs: { key: typeof activeTab; label: string }[] = [
-    { key: 'all', label: '全部' },
-    { key: 'videos', label: '视频' },
-    { key: 'archives', label: '网页' },
+  const tabs: { key: typeof activeTab; label: string; icon: string }[] = [
+    { key: 'all', label: '全部', icon: '' },
+    { key: 'videos', label: '视频', icon: '' },
+    { key: 'archives', label: '网页', icon: '' },
   ]
 
   return (
-    <div className="space-y-6">
-      {/* 页头 */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">存档库</h1>
-        <p className="text-sm text-gray-500 mt-1">共 {total} 条内容</p>
+    <div className="space-y-6 animate-fade-in">
+      {/* #region 页头 */}
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">资料库</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            共 <span className="font-semibold text-slate-700">{total}</span> 条内容
+          </p>
+        </div>
+        <Link to="/" className="btn-primary text-xs px-3 py-1.5">
+          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          导入
+        </Link>
       </div>
+      {/* #endregion */}
 
-      {/* 控制条：标签页 + 排序 */}
+      {/* #region 控制栏 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1">
+        {/* 标签页切换 */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5">
           {tabs.map(({ key, label }) => (
             <button
               type="button"
               key={key}
               onClick={() => { setActiveTab(key); setCurrentPage(1) }}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                 activeTab === key
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {label}
@@ -136,6 +148,7 @@ export default function ArchiveListPage() {
           ))}
         </div>
 
+        {/* 排序 */}
         <select
           aria-label="排序方式"
           value={sortBy}
@@ -143,118 +156,66 @@ export default function ArchiveListPage() {
             setSortBy(e.target.value as 'recent' | 'oldest')
             setCurrentPage(1)
           }}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white text-slate-600 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-all"
         >
-          <option value="recent">最近添加</option>
-          <option value="oldest">最早添加</option>
+          <option value="recent">最新优先</option>
+          <option value="oldest">最早优先</option>
         </select>
       </div>
+      {/* #endregion */}
 
-      {/* 标签过滤 */}
+      {/* #region 标签过滤 */}
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {tags.slice(0, 20).map(tag => (
-            <button
-              type="button"
-              key={tag.id}
-              onClick={() => handleTagToggle(tag.name)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                selectedTags.includes(tag.name)
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {tag.name}
-              <span className={`ml-1 ${selectedTags.includes(tag.name) ? 'text-blue-200' : 'text-gray-400'}`}>
-                {tag.count}
-              </span>
-            </button>
-          ))}
+          {tags.slice(0, 20).map(tag => {
+            const isSelected = selectedTags.includes(tag.name)
+            return (
+              <button
+                type="button"
+                key={tag.id}
+                onClick={() => handleTagToggle(tag.name)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                  isSelected
+                    ? 'tag-pill-active'
+                    : 'tag-pill'
+                }`}
+              >
+                {tag.name}
+                <span className={`ml-1 ${isSelected ? 'text-primary-400' : 'text-slate-400'}`}>
+                  {tag.count}
+                </span>
+              </button>
+            )
+          })}
           {selectedTags.length > 0 && (
             <button
               type="button"
               onClick={() => setSelectedTags([])}
-              className="px-2.5 py-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+              className="px-2.5 py-1 text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
             >
               清除筛选
             </button>
           )}
         </div>
       )}
+      {/* #endregion */}
 
-      {/* 内容列表 */}
+      {/* #region 内容网格 */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <div className="animate-spin rounded-full h-7 w-7 border-2 border-primary-600 border-t-transparent" />
+          <span className="text-sm text-slate-400">加载中...</span>
         </div>
       ) : items.length > 0 ? (
         <>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {items.map((item) => (
-              <Link
-                key={`${item.type}-${item.id}`}
-                to={`/content/${item.id}?type=${item.type}`}
-                className="block"
-              >
-                <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-gray-300 hover:shadow-sm transition-all">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      {/* 元信息行 */}
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          item.type === 'video'
-                            ? 'bg-purple-50 text-purple-700'
-                            : 'bg-emerald-50 text-emerald-700'
-                        }`}>
-                          {item.type === 'video' ? '视频' : '网页'}
-                        </span>
-                        <span className="text-xs text-gray-400">{item.source_type}</span>
-                        {item.duration && (
-                          <span className="text-xs text-gray-400">
-                            {Math.floor(item.duration / 60)}分{item.duration % 60}秒
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 标题 */}
-                      <h3 className="text-sm font-medium text-gray-900 line-clamp-1 mb-1">
-                        {item.title}
-                      </h3>
-
-                      {/* 摘要 */}
-                      {item.summary && (
-                        <p className="text-xs text-gray-500 line-clamp-2 mb-2">
-                          {item.summary}
-                        </p>
-                      )}
-
-                      {/* 标签 */}
-                      {item.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {item.tags.slice(0, 4).map(tag => (
-                            <span key={tag} className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
-                              {tag}
-                            </span>
-                          ))}
-                          {item.tags.length > 4 && (
-                            <span className="text-xs text-gray-400">+{item.tags.length - 4}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 日期 */}
-                    <div className="text-xs text-gray-400 flex-shrink-0 tabular-nums">
-                      {new Date(item.created_at).toLocaleDateString('zh-CN')}
-                    </div>
-                  </div>
-                </div>
-              </Link>
+              <ContentPreview key={`${item.type}-${item.id}`} content={item} />
             ))}
           </div>
 
           {totalPages > 1 && (
-            <div className="mt-6">
+            <div className="mt-8">
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
@@ -264,11 +225,21 @@ export default function ArchiveListPage() {
           )}
         </>
       ) : (
-        <div className="text-center py-16 text-gray-400 text-sm">
-          暂无内容
+        <div className="text-center py-20">
+          <div className="text-slate-200 mb-3">
+            <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <p className="text-slate-400">暂无内容</p>
+          <Link to="/" className="text-sm text-primary-600 hover:text-primary-700 mt-2 inline-block font-medium">
+            去导入第一条内容 &rarr;
+          </Link>
         </div>
       )}
+      {/* #endregion */}
     </div>
   )
 }
+
 // #endregion

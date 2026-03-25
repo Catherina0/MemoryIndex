@@ -174,6 +174,7 @@ class ContentService:
             transcript = None
             ocr_text = None
             report = None
+            summary_text = None
             
             for artifact in artifacts:
                 artifact_type = artifact.artifact_type.value if hasattr(artifact.artifact_type, 'value') else artifact.artifact_type
@@ -198,6 +199,8 @@ class ContentService:
                     ocr_text = artifact.content_text
                 elif artifact_type == 'report':
                     report = artifact.content_text
+                elif artifact_type == 'summary':
+                    summary_text = artifact.content_text
             
             # 转换 Video 对象为字典
             video_dict = video.to_dict()
@@ -250,7 +253,7 @@ class ContentService:
                 id=video_dict['id'],
                 type='video',
                 title=video_dict['title'],
-                summary=extract_summary_from_report(report) if report else '暂无摘要',
+                summary=summary_text if summary_text else (extract_summary_from_report(report) if report else '暂无摘要'),
                 source_type=video_dict['source_type'],
                 source_url=video_dict.get('source_url'),
                 created_at=video_dict['created_at'],

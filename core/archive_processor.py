@@ -303,10 +303,23 @@ class ArchiveProcessor:
                     content_text=report_data.get('content', ''),
                     content_json=report_data,
                     file_path=str(output_dir / 'report.md'),
-                    model_name=report_data.get('model', 'openai/gpt-oss-20b')
+                    model_name=report_data.get('model', 'openai/gpt-oss-120b')
                 )
                 self.repo.save_artifact(report_artifact)
-                print("✅ 保存AI报告")
+                print("✅ 保存AI归档报告")
+                
+                # 保存summary artifact
+                if 'summary' in report_data and report_data['summary']:
+                    summary_artifact = Artifact(
+                        video_id=db_id,
+                        artifact_type=ArtifactType.SUMMARY,
+                        content_text=report_data['summary'],
+                        content_json=None,
+                        file_path=str(output_dir / 'summary.md'),
+                        model_name=report_data.get('model', 'openai/gpt-oss-120b')
+                    )
+                    self.repo.save_artifact(summary_artifact)
+                    print("✅ 保存网页展示摘要")
                 
                 # 7. 提取并保存标签
                 tags = self._extract_tags(report_data)
@@ -637,7 +650,61 @@ class ArchiveProcessor:
             return default_prompt
         else:  # "summary"
             return summary_prompt
-    
+            
+    def _generate_display_summary(
+        self,
+        client,
+        model: str,
+        full_report: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.5
+    ) -> str:
+        """
+        第三次调用：基于完整报告生成一个用于网页展示的简短摘要
+        """
+        prompt = """请基于以下这份详细的内容分析报告，生成一份适合在网页端直接展示的精炼版网页存档导读摘要。
+
+要求：
+1. 提取最核心的价值点和结论。
+2. 包含 3-5 个概括性标签（Tags），格式必须为：标签: tag1, tag2...
+3. 提供一份极简的要点列表（Bullet points）。
+4. 整体字数控制在 200-400 字，排版需要清晰美观（使用 Markdown）。
+5. 不要重复报告里的长篇大论，重点在于“这篇网页讲了什么”。
+
+推荐结构：
+> [一句话核心主旨或者导语]
+
+### 📌 核心摘要
+...
+
+### 💡 关键收获
+- ...
+- ...
+
+### 🏷️ 标签
+标签: ...
+"""
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的高级内容编辑，擅长将长篇深度的网页内容报告浓缩成最具吸引力和价值的网页端导读摘要。"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"{prompt}\n\n========== 报告原文 ==========\n{full_report}"
+                    }
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"  ✗ 网页展示摘要生成失败: {e}")
+            return "网页展示摘要生成失败。"
+
     def _generate_archive_summary(
         self,
         client,
@@ -795,43 +862,50 @@ class ArchiveProcessor:
                     max_tokens, temperature
                 )
                 if detailed_result:
-                    # 合并摘要和详细分析
-                    merged_content = f"{summary_content}\n\n---\n\n{detailed_result.get('content', '')}"
-                    detailed_result['content'] = merged_content
-                    return detailed_result
-                return None
+                    detailed_content = detailed_result.get('content', '')
+                else:
+                    return None
+            else:
+                # 构建最终 User Prompt（用于详细分析）
+                print(f"  📖 第二步：生成详细分析...")
+                prompt = f"{prompt_text}\n\n以下是网页内容：\n{content}"
 
-            # 构建最终 User Prompt（用于详细分析）
-            print(f"  📖 第二步：生成详细分析...")
-            prompt = f"{prompt_text}\n\n以下是网页内容：\n{content}"
-
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是一个专业的内容整理助手，具备智能纠错能力。
-                        
-                        你的任务是从网页内容中提取所有重要信息，识别并修正OCR和提取错误，生成详尽、完整的内容概括。
-                        确保使用准确、专业、规范的术语表达。
-                        
-                        根据内容长度，采用相应的分析深度：
-                        - 较短内容：使用清晰的结构化总结，关键信息突出
-                        - 较长内容：使用极致详尽的深度分析，保留所有细节"""
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            
-            detailed_content = response.choices[0].message.content
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """你是一个专业的内容整理助手，具备智能纠错能力。
+                            
+                            你的任务是从网页内容中提取所有重要信息，识别并修正OCR和提取错误，生成详尽、完整的内容概括。
+                            确保使用准确、专业、规范的术语表达。
+                            
+                            根据内容长度，采用相应的分析深度：
+                            - 较短内容：使用清晰的结构化总结，关键信息突出
+                            - 较长内容：使用极致详尽的深度分析，保留所有细节"""
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                
+                detailed_content = response.choices[0].message.content
             
             # ========== 第三步：合并摘要和详细内容 ==========
             report_content = f"{summary_content}\n\n---\n\n## 📖 详细内容分析\n\n{detailed_content}"
+            
+            # ========== 第四步：生成网页展示摘要 ==========
+            print(f"  ✨ 第三步：生成最终展示摘要...")
+            display_summary = self._generate_display_summary(client, model, report_content)
+            
+            # 保存摘要到文件
+            summary_path = output_dir / 'summary.md'
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                f.write(display_summary)
             
             # 保存报告到文件
             report_path = output_dir / 'report.md'
@@ -840,6 +914,7 @@ class ArchiveProcessor:
             
             return {
                 'content': report_content,
+                'summary': display_summary,
                 'model': model,
                 'tags': self._parse_tags_from_content(report_content),
                 'topics': []  # TODO: 从报告中解析主题
@@ -962,11 +1037,7 @@ class ArchiveProcessor:
 {''.join(all_reports)}
 """
         
-        # 保存报告到文件
-        report_path = output_dir / 'report.md'
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(final_report)
-        
+        # 返回组合的文本，保存将在外层处理
         print(f"\n  ✅ 长文本报告生成完成")
         
         return {

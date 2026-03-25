@@ -1,46 +1,57 @@
+// #region ContentPreview - 内容预览卡片
+
 import { Link } from 'react-router-dom'
 import type { ContentListItem } from '@/api/client'
 
-// #region ContentPreview - 内容预览卡片（首页/统计页用）
 interface ContentPreviewProps {
   content: ContentListItem
 }
 
 export default function ContentPreview({ content }: ContentPreviewProps) {
+  const isVideo = content.type === 'video'
+
   return (
     <Link
       to={`/content/${content.id}?type=${content.type}`}
-      className="bg-white border border-gray-200 rounded-lg p-4 block hover:border-gray-300 hover:shadow-sm transition-all group"
+      className="card-interactive p-4 flex flex-col gap-2.5 group animate-fade-in"
     >
-      {/* 类型标签 */}
-      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-        content.type === 'video'
-          ? 'bg-purple-50 text-purple-700'
-          : 'bg-emerald-50 text-emerald-700'
-      }`}>
-        {content.type === 'video' ? '视频' : '网页'}
-      </span>
+      {/* 顶部：类型标签 + 日期 */}
+      <div className="flex items-center justify-between">
+        <span className={isVideo ? 'badge-video' : 'badge-archive'}>
+          {isVideo ? '视频' : '网页'}
+        </span>
+        <span className="text-xs text-slate-400 tabular-nums">
+          {new Date(content.created_at).toLocaleDateString('zh-CN')}
+        </span>
+      </div>
 
       {/* 标题 */}
-      <h3 className="text-sm font-medium text-gray-900 line-clamp-2 mt-2 mb-1 group-hover:text-blue-700 transition-colors">
+      <h3 className="text-sm font-semibold text-slate-800 line-clamp-2 group-hover:text-primary-600 transition-colors leading-snug">
         {content.title}
       </h3>
 
       {/* 摘要 */}
       {content.summary && (
-        <p className="text-xs text-gray-500 line-clamp-2 mb-2">{content.summary}</p>
+        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+          {content.summary}
+        </p>
       )}
 
-      {/* 底部信息 */}
-      <div className="flex items-center gap-2 mt-auto">
-        <span className="text-xs text-gray-400">
-          {new Date(content.created_at).toLocaleDateString('zh-CN')}
+      {/* 底部：来源 + 标签 */}
+      <div className="flex items-center gap-2 mt-auto pt-1">
+        <span className="text-[11px] text-slate-400 uppercase tracking-wide">
+          {content.source_type}
         </span>
+        {content.duration && (
+          <span className="text-[11px] text-slate-400">
+            {Math.floor(content.duration / 60)}:{String(content.duration % 60).padStart(2, '0')}
+          </span>
+        )}
         {content.tags.length > 0 && (
           <>
-            <span className="text-xs text-gray-300">|</span>
+            <span className="text-slate-200">|</span>
             {content.tags.slice(0, 2).map((tag) => (
-              <span key={tag} className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+              <span key={tag} className="text-[11px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
                 {tag}
               </span>
             ))}
@@ -50,4 +61,5 @@ export default function ContentPreview({ content }: ContentPreviewProps) {
     </Link>
   )
 }
+
 // #endregion

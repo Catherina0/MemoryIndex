@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(npm run:*)",
+      "Bash(.venv/bin/python -c \"from backend.main import app; print\\(''Backend imports OK''\\)\")"
     ]
   }
 }

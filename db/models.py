@@ -36,6 +36,7 @@ class ArtifactType(str, Enum):
     TRANSCRIPT = 'transcript'
     OCR = 'ocr'
     REPORT = 'report'
+    SUMMARY = 'summary'
 
 
 @dataclass

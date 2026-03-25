@@ -733,6 +733,7 @@ class ArchiveRepository:
             transcript_text = None
             report_text = None
             ocr_text = None
+            summary_text = None
             
             for art in artifacts:
                 atype = art['artifact_type']
@@ -742,8 +743,13 @@ class ArchiveRepository:
                     report_text = art['content_text']
                 elif atype == 'ocr':
                     ocr_text = art['content_text']
+                elif atype == 'summary':
+                    summary_text = art['content_text']
             
             content_text = report_text or transcript_text or '暂无内容'
+            
+            # extract fallback
+            from core.process_video import extract_summary_from_report
             
             result = {
                 'id': row['id'],
@@ -752,11 +758,11 @@ class ArchiveRepository:
                 'source_url': row['source_url'],
                 'file_path': row['file_path'],
                 'created_at': row['created_at'],
-                'summary': extract_summary_from_report(content_text) if content_text and content_text != '暂无内容' else '暂无摘要',
                 'content': content_text,
                 'transcript': transcript_text,
                 'report': report_text,
-                'ocr_text': ocr_text
+                'ocr_text': ocr_text,
+                'summary': summary_text if summary_text else (extract_summary_from_report(report_text) if report_text else '暂无摘要')
             }
             
             # 获取标签

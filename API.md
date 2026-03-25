@@ -202,25 +202,27 @@ curl -X POST http://localhost:8000/api/import \
 
 ### frontend/ - React Web 应用
 
-**职责**：现代化 Web 界面，支持搜索、浏览、统计
+**职责**：现代化 Web 界面，支持搜索、浏览、导入、内容展示
 
 | 页面 | URL | 功能 |
 |------|-----|------|
-| 首页 | `/` | 知识库概览、统计、最近内容、快速导入【新】 |
-| 搜索 | `/search` | 全文搜索、标签过滤、分页 |
-| 存档库 | `/archives` | 视频/网页浏览、排序、标签筛选【新】 |
-| 详情 | `/content/{id}` | 完整内容（转写、OCR、报告） |
-| 统计 | `/dashboard` | 数据统计和分析 |
+| 首页 | `/` | 知识库概览、统计指标、快速导入（含任务进度）、最近内容、热门标签 |
+| 资料库 | `/archives` | 全部/视频/网页切换、网格卡片布局、标签筛选、排序、分页 |
+| 搜索 | `/search` | 全文搜索、侧栏标签过滤、分页 |
+| 详情 | `/content/{id}` | 完整内容（摘要/README/转写/OCR/报告选项卡） |
+| 统计 | `/dashboard` | 自动重定向到首页（已合并） |
 
 **技术栈**：React 18 + TypeScript + Tailwind CSS + Zustand + Axios
 
-**摘要显示约定**：首页预览、存档库列表等摘要区域直接显示完整 `summary` 文本；后端提取摘要时不再追加 `...`。
+**设计风格**：Indigo 主色调、毛玻璃导航栏、卡片式网格布局、自定义 CSS 组件类（glass-nav / card / badge / tag-pill / btn-primary 等）、响应式移动端支持
 
 **核心文件**：
 - `src/api/client.ts` - API 请求客户端
-- `src/components/` - UI 组件
+- `src/components/Layout.tsx` - 全局布局（毛玻璃导航栏 + 响应式移动菜单）
+- `src/components/` - UI 组件（SearchBar / ContentPreview / ContentCard / Pagination / TagFilter）
 - `src/pages/` - 页面组件
 - `src/store/` - Zustand 状态管理
+- `src/index.css` - 全局样式（自定义组件类、prose 排版、滚动条）
 
 ---
 

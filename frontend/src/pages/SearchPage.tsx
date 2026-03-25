@@ -1,3 +1,5 @@
+// #region SearchPage - 搜索页
+
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { searchContent, listTags, type Tag } from '@/api/client'
@@ -7,7 +9,6 @@ import ContentCard from '@/components/ContentCard'
 import TagFilter from '@/components/TagFilter'
 import Pagination from '@/components/Pagination'
 
-// #region SearchPage
 export default function SearchPage() {
   const {
     query,
@@ -81,7 +82,6 @@ export default function SearchPage() {
     }
   }, [setIsLoading, setResults, setTotal])
 
-  // query / selectedTags / currentPage 变化时自动搜索
   useEffect(() => {
     if (query) {
       executeSearch(query, selectedTags, currentPage)
@@ -99,39 +99,52 @@ export default function SearchPage() {
   const totalPages = Math.ceil(total / resultsPerPage)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
+      {/* 页头 */}
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 mb-1">搜索</h1>
+        <p className="text-sm text-slate-500">在知识库中搜索视频、网页和笔记</p>
+      </div>
+
+      {/* 搜索栏 */}
       <SearchBar onSearch={handleSearch} initialValue={query} />
 
+      {/* 错误提示 */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200/60 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {error}
         </div>
       )}
 
+      {/* 主体 */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* 左侧：标签过滤 */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 order-2 lg:order-1">
           <TagFilter tags={tags} />
         </div>
 
         {/* 右侧：搜索结果 */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 order-1 lg:order-2">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="animate-spin rounded-full h-7 w-7 border-2 border-primary-600 border-t-transparent" />
+              <span className="text-sm text-slate-400">搜索中...</span>
             </div>
           ) : results.length > 0 ? (
             <>
-              <p className="text-sm text-gray-500 mb-4">
-                找到 <span className="font-medium text-gray-900">{total}</span> 个结果
+              <p className="text-sm text-slate-500 mb-4">
+                找到 <span className="font-semibold text-slate-800">{total}</span> 个结果
               </p>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {results.map((result) => (
                   <Link
                     key={`${result.type}-${result.id}`}
                     to={`/content/${result.id}?type=${result.type}`}
-                    className="block"
+                    className="block group"
                   >
                     <ContentCard result={result} />
                   </Link>
@@ -149,13 +162,23 @@ export default function SearchPage() {
               )}
             </>
           ) : hasSearched ? (
-            <div className="text-center py-16 text-gray-500">
-              <p className="text-base">未找到匹配的内容</p>
-              <p className="text-sm mt-1">尝试调整搜索关键词或筛选条件</p>
+            <div className="text-center py-20">
+              <div className="text-slate-300 mb-3">
+                <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <p className="text-base text-slate-500 font-medium">未找到匹配的内容</p>
+              <p className="text-sm text-slate-400 mt-1">尝试调整关键词或清除标签筛选</p>
             </div>
           ) : (
-            <div className="text-center py-16 text-gray-400">
-              <p>输入关键词开始搜索</p>
+            <div className="text-center py-20">
+              <div className="text-slate-200 mb-3">
+                <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <p className="text-slate-400">输入关键词开始搜索</p>
             </div>
           )}
         </div>
@@ -163,4 +186,5 @@ export default function SearchPage() {
     </div>
   )
 }
+
 // #endregion

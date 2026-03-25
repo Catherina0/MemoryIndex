@@ -878,6 +878,65 @@ def generate_detailed_content(full_text: str) -> tuple:
         return ("", "N/A")
 
 
+def generate_display_summary(full_report: str) -> str:
+    """
+    第三次调用：基于完整报告生成一个用于网页展示的简短摘要
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    model_name = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
+    
+    if not api_key:
+        print("  ⚠️  GROQ_API_KEY 未设置，跳过展示摘要生成")
+        return ""
+        
+    try:
+        client = Groq(api_key=api_key)
+        prompt = """请基于以下这份详细的视频内容分析报告，生成一份适合在网页端直接展示的精炼版视频导读摘要。
+
+要求：
+1. 提取最核心的价值点和结论。
+2. 包含 3-5 个概括性标签（Tags），格式必须为：标签: tag1, tag2...
+3. 提供一份极简的要点列表（Bullet points）。
+4. 整体字数控制在 200-400 字，排版需要清晰美观（使用 Markdown）。
+5. 不要重复报告里的长篇大论，重点在于“这个视频讲了什么”。
+
+推荐结构：
+> [一句话核心主旨或者导语]
+
+### 📌 核心摘要
+...
+
+### 💡 关键收获
+- ...
+- ...
+
+### 🏷️ 标签
+标签: ...
+"""
+        max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "2048"))
+        temperature = float(os.getenv("GROQ_TEMPERATURE", "0.5"))
+        
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是一个专业的高级内容编辑，擅长将长篇深度的视频内容报告浓缩成最具吸引力和价值的网页端导读摘要。"
+                },
+                {
+                    "role": "user",
+                    "content": f"{prompt}\n\n========== 报告原文 ==========\n{full_report}"
+                }
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"  ⚠️  展示摘要生成失败: {e}")
+        return ""
+
+
 def merge_summary_with_details(summary: str, detailed_content_tuple: tuple) -> str:
     """
     将详细内容概括追加到报告末尾。
@@ -1294,6 +1353,7 @@ def save_to_database(
     source_url: str = None,
     platform_title: str = None,
     ocr_engine: str = None,
+    display_summary: str = "",
 ) -> int:
     """
     将处理结果保存到数据库
@@ -1395,6 +1455,19 @@ def save_to_database(
             )
             repo.save_artifact(report_artifact)
             print(f"   ✅ 保存AI报告 ({len(summary)} 字符)")
+            
+        # 2.4 展示摘要
+        if display_summary and display_summary.strip():
+            summary_artifact = Artifact(
+                video_id=video_id,
+                artifact_type=ArtifactType.SUMMARY,
+                content_text=display_summary,
+                file_path=str(session_dir / "summary.md"),
+                model_name="openai/gpt-oss-120b",
+                char_count=len(display_summary)
+            )
+            repo.save_artifact(summary_artifact)
+            print(f"   ✅ 保存网页展示摘要 ({len(display_summary)} 字符)")
         
         # 3. 提取并保存标签
         tags = extract_tags_from_summary(summary)
@@ -1847,6 +1920,16 @@ def process_video(
     )
     
     report_path.write_text(report_content, encoding="utf-8")
+    
+    # 9.5 生成展示摘要
+    display_summary = ""
+    print("\n>> 第三次AI调用：生成展示摘要...")
+    display_summary = generate_display_summary(report_content)
+    if display_summary:
+        summary_path = session_dir / "summary.md"
+        summary_path.write_text(display_summary, encoding="utf-8")
+        print(f"   ✅ 展示摘要已保存到: file://{summary_path}")
+    
     # 使用引号包裹路径或拼接 file:// 协议，以便终端在遇到路径中的逗号等特殊字符时仍能正确生成可点击链接
     print(f"\n📄 报告已保存到: file://{report_path}")
     print(f"📁 完整输出目录: file://{session_dir}")
@@ -1886,6 +1969,7 @@ def process_video(
         source_url=source_url,
         platform_title=platform_title,
         ocr_engine=ocr_engine,
+        display_summary=display_summary,
     )
 
 
