@@ -1,62 +1,54 @@
 import type { SearchResult } from '@/api/client'
 
+// #region ContentCard - 搜索结果卡片
 interface ContentCardProps {
   result: SearchResult
 }
 
 export default function ContentCard({ result }: ContentCardProps) {
-  const sourceIcon: Record<string, string> = {
-    youtube: '🎥',
-    bilibili: 'B',
-    twitter: '𝕏',
-    zhihu: '知',
-    reddit: '🔴',
-    xiaohongshu: '小',
-    local: '💾',
-  }
-
-  const icon = sourceIcon[result.source_type] || '📄'
-
   return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-4 border border-gray-200">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{icon}</span>
-            <span className="text-xs font-medium text-gray-500 px-2 py-1 bg-gray-100 rounded">
-              {result.type === 'video' ? '📹 视频' : '📄 网页'}
+    <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-gray-300 hover:shadow-sm transition-all">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          {/* 元信息 */}
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+              result.type === 'video'
+                ? 'bg-purple-50 text-purple-700'
+                : 'bg-emerald-50 text-emerald-700'
+            }`}>
+              {result.type === 'video' ? '视频' : '网页'}
             </span>
+            <span className="text-xs text-gray-400">{result.source_type}</span>
           </div>
 
-          <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 hover:text-primary transition-colors">
+          {/* 标题 */}
+          <h3 className="text-sm font-medium text-gray-900 line-clamp-2 mb-1 hover:text-blue-700 transition-colors">
             {result.title}
           </h3>
 
+          {/* 摘要 */}
           {result.summary && (
-            <p className="text-gray-600 text-sm whitespace-pre-wrap break-words mb-3">{result.summary}</p>
+            <p className="text-xs text-gray-500 line-clamp-2 mb-2">{result.summary}</p>
           )}
 
-          {result.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {result.tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs"
-                >
-                  #{tag}
-                </span>
-              ))}
-              {result.tags.length > 3 && (
-                <span className="text-xs text-gray-500">+{result.tags.length - 3}</span>
-              )}
-            </div>
-          )}
-
-          <p className="text-xs text-gray-500">
-            {new Date(result.created_at).toLocaleDateString('zh-CN')}
-          </p>
+          {/* 标签 + 日期 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {result.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+                {tag}
+              </span>
+            ))}
+            {result.tags.length > 3 && (
+              <span className="text-xs text-gray-400">+{result.tags.length - 3}</span>
+            )}
+            <span className="text-xs text-gray-400 ml-auto">
+              {new Date(result.created_at).toLocaleDateString('zh-CN')}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   )
 }
+// #endregion

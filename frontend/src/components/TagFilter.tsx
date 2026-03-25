@@ -1,6 +1,7 @@
 import { useSearchStore } from '@/store'
 import type { Tag } from '@/api/client'
 
+// #region TagFilter - 搜索页标签过滤侧边栏
 interface TagFilterProps {
   tags: Tag[]
 }
@@ -17,26 +18,26 @@ export default function TagFilter({ tags }: TagFilterProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 h-fit sticky top-20">
-      <h3 className="font-bold text-gray-900 mb-4">🏷️ 按标签过滤</h3>
+    <div className="bg-white border border-gray-200 rounded-lg p-4 h-fit sticky top-20">
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">按标签过滤</h3>
 
       {tags.length === 0 ? (
-        <p className="text-sm text-gray-500">暂无标签</p>
+        <p className="text-xs text-gray-400">暂无标签</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {tags.slice(0, 15).map((tag) => (
             <label
               key={tag.id}
-              className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+              className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
             >
               <input
                 type="checkbox"
                 checked={selectedTags.includes(tag.name)}
                 onChange={() => toggleTag(tag.name)}
-                className="w-4 h-4 text-primary rounded focus:ring-primary"
+                className="w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
               />
               <span className="flex-1 text-sm text-gray-700">{tag.name}</span>
-              <span className="text-xs text-gray-500">({tag.count})</span>
+              <span className="text-xs text-gray-400">{tag.count}</span>
             </label>
           ))}
         </div>
@@ -44,8 +45,9 @@ export default function TagFilter({ tags }: TagFilterProps) {
 
       {selectedTags.length > 0 && (
         <button
+          type="button"
           onClick={() => setSelectedTags([])}
-          className="w-full mt-4 text-sm text-primary hover:text-blue-700 font-medium"
+          className="w-full mt-3 text-xs text-blue-600 hover:text-blue-800 font-medium"
         >
           清除筛选
         </button>
@@ -53,3 +55,4 @@ export default function TagFilter({ tags }: TagFilterProps) {
     </div>
   )
 }
+// #endregion

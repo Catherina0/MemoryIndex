@@ -481,12 +481,63 @@ class ArchiveProcessor:
         return count
 
 
-    def _get_archive_prompt(self, content_type="detailed"):
-        """获取归档报告的提示词"""
+    def _get_archive_prompt(self, content_type="summary"):
+        """获取归档报告的提示词 - 参考 process_video.py 结构"""
         
-        # 基础提示词 (对应 download-run 的 default_prompt_text)
+        # 快速摘要提示词（首次调用，在最开头）- 参考 process_video.py 的摘要结构
+        summary_prompt = """
+请基于以下网页的提取内容和OCR识别文本(如果有），快速生成一份**结构化的内容档案**。
+
+**⚠️ 识别错误修正**：
+- 网页内容和OCR文本可能存在同音字/词识别错误
+- 请根据上下文**主动修正**这些错误，特别是：
+  * 专业术语（技术名词、学术概念）
+  * 人名、地名、机构名
+  * 英文缩写和术语
+  * 数字、单位、参数
+- 修正后使用准确、规范的表达
+
+**⚠️ 内容清洗：忽略广告干扰**
+- 请识别并**完全忽略**网页中的广告、推荐链接、侧边栏无关内容
+- 典型例子：购买链接、广告图、相关推荐、"点击关注"等
+- 确保输出内容仅关于网页的核心主题知识
+
+**需要做的：**
+1. **结构化梳理**：按逻辑顺序梳理主要内容，自动识别"主题/章节"
+2. **提取关键信息**：数字、数据、规则、参数、关键术语
+3. **输出规范标签和摘要**：
+   - **标签**：3-6 个高度概括的主题标签（1-4字，如"技术"、"教育"、"教程"等）
+   - **摘要**：不超过 100 字的系统性内容概括
+
+**推荐输出结构：**
+
+## 📌 快速摘要
+（100-150字的核心内容概括）
+
+## 🎯 主要主题
+（网页的核心主题分类）
+
+## 🏗️ 内容结构
+### 部分一：[主题名]
+- 关键点...
+- 重要数据...
+
+### 部分二：[主题名]
+- 关键点...
+- 重要数据...
+
+## 🔑 关键信息汇总
+- 重要数据：...
+- 关键术语：...
+- 操作步骤（如适用）：...
+
+## 📛 标签
+标签: 标签1, 标签2, 标签3, 标签4
+"""
+
+        # 基础详细提示词 (对应 process_video.py 的 default_prompt_text)
         default_prompt = """
-请基于以下网页和 OCR 识别内容(如果有），生成一份**详细的内容概括**。
+请基于以下网页的提取内容和OCR识别文本(如果有），生成一份**详细的内容概括**。
 
 **⚠️ 识别错误修正**：
 - 网页内容和OCR文本可能存在同音字/词识别错误
@@ -503,7 +554,7 @@ class ArchiveProcessor:
 - 确保输出内容仅关于网页的核心主题知识
 
 要求：
-1. **逐段详细展开**：按网页内容的逻辑顺序，详细描述每个主要部分
+1. **逐段详细展开**：按网页内容的逻辑顺序，详细描述每个主要部分的内容
 2. **保留关键细节**：
    - 具体的数字、数据、参数（修正识别错误后的准确值）
    - 人名、地名、专业术语（确保拼写和表达准确）
@@ -514,7 +565,7 @@ class ArchiveProcessor:
 4. **结构清晰**：使用层级标题和列表组织内容
 
 输出格式：
-## 详细内容概括
+## 📖 详细内容概括
 
 ### 第一部分：[主题名称]
 （详细描述这部分的内容...）
@@ -532,9 +583,9 @@ class ArchiveProcessor:
 > "原句2..."
 """
 
-        # 深度详细提示词 (对应 download-run 的 gemini_prompt_text)
+        # 深度详细提示词 (对应 process_video.py 的 gemini_prompt_text)
         detailed_prompt = """
-请基于以下网页和 OCR 识别内容(如果有），生成一份**极致详细、内容全面**的深度内容概括。
+请基于以下网页的提取内容和OCR识别文本(如果有），生成一份**极致详细、内容全面**的深度内容概括。
 
 **⚠️ 我们的目标是：生成一份无需查看原网页就能获取所有细节的完整档案。不要在意长度，尽可能多地保留信息。**
 
@@ -545,7 +596,7 @@ class ArchiveProcessor:
 - **不要省略**：不要使用"..."或"略过"等简写，把内容如实写出来。
 
 **⚠️ 2. 识别错误修正与清洗**
-- **智能纠错**：根据上下文主动修正 OCR 或网页提取的同音字/错别字。
+- **智能纠错**：根据上下文主动修正 OCR 或网页提取的同音字/词错误（如 "Python" 误识为 "派森"）。
 - **屏蔽广告**：完全忽略网页中的广告（如电商链接、推广图）、求关注等无关内容。
 - **术语规范**：将口语化的表达转换为专业、规范的书面术语。
 
@@ -557,9 +608,9 @@ class ArchiveProcessor:
 
 **📊 4. 专项信息提取**
 在文末请单独整理：
-- **数据汇总**：所有出现的统计数据、价格、参数。
-- **知识图谱**：提到的所有概念、理论、法则。
-- **行动指南**：如果网页包含教程，列出一步步的操作指南。
+- **数据汇总**：所有出现的统计数据、价格、参数、指标。
+- **知识图谱**：提到的所有概念、理论、法则、原理。
+- **行动指南**：如果网页包含教程/步骤，列出一步步的操作指南。
 
 请忽略 Token 限制，尽可能详尽地输出。
 
@@ -569,16 +620,69 @@ class ArchiveProcessor:
 ### 章节一：背景与核心论点
 （这里需要非常详细的描述，解释作者的出发点，引用的背景故事，提出的核心矛盾...）
 
-### 章节二：深度解析技术原理
+### 章节二：深度解析与详细阐述
 （详细解释原理的每一个步骤，不要遗漏任何技术细节...）
-...
+
+### 章节三：应用案例与补充说明
+（举例说明、案例分析、扩展讨论...）
 
 ### 💡 核心知识点与数据汇总
-...
+- **关键概念**：...
+- **数据与参数**：...
+- **操作步骤**：...
 """
         if content_type == "detailed":
             return detailed_prompt
-        return default_prompt
+        elif content_type == "default":
+            return default_prompt
+        else:  # "summary"
+            return summary_prompt
+    
+    def _generate_archive_summary(
+        self,
+        client,
+        model: str,
+        content: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.7
+    ) -> tuple:
+        """
+        生成快速摘要 - 首次调用 AI 时在最开头生成
+        返回: (summary_text, model_name)
+        """
+        prompt_text = self._get_archive_prompt("summary")
+        prompt = f"{prompt_text}\n\n以下是网页内容：\n{content}"
+        
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """你是一个专业的网页内容分析专家，具备智能纠错能力。
+
+                        输入来自网页的提取内容和可能的 OCR 识别文本。
+                        
+                        你的职责是：
+                        - 快速识别网页的核心主题和关键信息
+                        - 智能纠错：主动识别并修正同音字/词错误，特别是专业术语、人名地名
+                        - 生成清晰、结构化的内容档案
+                        - 提取准确的标签和摘要
+                        - 确保输出使用准确、专业的术语表达"""
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            
+            return (response.choices[0].message.content, model)
+        except Exception as e:
+            print(f"  ✗ 摘要生成失败: {e}")
+            return ("", model)
     
     def _split_content_by_tokens(self, content: str, max_tokens: int) -> list:
         """
@@ -655,6 +759,15 @@ class ArchiveProcessor:
             content_tokens = self._estimate_tokens(content)
             print(f"  📊 内容估算 tokens: {content_tokens:,}")
             
+            # ========== 第一步：生成快速摘要（在最开头）==========
+            print(f"  🚀 第一步：生成快速摘要...")
+            summary_content, summary_model = self._generate_archive_summary(
+                client, model, content, 
+                max_tokens=int(os.getenv("GROQ_SUMMARY_MAX_TOKENS", "3000")),
+                temperature=temperature
+            )
+            
+            # ========== 第二步：生成详细分析结构 ==========
             # 使用与 process_video.py 统一的 logic
             # 如果超过 5 万 token，启动更强的详细模式 (原 Long report threshold 是 10万)
             long_text_triggered = content_tokens > 50000
@@ -677,12 +790,19 @@ class ArchiveProcessor:
             
             if content_tokens > self.LONG_TEXT_THRESHOLD:
                 print(f"  🔄 内容极长 (>{self.LONG_TEXT_THRESHOLD} tokens)，启动分段处理模式")
-                return self._generate_report_long_text(
+                detailed_result = self._generate_report_long_text(
                     client, model, content, output_dir, 
                     max_tokens, temperature
                 )
+                if detailed_result:
+                    # 合并摘要和详细分析
+                    merged_content = f"{summary_content}\n\n---\n\n{detailed_result.get('content', '')}"
+                    detailed_result['content'] = merged_content
+                    return detailed_result
+                return None
 
-            # 构建最终 User Prompt
+            # 构建最终 User Prompt（用于详细分析）
+            print(f"  📖 第二步：生成详细分析...")
             prompt = f"{prompt_text}\n\n以下是网页内容：\n{content}"
 
             response = client.chat.completions.create(
@@ -691,8 +811,13 @@ class ArchiveProcessor:
                     {
                         "role": "system",
                         "content": """你是一个专业的内容整理助手，具备智能纠错能力。
+                        
                         你的任务是从网页内容中提取所有重要信息，识别并修正OCR和提取错误，生成详尽、完整的内容概括。
-                        确保使用准确、专业、规范的术语表达。"""
+                        确保使用准确、专业、规范的术语表达。
+                        
+                        根据内容长度，采用相应的分析深度：
+                        - 较短内容：使用清晰的结构化总结，关键信息突出
+                        - 较长内容：使用极致详尽的深度分析，保留所有细节"""
                     },
                     {
                         "role": "user",
@@ -703,7 +828,10 @@ class ArchiveProcessor:
                 temperature=temperature,
             )
             
-            report_content = response.choices[0].message.content
+            detailed_content = response.choices[0].message.content
+            
+            # ========== 第三步：合并摘要和详细内容 ==========
+            report_content = f"{summary_content}\n\n---\n\n## 📖 详细内容分析\n\n{detailed_content}"
             
             # 保存报告到文件
             report_path = output_dir / 'report.md'

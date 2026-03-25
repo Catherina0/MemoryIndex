@@ -2,23 +2,31 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+/* #region 基础样式 */
 * {
   @apply box-border;
 }
 
+body {
+  @apply text-gray-900 antialiased;
+}
+/* #endregion */
+
+/* #region 滚动条 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-400 rounded-full;
+  @apply bg-gray-300 rounded-full;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-500;
+  @apply bg-gray-400;
 }
+/* #endregion */

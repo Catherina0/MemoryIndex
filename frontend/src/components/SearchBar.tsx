@@ -1,32 +1,40 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSearchStore } from '@/store'
 
+// #region SearchBar 组件
 interface SearchBarProps {
+  /** 如果提供 onSearch，则直接调用；否则跳转到 /search 页面 */
   onSearch?: (query: string, tags: string[]) => void
   placeholder?: string
+  /** 外部设置的初始值（用于从 URL 参数初始化） */
+  initialValue?: string
 }
 
-export default function SearchBar({ onSearch, placeholder = '搜索内容...' }: SearchBarProps) {
+export default function SearchBar({ onSearch, placeholder = '搜索知识库...', initialValue }: SearchBarProps) {
   const navigate = useNavigate()
   const { setQuery, setSelectedTags, setCurrentPage } = useSearchStore()
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialValue || '')
+
+  useEffect(() => {
+    if (initialValue !== undefined) {
+      setInput(initialValue)
+    }
+  }, [initialValue])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
 
-    if (!input.trim()) {
-      return
-    }
+    if (!input.trim()) return
 
-    setQuery(input)
+    setQuery(input.trim())
     setSelectedTags([])
     setCurrentPage(1)
 
     if (onSearch) {
-      onSearch(input, [])
+      onSearch(input.trim(), [])
     } else {
-      navigate(`/search?q=${encodeURIComponent(input)}`)
+      navigate(`/search?q=${encodeURIComponent(input.trim())}`)
     }
   }
 
@@ -38,14 +46,11 @@ export default function SearchBar({ onSearch, placeholder = '搜索内容...' }:
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={placeholder}
-          className="w-full px-4 py-3 pl-12 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent shadow-md"
+          className="w-full px-4 py-2.5 pr-20 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
-        <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">
-          🔍
-        </span>
         <button
           type="submit"
-          className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-primary text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm hover:bg-blue-700 transition-colors font-medium"
         >
           搜索
         </button>
@@ -53,3 +58,4 @@ export default function SearchBar({ onSearch, placeholder = '搜索内容...' }:
     </form>
   )
 }
+// #endregion
