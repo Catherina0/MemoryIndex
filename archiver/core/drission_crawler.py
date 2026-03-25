@@ -199,10 +199,23 @@ class DrissionArchiver:
             
             logger.info(f"加载手动配置的 Cookie: {platform_name}")
             
-            # 确保已访问页面（Cookie 需要域名）
+            # 确保已访问对应平台的页面（Cookie 需要域名）
             if not self.current_tab.url or self.current_tab.url == 'about:blank':
                 logger.info(f"首次访问页面以设置 Cookie...")
-                self.current_tab.get(url)
+                try:
+                    # 根据平台访问主页以设置 cookie
+                    target_url = url
+                    if platform_name == 'xiaohongshu':
+                        target_url = "https://www.xiaohongshu.com/explore"
+                    elif platform_name == 'bilibili':
+                        target_url = "https://www.bilibili.com"
+                    elif platform_name == 'zhihu':
+                        target_url = "https://www.zhihu.com"
+                        
+                    self.current_tab.set.timeouts(page_load=15)
+                    self.current_tab.get(target_url)
+                except Exception as e:
+                    logger.warning(f"首次访问可能未完全加载: {e}")
                 time.sleep(1)
             
             # 解析并设置 Cookie
@@ -217,12 +230,21 @@ class DrissionArchiver:
                 name = name.strip()
                 value = value.strip()
                 
+                # 获取平台特定域名
+                cookie_domain = self._get_cookie_domain(url)
+                if platform_name == 'xiaohongshu':
+                    cookie_domain = ".xiaohongshu.com"
+                elif platform_name == 'bilibili':
+                    cookie_domain = ".bilibili.com"
+                elif platform_name == 'zhihu':
+                    cookie_domain = ".zhihu.com"
+                
                 try:
                     # 设置 Cookie
                     self.current_tab.set.cookies({
                         'name': name,
                         'value': value,
-                        'domain': self._get_cookie_domain(url),
+                        'domain': cookie_domain,
                         'path': '/'
                     })
                     logger.debug(f"✓ 设置 Cookie: {name}")
@@ -450,6 +472,17 @@ class DrissionArchiver:
                 any(kw in page_title.lower() for kw in _blocked_titles)
                 or any(kw in _current_url.lower() for kw in _blocked_url_keywords)
             )
+            
+            # 如果看起来是被屏蔽，但实际上核心元素还在，那属于误判，允许继续提取
+            if _is_blocked and platform_adapter and getattr(platform_adapter, 'content_selector', ''):
+                _test_selector = platform_adapter.content_selector.split(',')[0].strip()
+                try:
+                    if self.current_tab.ele(_test_selector, timeout=1):
+                        logger.info("📍 检测到登录关键字，但页面仍包含核心内容，跳过拦截")
+                        _is_blocked = False
+                except Exception:
+                    pass
+
             if _is_blocked:
                 # 直接映射到 Makefile 中已有的 cookie 配置目标
                 _PLATFORM_COOKIE_CMD = {
