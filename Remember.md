@@ -11,12 +11,14 @@
 - 技术：React 18 + TypeScript + Tailwind CSS
 - 状态管理：Zustand
 - 列表页与预览卡片中的摘要需要完整显示，不使用省略号
+- 首页“快速导入”支持粘贴分享文本，后端会自动提取链接并导入
 
 ### 📚 后端服务（FastAPI）
 - URL：http://localhost:8000
 - API 文档：http://localhost:8000/docs
 - 功能：搜索、内容、标签、统计接口
 - 数据库：集成现有 SQLite
+- 若前端出现 `/api/*` 的 500 + Vite `ECONNREFUSED`，优先检查 8000 端口是否有后端进程
 
 ### ⚡ 快速启动
 ```bash

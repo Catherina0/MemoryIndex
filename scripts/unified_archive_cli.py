@@ -5,6 +5,7 @@
 
 import sys
 import argparse
+import subprocess
 from pathlib import Path
 from archiver.utils.url_parser import extract_url_from_text, detect_platform
 
@@ -120,6 +121,25 @@ def main():
                 print(f"  标题: {result.get('title', 'N/A')}")
                 print(f"  图片: {result.get('images_downloaded', 0)}/{result.get('images_total', 0)}")
                 print(f"  内容: {result['content_length']} 字符")
+                
+                # 保存到数据库
+                try:
+                    from core.archive_processor import ArchiveProcessor
+                    processor = ArchiveProcessor()
+                    db_id = processor.process_and_save(
+                        url=url,
+                        output_dir=Path('archived'),
+                        archive_result=result,
+                        source_type=result.get('platform', 'web_archive'),
+                        with_ocr=args.screenshot_ocr,
+                        processing_config={
+                            'mode': mode,
+                            'engine': 'drission'
+                        }
+                    )
+                    print(f"  💾 已保存到数据库 (ID: {db_id})")
+                except Exception as e:
+                    print(f"  ⚠️  数据库保存失败: {e}")
             else:
                 print(f"\n✗ 归档失败: {result.get('error', 'Unknown error')}")
                 sys.exit(1)
@@ -142,6 +162,25 @@ def main():
                 print(f"  平台: {result['platform']}")
                 print(f"  标题: {result['title']}")
                 print(f"  内容: {result['content_length']} 字符")
+                
+                # 保存到数据库
+                try:
+                    from core.archive_processor import ArchiveProcessor
+                    processor = ArchiveProcessor()
+                    db_id = processor.process_and_save(
+                        url=url,
+                        output_dir=Path('archived'),
+                        archive_result=result,
+                        source_type=result.get('platform', 'web_archive'),
+                        with_ocr=args.screenshot_ocr,
+                        processing_config={
+                            'mode': mode,
+                            'engine': 'crawl4ai'
+                        }
+                    )
+                    print(f"  💾 已保存到数据库 (ID: {db_id})")
+                except Exception as e:
+                    print(f"  ⚠️  数据库保存失败: {e}")
             else:
                 print(f"\n✗ 归档失败: {result.get('error', 'Unknown error')}")
                 sys.exit(1)
@@ -149,5 +188,39 @@ def main():
         asyncio.run(archive_with_crawl4ai())
 
 
+def cleanup_temp_chromium():
+    """
+    清理脚本创建的临时 Chromium 进程
+    只关闭使用 temp_file 目录的 Chromium，不影响主 Chrome
+    """
+    try:
+        import time
+        # 等待进程完全终止
+        time.sleep(1)
+        
+        # 查找使用 temp_file 目录的 Chromium 进程
+        result = subprocess.run(
+            ['pgrep', '-f', 'temp_file.*Chromium|temp_file.*chrome'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                try:
+                    subprocess.run(['kill', '-9', pid], stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+            print(f"\n🧹 已清理脚本临时 Chromium 进程 ({len(pids)} 个)")
+    except Exception:
+        # 如果没有 pgrep 命令（Windows）,忽略
+        pass
+
+
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        # 清理脚本创建的临时浏览器
+        cleanup_temp_chromium()

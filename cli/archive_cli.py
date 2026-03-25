@@ -6,6 +6,7 @@ import asyncio
 import argparse
 import sys
 import warnings
+import subprocess
 from pathlib import Path
 import logging
 
@@ -66,6 +67,24 @@ async def archive_single(args):
         print(f"  平台: {result['platform']}")
         print(f"  标题: {result['title']}")
         print(f"  内容长度: {result['content_length']} 字符")
+        
+        # 保存到数据库
+        try:
+            from core.archive_processor import ArchiveProcessor
+            from pathlib import Path
+            processor = ArchiveProcessor()
+            db_id = processor.process_and_save(
+                url=url,
+                output_dir=Path(args.output),
+                archive_result=result,
+                source_type=result.get('platform', 'web_archive'),
+                processing_config={
+                    'engine': 'universal_archiver'
+                }
+            )
+            print(f"  💾 已保存到数据库 (ID: {db_id})")
+        except Exception as e:
+            print(f"  ⚠️  数据库保存失败: {e}")
     else:
         print(f"✗ 归档失败: {result.get('error', 'Unknown error')}")
         sys.exit(1)
@@ -212,5 +231,37 @@ def main():
         sys.exit(1)
 
 
+def cleanup_temp_chromium():
+    """
+    清理脚本创建的临时 Chromium 进程
+    只关闭使用 temp_file 目录的 Chromium，不影响主 Chrome
+    """
+    try:
+        import time
+        # 等待进程完全终止
+        time.sleep(1)
+        
+        # 查找使用 temp_file 目录的 Chromium 进程
+        result = subprocess.run(
+            ['pgrep', '-f', 'temp_file.*Chromium|temp_file.*chrome'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                try:
+                    subprocess.run(['kill', '-9', pid], stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+    except Exception:
+        # 如果没有 pgrep 命令（Windows）,忽略
+        pass
+
+
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        cleanup_temp_chromium()

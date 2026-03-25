@@ -37,8 +37,15 @@ def _copy_cookies_to_temp(src_profile: Path, dst_profile: Path) -> None:
     """
     import shutil
 
-    # Chrome/Chromium 的 Cookies 通常位于 Default/ 子目录
-    cookie_files = ["Default/Cookies", "Default/Cookies-journal", "Default/Login Data"]
+    # Chrome/Chromium 的 Cookies 通常位于 Default/ 子目录，同时需要 Local State 以解密 Cookies (特别是在 macOS 上)
+    cookie_files = [
+        "Default/Cookies", 
+        "Default/Cookies-journal", 
+        "Default/Login Data",
+        "Default/Network/Cookies",          # 新版 Chrome 路径
+        "Default/Network/Cookies-journal",
+        "Local State"                       # 用于解密 Cookie
+    ]
     copied = []
     for rel in cookie_files:
         src = src_profile / rel

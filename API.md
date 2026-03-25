@@ -27,7 +27,7 @@
 | `/api/content/{id}` | GET | 获取内容详情（content_type=video/archive） |
 | `/api/tags` | GET | 获取所有标签（limit） |
 | `/api/stats` | GET | 统计信息（total_videos, total_archives, top_tags） |
-| `/api/import` | POST | 导入内容（url, content_type, use_ocr）【新】 |
+| `/api/import` | POST | 导入内容（支持 URL 或分享文本，自动提取链接）【新】 |
 | `/api/health` | GET | 健康检查 |
 
 **参数示例**：
@@ -49,7 +49,7 @@ curl -X POST http://localhost:8000/api/import \
 
 #### POST /api/import - 导入内容【新】
 
-**功能**：导入 URL（视频/网页），自动检测类型
+**功能**：导入 URL（视频/网页），自动检测类型；支持直接粘贴分享文本并自动提取链接
 
 **请求体**：
 ```json
@@ -64,7 +64,7 @@ curl -X POST http://localhost:8000/api/import \
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| url | string | - | 要导入的 URL（必需） |
+| url | string | - | URL 或包含 URL 的分享文本（必需，后端会自动提取） |
 | content_type | string | auto | auto\|video\|archive |
 | use_ocr | boolean | false | 是否启用 OCR 识别 |
 
@@ -97,6 +97,11 @@ curl -X POST http://localhost:8000/api/import \
 | vimeo.com | video |
 | qq.com/video, iqiyi.com | video |
 | 其他所有 | archive |
+
+**输入提取规则**：
+- Web 导入与 CLI 复用同一套 URL 提取逻辑；
+- 支持“纯 URL”与“分享文本（含多余描述）”两种输入；
+- 无法提取有效链接时，接口返回错误提示。
 
 **相关代码**：
 - `backend/services.py`: `ImportService` 类
