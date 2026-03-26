@@ -1,0 +1,18 @@
+# 前端依赖和构建产物
+node_modules/
+dist/
+build/
+.env.local
+.env.*.local
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite
+.vite/
+vite-env.d.ts

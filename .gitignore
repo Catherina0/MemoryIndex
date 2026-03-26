@@ -225,24 +225,19 @@ scripts/test_report_gen.py
 tests/test_model_preference.py
 tests/test_naming_isolation.py
 scripts/fix_and_verify.sh
-test6_out.txt
-.gitignore
-result10.txt
-.gitignore
+
+# Temporary output files
+*_out*.txt
+result*.txt
 image_downloader_log.txt
-log1.txt
-.gitignore
-run_output.txt
-.gitignore
-result11.txt
-log7.txt
-.gitignore
-result12.txt
-test_out.txt
-test_out2.txt
+*.temp
 
 # Test profiles and files
 test.py
 test_temp_profile/
-*_out*.txt
-*.temp
+
+# Temporary scripts and files (root)
+patch_repo.py
+xhs_test.png
+test_sync
+temp_file/

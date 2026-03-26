@@ -30,6 +30,7 @@ export default function HomePage() {
 
   // #region 导入表单状态
   const [importUrl, setImportUrl] = useState('')
+  const [contentType, setContentType] = useState<'archive' | 'video'>('archive')
   const [useOcr, setUseOcr] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState('')
@@ -109,14 +110,7 @@ export default function HomePage() {
     setTaskStatus(null)
 
     try {
-      const url = importUrl.trim().toLowerCase()
-      const videoDomains = [
-        'youtube.com', 'youtu.be', 'bilibili.com', 'b23.tv',
-        'vimeo.com', 'dailymotion.com', 'qq.com', 'iqiyi.com'
-      ]
-      const isVideo = videoDomains.some(d => url.includes(d))
-
-      const endpoint = isVideo
+      const endpoint = contentType === 'video'
         ? (useOcr ? '/download-ocr' : '/download-run')
         : (useOcr ? '/archive-ocr' : '/archive-run')
 
@@ -129,6 +123,7 @@ export default function HomePage() {
         setImportSuccess(data.message)
         setTaskId(data.task_id)
         setImportUrl('')
+        setContentType('archive')
         setUseOcr(false)
       } else {
         setImportSuccess(data.message || '已提交')
@@ -219,17 +214,50 @@ export default function HomePage() {
               </button>
             </div>
 
-            {/* OCR 选项 */}
-            <label className="inline-flex items-center gap-2 text-sm text-slate-500 cursor-pointer select-none hover:text-slate-700 transition-colors">
-              <input
-                type="checkbox"
-                checked={useOcr}
-                onChange={(e) => setUseOcr(e.target.checked)}
-                disabled={isImporting}
-                className="w-3.5 h-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
-              />
-              <span>启用 OCR 识别（更慢但更完整）</span>
-            </label>
+            {/* 内容类型选择 + OCR 选项 */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              {/* 内容类型单选 */}
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none hover:text-slate-800 transition-colors">
+                  <input
+                    type="radio"
+                    name="contentType"
+                    value="archive"
+                    checked={contentType === 'archive'}
+                    onChange={() => setContentType('archive')}
+                    disabled={isImporting}
+                    className="w-3.5 h-3.5 border-slate-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+                  />
+                  <span>网页</span>
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none hover:text-slate-800 transition-colors">
+                  <input
+                    type="radio"
+                    name="contentType"
+                    value="video"
+                    checked={contentType === 'video'}
+                    onChange={() => setContentType('video')}
+                    disabled={isImporting}
+                    className="w-3.5 h-3.5 border-slate-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+                  />
+                  <span>视频</span>
+                </label>
+              </div>
+
+              <span className="hidden sm:block w-px h-4 bg-slate-200" />
+
+              {/* OCR 选项 */}
+              <label className="inline-flex items-center gap-1.5 text-sm text-slate-500 cursor-pointer select-none hover:text-slate-700 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={useOcr}
+                  onChange={(e) => setUseOcr(e.target.checked)}
+                  disabled={isImporting}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+                />
+                <span>OCR 识别</span>
+              </label>
+            </div>
 
             {/* #region 导入状态反馈 */}
             {importError && (

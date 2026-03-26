@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from db import VideoRepository
 from db.schema import get_connection
+from db.tag_filters import get_hidden_tag_sql
 
 
 def get_archive_stats() -> Dict[str, Any]:
@@ -112,34 +113,38 @@ def get_video_stats() -> Dict[str, Any]:
         conn.close()
 
 
-def get_tag_stats() -> Dict[str, Any]:
+def get_tag_stats(db_path: str = None) -> Dict[str, Any]:
     """获取标签使用统计"""
-    conn = get_connection()
+    conn = get_connection(db_path)
     try:
         stats = {}
+        visible_clause, visible_params = get_hidden_tag_sql("t.name")
         
         # 最常用的标签
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT t.name, COUNT(*) as usage_count
             FROM video_tags vt
             JOIN tags t ON vt.tag_id = t.id
+            WHERE {visible_clause}
             GROUP BY t.name
-            ORDER BY usage_count DESC
+            ORDER BY usage_count DESC, t.name ASC
             LIMIT 20
-        """)
+        """, visible_params)
         stats['top_tags'] = [dict(row) for row in cursor.fetchall()]
         
         # 标签使用分布
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT usage_count, COUNT(*) as tag_count
             FROM (
                 SELECT COUNT(*) as usage_count
-                FROM video_tags
-                GROUP BY tag_id
+                FROM video_tags vt
+                JOIN tags t ON vt.tag_id = t.id
+                WHERE {visible_clause}
+                GROUP BY vt.tag_id
             )
             GROUP BY usage_count
             ORDER BY usage_count DESC
-        """)
+        """, visible_params)
         stats['distribution'] = [dict(row) for row in cursor.fetchall()]
         
         return stats

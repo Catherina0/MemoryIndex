@@ -26,73 +26,54 @@ def _generate_folder_name_with_llm_for_archive(
     archive_result: Dict[str, Any],
     original_folder: Path
 ) -> Optional[str]:
-    """
-    使用 openai/gpt-oss-20b 模型根据归档内容生成简洁的文件夹名称
-    
-    Args:
-        archive_result: 归档结果字典
-        original_folder: 原始文件夹路径
-    
-    Returns:
-        生成的文件夹名称（不包含时间戳）
-    """
     import os
     try:
         from groq import Groq
     except ImportError:
         print("  ⚠️  Groq SDK 未安装，使用默认文件夹名")
         return None
-    
+        
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         print("  ⚠️  GROQ_API_KEY 未设置，使用默认文件夹名")
         return None
-    
+        
     try:
-        # 读取归档的 README.md 内容
-        readme_path = Path(archive_result.get('markdown_path', ''))
-        if not readme_path.exists():
-            # 尝试查找 output_path 下的 README.md
-            output_path = Path(archive_result.get('output_path', ''))
-            readme_path = output_path / 'README.md'
+        report_content = archive_result.get('report_content', '')
+        actual_content = ''
+        
+        if report_content:
+            content_lines = report_content.split('\n')
+            actual_content = '\n'.join(content_lines[:30])
+        else:
+            readme_path = Path(archive_result.get('markdown_path', ''))
             if not readme_path.exists():
-                print("  ⚠️  未找到 README.md，使用默认文件夹名")
-                return None
+                output_path = Path(archive_result.get('output_path', ''))
+                readme_path = output_path / 'README.md'
+            if readme_path.exists():
+                markdown_content = readme_path.read_text(encoding='utf-8')
+                content_lines = markdown_content.split('\n')
+                content_start = 0
+                if content_lines and content_lines[0].strip() == '---':
+                    for i, line in enumerate(content_lines[1:], 1):
+                        if line.strip() == '---':
+                            content_start = i + 1
+                            break
+                actual_content = '\n'.join(content_lines[content_start:])
         
-        markdown_content = readme_path.read_text(encoding='utf-8')
-        
-        client = Groq(api_key=api_key)
-        
-        # 提取内容摘要
-        content_lines = markdown_content.split('\\n')
-        content_start = 0
-        
-        # 跳过 YAML frontmatter
-        if content_lines and content_lines[0].strip() == '---':
-            for i, line in enumerate(content_lines[1:], 1):
-                if line.strip() == '---':
-                    content_start = i + 1
-                    break
-        
-        # 获取实际内容
-        actual_content = '\\n'.join(content_lines[content_start:])
-        # 移除图片链接
         import re
         actual_content = re.sub(r'!\[.*?\]\(.*?\)', '', actual_content)
-        # 限制长度到前800字符
         content_summary = actual_content[:800].strip()
         
         if not content_summary or len(content_summary) < 20:
-            print("  ⚠️  内容太短，使用默认文件夹名")
             return None
-        
+            
+        client = Groq(api_key=api_key)
         title = archive_result.get('title', '未命名')
         platform = archive_result.get('platform', 'web')
         url = archive_result.get('url', '')
         
-        # Build prompt without backslashes in f-string
-        newline = '\n'
-        prompt = f"""根据以下网页内容，生成一个简洁、描述性的文件夹名称。
+        prompt = f'''根据以下网页分析报告/内容，生成一个简洁、描述性的文件夹名称。
 
 网页标题：{title}
 平台：{platform}
@@ -104,25 +85,18 @@ URL：{url}
 要求：
 1. 文件夹名称应该简洁明了，能够反映内容的核心主题
 2. 使用下划线(_)分隔单词，不要使用空格或特殊字符
-3. 长度不超过30个字符（中文按2个字符计算）
+3. 长度不超过30个字符
 4. 只返回文件夹名称，不要有任何解释或标点符号
 5. 使用中文或英文均可，但要确保文件系统兼容
 6. 不需要包含平台名称
 
-示例格式：
-- 机器学习入门指南
-- Python数据分析技巧
-- 深度学习图像分类
+请直接返回文件夹名称：'''
 
-请直接返回文件夹名称："""
-
-        # 使用环境变量中的模型，如果未设置则使用默认的 Groq 模型
         model_name = os.getenv("GROQ_NAMING_MODEL", "llama-3.1-8b-instant")
-
         response = client.chat.completions.create(
             model=model_name,
             messages=[
-                {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁、描述性的文件夹名称。"},
+                {"role": "system", "content": "你是一个文件命名助手，擅长根据网页内容生成简洁的文件夹名称。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=60,
@@ -130,27 +104,23 @@ URL：{url}
         )
         
         folder_name = response.choices[0].message.content.strip()
-        
-        # 清理文件夹名称
         folder_name = re.sub(r'["\'\n\r\t]', '', folder_name)
-        folder_name = re.sub(r'[/\\]', '_', folder_name)
+        folder_name = re.sub(r'[\\/]', '_', folder_name)
         folder_name = re.sub(r'[<>:"|?*]', '', folder_name)
         
-        # 限制长度
         if len(folder_name) > 50:
             folder_name = folder_name[:50]
         
-        # 如果生成失败或为空，返回 None
         if not folder_name or len(folder_name) < 3:
-            print("  ⚠️  LLM 生成的文件夹名无效")
             return None
-        
+            
         print(f"  ✅ LLM 生成的文件夹名: {folder_name}")
         return folder_name
         
     except Exception as e:
         print(f"  ⚠️  LLM 文件夹命名失败: {e}")
         return None
+
 
 
 class ArchiveProcessor:
@@ -234,7 +204,7 @@ class ArchiveProcessor:
         try:
             db_id = self.repo.create_video(video)
             print(f"✅ 创建归档记录: ID={db_id}")
-            
+
             # 4. 保存原始内容
             raw_content = archive_result.get('content', '')
             if not raw_content and archive_result.get('markdown_path'):
@@ -350,10 +320,10 @@ class ArchiveProcessor:
             print(f"🎉 归档处理完成: ID={db_id}")
             
             return db_id
-            
+
         except Exception as e:
             # 标记失败
-            if 'db_id' in locals():
+            if db_id:
                 self.repo.update_video_status(
                     db_id,
                     ProcessingStatus.FAILED,
@@ -1286,8 +1256,43 @@ async def archive_and_save(
     
     print(f"✅ 归档完成: {archive_result['output_path']}")
     
-    # 3. 使用 LLM 重命名外层文件夹
-    print(f"\n🤖 生成语义化文件夹名...")
+    # 3. 保存到数据库并生成报告 (包含前3次AI调用)
+    print(f"\n💾 保存到数据库并生成内容报告...")
+    processor = ArchiveProcessor()
+    db_id = processor.process_and_save(
+        url=url,
+        output_dir=output_path,
+        archive_result=archive_result,
+        with_ocr=with_ocr,
+        processing_config={
+            'archive_mode': 'web',
+            'with_ocr': with_ocr,
+            'headless': headless
+        }
+    )
+    
+    # 获取生成后的 report_content 用于重命名
+    report_content = ""
+    try:
+        if isinstance(db_id, int) and db_id > 0:
+            report_item = processor.repo.get_artifact(db_id, ArtifactType.REPORT)
+            if report_item and hasattr(report_item, 'content_text'):
+                report_content = report_item.content_text
+    except Exception:
+        pass
+        
+    if not report_content:
+        # 降级尝试从文件读取
+        report_path = output_path / "report.md"
+        if report_path.exists():
+            report_content = report_path.read_text(encoding='utf-8')
+            
+    # 如果找到了报告内容，放入 archive_result 中供命名函数使用
+    if report_content:
+        archive_result['report_content'] = report_content
+
+    # 4. 第四次 AI 调用：使用 LLM 生成语义化文件夹名
+    print(f"\n>> 第四次AI调用：生成语义化文件夹名...")
     new_folder_name = _generate_folder_name_with_llm_for_archive(
         archive_result=archive_result,
         original_folder=output_path
@@ -1305,25 +1310,20 @@ async def archive_and_save(
             new_output_path = temp_path
             
             output_path.rename(new_output_path)
+            archive_result['output_path'] = str(new_output_path)
+            
             output_path = new_output_path
             print(f"✅ 文件夹已重命名: {output_path.name}")
+            
+            # 更新数据库中的文件路径
+            if isinstance(db_id, int) and db_id > 0:
+                try:
+                    processor.repo.update_video_metadata(db_id, file_path=str(output_path))
+                except TypeError:
+                    pass # 如果仓库方法不支持 file_path 参数则跳过
+                
         except Exception as e:
             print(f"⚠️  文件夹重命名失败: {e}")
-    
-    # 4. 保存到数据库
-    print(f"\n💾 保存到数据库...")
-    processor = ArchiveProcessor()
-    db_id = processor.process_and_save(
-        url=url,
-        output_dir=output_path,
-        archive_result=archive_result,
-        with_ocr=with_ocr,
-        processing_config={
-            'archive_mode': 'web',
-            'with_ocr': with_ocr,
-            'headless': headless
-        }
-    )
     
     print(f"\n{'='*60}")
     print(f"✅ 全部完成！")

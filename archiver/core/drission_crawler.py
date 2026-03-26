@@ -440,9 +440,35 @@ class DrissionArchiver:
                     return {
                         "success": False,
                         "error": "推特需要登录。请运行 'make login-twitter' 登录账号",
-                        "url": url
+                        "url": url,
+                        "blocked": True,
+                        "fix_commands": ["make login-twitter"]
                     }
-            
+
+            # 检查小红书登录状态
+            if platform_adapter.name == 'xiaohongshu':
+                current_url = self.current_tab.url or ''
+                page_html = ''
+                try:
+                    page_html = self.current_tab.html or ''
+                except Exception:
+                    pass
+                _xhs_needs_login = (
+                    'login' in current_url.lower()
+                    or '请先登录' in page_html[:2000]
+                    or '登录后查看' in page_html[:2000]
+                )
+                if _xhs_needs_login:
+                    logger.warning("⚠️  小红书需要登录才能查看内容")
+                    logger.info("💡 请运行: make login 然后在浏览器中登录小红书")
+                    return {
+                        "success": False,
+                        "error": "小红书需要登录。请运行 'make login' 登录账号",
+                        "url": url,
+                        "blocked": True,
+                        "fix_commands": ["make login"]
+                    }
+
             # 滚动页面确保懒加载内容加载完成
             logger.info("滚动页面加载懒加载内容...")
             try:
