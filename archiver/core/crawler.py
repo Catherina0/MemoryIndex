@@ -382,48 +382,9 @@ archived_at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             
             # 3. 生成 report.md（仅在需要时）
             if generate_report:
-                logger.info(">> 使用 LLM 生成结构化报告...")
-                report_content = self._generate_report_with_llm(
-                    archive_content=updated_pure_content,
-                    title=page_title,
-                    url=url,
-                    platform=platform_adapter.name
-                )
-                
-                if report_content:
-                    report_path = folder_path / "report.md"
-                    with open(report_path, "w", encoding="utf-8") as f:
-                        f.write(report_content)
-                    logger.info(f"✅ 生成结构化报告: {report_path.name}")
+                logger.info("ℹ️  跳过局部 report.md 生成和 LLM 文件夹重命名（已统一移至 archive_processor 处理）")
             else:
-                logger.info("ℹ️  跳过 report.md 生成（使用 --generate-report 启用）")
-            
-            # 使用 LLM 生成语义化的文件夹名称并重命名
-            logger.info(">> 使用 LLM 生成语义化文件夹名...")
-            new_folder_name = self._generate_folder_name_with_llm(
-                markdown_content=markdown_content,
-                title=page_title,
-                platform=platform_adapter.name,
-                url=url
-            )
-            
-            # 如果生成的名称与当前文件夹名不同，则重命名
-            current_folder_name = folder_path.name
-            if new_folder_name != folder_name:
-                new_folder_path = self.output_dir / new_folder_name
-                try:
-                    # 如果目标文件夹已存在，添加时间戳避免冲突
-                    if new_folder_path.exists():
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        new_folder_name = f"{new_folder_name}_{timestamp}"
-                        new_folder_path = self.output_dir / new_folder_name
-                    
-                    folder_path.rename(new_folder_path)
-                    folder_path = new_folder_path  # 更新引用
-                    md_path = folder_path / md_filename
-                    logger.info(f"✅ 文件夹已重命名为: {folder_path.name}")
-                except Exception as e:
-                    logger.warning(f"⚠️  文件夹重命名失败: {e}，保持原名称: {current_folder_name}")
+                logger.info("ℹ️  跳过 report.md 生成和 LLM 文件夹重命名（使用 --generate-report 启用）")
             
             return {
                 "success": True,
