@@ -205,8 +205,6 @@ class ContentService:
             # 转换 Video 对象为字典
             video_dict = video.to_dict()
             
-            from db.repository import extract_summary_from_report
-            
             # 查找并读取该目录下的 README.md (如果存在)
             readme_text = None
             if video_dict.get('file_path'):
@@ -253,7 +251,7 @@ class ContentService:
                 id=video_dict['id'],
                 type='video',
                 title=video_dict['title'],
-                summary=summary_text if summary_text else (extract_summary_from_report(report) if report else '暂无摘要'),
+                summary=summary_text if summary_text else '暂无摘要',
                 source_type=video_dict['source_type'],
                 source_url=video_dict.get('source_url'),
                 created_at=video_dict['created_at'],

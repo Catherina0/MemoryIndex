@@ -31,7 +31,7 @@ export default function ContentPreview({ content }: ContentPreviewProps) {
       </h3>
 
       {/* 摘要 */}
-      {content.summary && (
+      {content.summary && content.summary !== '暂无摘要' && (
         <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
           {content.summary}
         </p>

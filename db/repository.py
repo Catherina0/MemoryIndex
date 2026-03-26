@@ -16,40 +16,8 @@ from .models import (
     Video, Artifact, Tag, Topic, TimelineEntry,
     SourceType, ProcessingStatus, ArtifactType
 )
+from .tag_filters import filter_display_tags, get_hidden_tag_sql, split_display_tags
 
-
-def extract_summary_from_report(report_text: str) -> str:
-    """从 AI 报告中提取摘要，保留完整文本。"""
-    if not report_text:
-        return "暂无摘要"
-    
-    # 查找摘要部分
-    summary_patterns = [
-        r'##\s*摘要\s*\n+(.+?)(?:\n\n|\n##)',  # ## 摘要 后的内容
-        r'摘要[：:]\s*(.+?)(?:\n\n|\n##)',     # 摘要: 后的内容
-    ]
-    
-    for pattern in summary_patterns:
-        matches = re.findall(pattern, report_text, re.DOTALL | re.MULTILINE)
-        if matches:
-            extracted = matches[0].strip()
-            # 移除Markdown格式
-            extracted = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', extracted)
-            # 移除多余空白
-            extracted = ' '.join(extracted.split())
-            return extracted
-    
-    # 如果没找到摘要章节，尝试提取第一段非标题内容
-    lines = report_text.split('\n')
-    for line in lines:
-        line = line.strip()
-        if line and not line.startswith('#') and not line.startswith('*') and not line.startswith('-') and len(line) > 10:
-            # 移除Markdown格式
-            line = re.sub(r'\*\*|\*|`|#|\[|\]|\(.*?\)', '', line)
-            line = ' '.join(line.split())
-            return line
-    
-    return "暂无摘要"
 
 
 class VideoRepository:
@@ -337,7 +305,7 @@ class VideoRepository:
             confidence: 置信度（仅对自动标签有效）
         """
         with self._get_conn() as conn:
-            for tag_name in tag_names:
+            for tag_name in filter_display_tags(tag_names):
                 # 先查找或创建标签
                 cursor = conn.execute("""
                     SELECT id FROM tags WHERE name = ? COLLATE NOCASE
@@ -373,7 +341,7 @@ class VideoRepository:
                 ORDER BY t.name
             """, (video_id,))
             
-            return [row['name'] for row in cursor.fetchall()]
+            return filter_display_tags(row['name'] for row in cursor.fetchall())
     
     def list_videos_with_summary(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
         """列出所有视频及其摘要信息
@@ -406,10 +374,10 @@ class VideoRepository:
                     (
                         SELECT a.content_text
                         FROM artifacts a
-                        WHERE a.video_id = v.id AND a.artifact_type = 'report'
+                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
                         ORDER BY a.created_at DESC
                         LIMIT 1
-                    ) as report_content
+                    ) as explicit_summary
                 FROM videos v
                 ORDER BY v.created_at DESC
                 LIMIT ? OFFSET ?
@@ -418,14 +386,14 @@ class VideoRepository:
             results = []
             for row in cursor.fetchall():
                 # 提取摘要（使用AI生成的摘要章节）
-                summary = extract_summary_from_report(row['report_content']) if row['report_content'] else '暂无摘要'
+                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
                     'title': row['title'] or '未命名',
                     'source_type': row['source_type'],
                     'duration': row['duration_seconds'] or 0,
-                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'tags': split_display_tags(row['tags']),
                     'summary': summary,
                     'created_at': row['created_at']
                 })
@@ -599,10 +567,17 @@ class VideoRepository:
                     (
                         SELECT a.content_text
                         FROM artifacts a
-                        WHERE a.video_id = v.id AND a.artifact_type = 'report'
+                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
                         ORDER BY a.created_at DESC
                         LIMIT 1
-                    ) as report_content
+                    ) as explicit_summary,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) as explicit_summary
                 FROM videos v
                 WHERE v.source_type NOT IN ({placeholders})
                 {order_by}
@@ -615,7 +590,7 @@ class VideoRepository:
             results = []
             for row in cursor.fetchall():
                 # 提取摘要
-                summary = extract_summary_from_report(row['report_content']) if row['report_content'] else '暂无摘要'
+                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
@@ -623,7 +598,7 @@ class VideoRepository:
                     'source_type': row['source_type'],
                     'duration': row['duration_seconds'] or 0,
                     'file_size': row['file_size_bytes'] or 0,
-                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'tags': split_display_tags(row['tags']),
                     'summary': summary,
                     'created_at': row['created_at'],
                     'type': 'video'
@@ -748,9 +723,6 @@ class ArchiveRepository:
             
             content_text = report_text or transcript_text or '暂无内容'
             
-            # extract fallback
-            from core.process_video import extract_summary_from_report
-            
             result = {
                 'id': row['id'],
                 'title': row['title'],
@@ -762,7 +734,7 @@ class ArchiveRepository:
                 'transcript': transcript_text,
                 'report': report_text,
                 'ocr_text': ocr_text,
-                'summary': summary_text if summary_text else (extract_summary_from_report(report_text) if report_text else '暂无摘要')
+                'summary': summary_text if summary_text else '暂无摘要'
             }
             
             # 获取标签
@@ -771,7 +743,7 @@ class ArchiveRepository:
                 JOIN video_tags vt ON t.id = vt.tag_id
                 WHERE vt.video_id = ?
             """, (archive_id,))
-            result['tags'] = [r['name'] for r in cursor.fetchall()]
+            result['tags'] = filter_display_tags(r['name'] for r in cursor.fetchall())
             
             return result
     
@@ -818,6 +790,13 @@ class ArchiveRepository:
                     (
                         SELECT a.content_text
                         FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) as explicit_summary,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
                         WHERE a.video_id = v.id AND a.artifact_type IN ('report', 'transcript')
                         ORDER BY a.created_at DESC
                         LIMIT 1
@@ -834,7 +813,7 @@ class ArchiveRepository:
             results = []
             for row in cursor.fetchall():
                 # 正确提取摘要
-                summary = extract_summary_from_report(row['content']) if row['content'] else '暂无摘要'
+                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
@@ -842,7 +821,7 @@ class ArchiveRepository:
                     'source_type': row['source_type'],
                     'source_url': row['source_url'],
                     'file_size': row['file_size_bytes'] or 0,
-                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'tags': split_display_tags(row['tags']),
                     'summary': summary,
                     'created_at': row['created_at'],
                     'type': 'archive'
@@ -885,17 +864,23 @@ class TagRepository:
     def count(self) -> int:
         """统计标签总数"""
         with self._get_conn() as conn:
-            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            visible_clause, visible_params = get_hidden_tag_sql("name")
+            cursor = conn.execute(
+                f"SELECT COUNT(*) as count FROM tags WHERE {visible_clause}",
+                visible_params
+            )
             return cursor.fetchone()['count']
     
     def get_all_tags(self, limit: int = 50) -> List[Dict[str, Any]]:
         """获取所有标签"""
         with self._get_conn() as conn:
-            cursor = conn.execute("""
+            visible_clause, visible_params = get_hidden_tag_sql("name")
+            cursor = conn.execute(f"""
                 SELECT id, name, category, count FROM tags
+                WHERE {visible_clause}
                 ORDER BY count DESC, name ASC
                 LIMIT ?
-            """, (limit,))
+            """, [*visible_params, limit])
             
             return [
                 {
@@ -910,16 +895,18 @@ class TagRepository:
     def get_top_tags(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取热门标签"""
         with self._get_conn() as conn:
-            cursor = conn.execute("""
+            visible_clause, visible_params = get_hidden_tag_sql("t.name")
+            cursor = conn.execute(f"""
                 SELECT 
                     t.id, t.name, t.category,
                     COUNT(vt.video_id) as count
                 FROM tags t
                 LEFT JOIN video_tags vt ON t.id = vt.tag_id
+                WHERE {visible_clause}
                 GROUP BY t.id
                 ORDER BY count DESC, t.name ASC
                 LIMIT ?
-            """, (limit,))
+            """, [*visible_params, limit])
             
             return [
                 {
@@ -934,10 +921,20 @@ class TagRepository:
     def get_tag_stats(self) -> Dict[str, int]:
         """获取标签统计"""
         with self._get_conn() as conn:
-            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            visible_clause, visible_params = get_hidden_tag_sql("name")
+            cursor = conn.execute(
+                f"SELECT COUNT(*) as count FROM tags WHERE {visible_clause}",
+                visible_params
+            )
             total_tags = cursor.fetchone()['count']
             
-            cursor = conn.execute("SELECT COUNT(DISTINCT tag_id) as count FROM video_tags")
+            used_clause, used_params = get_hidden_tag_sql("t.name")
+            cursor = conn.execute(f"""
+                SELECT COUNT(DISTINCT vt.tag_id) as count
+                FROM video_tags vt
+                JOIN tags t ON vt.tag_id = t.id
+                WHERE {used_clause}
+            """, used_params)
             used_tags = cursor.fetchone()['count']
             
             return {
@@ -985,7 +982,14 @@ class SearchRepository:
                         FROM video_tags vt
                         JOIN tags t ON vt.tag_id = t.id
                         WHERE vt.video_id = v.id
-                    ) as tags
+                    ) as tags,
+                    (
+                        SELECT a.content_text
+                        FROM artifacts a
+                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) as explicit_summary
                 FROM videos v
                 LEFT JOIN fts_content f ON v.id = f.video_id
                 WHERE 1=1
@@ -1017,7 +1021,7 @@ class SearchRepository:
                 params.append(source_type)
             
             # 统计总数
-            count_sql = "SELECT COUNT(DISTINCT v.id) as count FROM (" + sql + ")"
+            count_sql = "SELECT COUNT(*) as count FROM (" + sql + ") AS search_results"
             cursor = conn.execute(count_sql, params)
             total = cursor.fetchone()['count']
             
@@ -1032,9 +1036,9 @@ class SearchRepository:
                     'id': row['id'],
                     'type': 'video' if row['source_type'] not in ('web_archive', 'zhihu', 'reddit') else 'archive',
                     'title': row['title'],
-                    'summary': '暂无摘要',
+                    'summary': row['explicit_summary'] if 'explicit_summary' in row.keys() and row.get('explicit_summary') else '暂无摘要',
                     'source_type': row['source_type'],
-                    'tags': row['tags'].split(', ') if row['tags'] else [],
+                    'tags': split_display_tags(row['tags']),
                     'created_at': row['created_at']
                 })
             
@@ -1079,7 +1083,11 @@ class StatsRepository:
             total_archives = cursor.fetchone()['count']
             
             # 统计标签
-            cursor = conn.execute("SELECT COUNT(*) as count FROM tags")
+            visible_clause, visible_params = get_hidden_tag_sql("name")
+            cursor = conn.execute(
+                f"SELECT COUNT(*) as count FROM tags WHERE {visible_clause}",
+                visible_params
+            )
             total_tags = cursor.fetchone()['count']
             
             # 统计产物

@@ -37,7 +37,7 @@ export default function ContentCard({ result }: ContentCardProps) {
           </h3>
 
           {/* 摘要 */}
-          {result.summary && (
+          {result.summary && result.summary !== '暂无摘要' && (
             <p className="text-xs text-slate-500 line-clamp-2 mb-2 leading-relaxed">
               {result.summary}
             </p>
