@@ -16,54 +16,61 @@ logger = logging.getLogger(__name__)
 
 class SearchService:
     """搜索业务服务"""
-    
+
     def __init__(self, search_repo, video_repo, archive_repo):
         self.search_repo = search_repo
         self.video_repo = video_repo
         self.archive_repo = archive_repo
-    
-    def search(self, query: str, tags: Optional[List[str]] = None, 
+
+    def search(self, query: str, tags: Optional[List[str]] = None,
                source_type: Optional[str] = None, limit: int = 20, offset: int = 0):
         """
-        执行全文搜索
-        
+        执行全文搜索（使用 Whoosh+FTS5 混合搜索引擎）
+
         Args:
             query: 搜索关键词
             tags: 标签过滤列表
             source_type: 内容类型过滤
             limit: 返回数量
             offset: 分页偏移
-        
+
         Returns:
             SearchResultResponse 对象
         """
         try:
-            # 调用数据库搜索
-            results, total = self.search_repo.search(
+            from backend.models import SearchResultResponse, SearchResultItem
+            from db.repository import WEB_SOURCES
+
+            # 调用 Whoosh+FTS5 混合搜索（不分页，用于获取 total）
+            all_results = self.search_repo.search(
                 query=query,
                 tags=tags,
-                source_type=source_type,
-                limit=limit,
-                offset=offset
+                limit=9999,
+                offset=0
             )
-            
-            # 格式化结果
-            from backend.models import SearchResultResponse, SearchResultItem
-            
+
+            # source_type 过滤（search.py 不支持此参数，在服务层过滤）
+            if source_type:
+                all_results = [r for r in all_results if r.source_type == source_type]
+
+            total = len(all_results)
+            paginated = all_results[offset:offset + limit]
+
+            # 转换 SearchResult → SearchResultItem
             items = []
-            for result in results:
+            for r in paginated:
+                content_type = 'archive' if r.source_type in WEB_SOURCES else 'video'
                 item = SearchResultItem(
-                    id=result.get('id'),
-                    type=result.get('type'),
-                    title=result.get('title'),
-                    summary=result.get('summary'),
-                    source_type=result.get('source_type'),
-                    tags=result.get('tags', []),
-                    created_at=result.get('created_at'),
-                    url=result.get('url')
+                    id=r.video_id,
+                    type=content_type,
+                    title=r.video_title,
+                    summary=r.matched_snippet or '暂无摘要',
+                    source_type=r.source_type or '',
+                    tags=r.tags if r.tags else [],
+                    created_at=r.created_at,
                 )
                 items.append(item)
-            
+
             return SearchResultResponse(
                 results=items,
                 total=total,
@@ -85,22 +92,24 @@ class ContentService:
         self.video_repo = video_repo
         self.archive_repo = archive_repo
     
-    def list_videos(self, limit: int, offset: int, sort: str = "recent"):
+    def list_videos(self, limit: int, offset: int, sort: str = "recent",
+                    tags: Optional[List[str]] = None):
         """
         列出视频
-        
+
         Args:
             limit: 数量限制
             offset: 分页偏移
             sort: 排序方式 (recent/oldest/duration)
-        
+            tags: 标签过滤列表
+
         Returns:
             ContentListResponse 对象
         """
         try:
             from backend.models import ContentListResponse, ContentItemBase
-            
-            videos, total = self.video_repo.list_videos(limit, offset, sort)
+
+            videos, total = self.video_repo.list_videos(limit, offset, sort, tags=tags)
             
             items = [
                 ContentItemBase(
@@ -127,12 +136,13 @@ class ContentService:
             logger.error(f"获取视频列表错误: {str(e)}")
             raise
     
-    def list_archives(self, limit: int, offset: int, sort: str = "recent"):
+    def list_archives(self, limit: int, offset: int, sort: str = "recent",
+                      tags: Optional[List[str]] = None):
         """列出网页归档"""
         try:
             from backend.models import ContentListResponse, ContentItemBase
-            
-            archives, total = self.archive_repo.list_archives(limit, offset, sort)
+
+            archives, total = self.archive_repo.list_archives(limit, offset, sort, tags=tags)
             
             items = [
                 ContentItemBase(
@@ -427,7 +437,10 @@ class ImportService:
             'vimeo.com',
             'dailymotion.com',
             'qq.com/video',
-            'iqiyi.com'
+            'iqiyi.com',
+            'douyin.com',
+            'tiktok.com',
+            'xiaohongshu.com', 'xhslink.com',
         ]
         
         for domain in video_domains:
@@ -511,7 +524,7 @@ class ImportService:
             from urllib.parse import urlparse
             result = urlparse(url)
             return all([result.scheme in ('http', 'https'), result.netloc])
-        except:
+        except (ValueError, AttributeError):
             return False
 
 # #endregion

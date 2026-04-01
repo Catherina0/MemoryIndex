@@ -1,7 +1,7 @@
 // #region 全局状态管理
 
 import { create } from 'zustand'
-import type { SearchResult, Tag, Stats } from '@/api/client'
+import type { SearchResult } from '@/api/client'
 
 // #region 搜索状态
 
@@ -24,7 +24,7 @@ export const useSearchStore = create<SearchStore>((set) => ({
   query: '',
   setQuery: (query: string) => set({ query }),
   selectedTags: [],
-  setSelectedTags: (selectedTags: string[]) => set({ selectedTags }),
+  setSelectedTags: (selectedTags: string[]) => set({ selectedTags, currentPage: 1 }),
   results: [],
   setResults: (results: SearchResult[]) => set({ results }),
   isLoading: false,
@@ -33,42 +33,6 @@ export const useSearchStore = create<SearchStore>((set) => ({
   setTotal: (total: number) => set({ total }),
   currentPage: 1,
   setCurrentPage: (currentPage: number) => set({ currentPage }),
-}))
-
-// #endregion
-
-// #region 统计状态
-
-interface StatsStore {
-  stats: Stats | null
-  setStats: (stats: Stats | null) => void
-  isLoading: boolean
-  setIsLoading: (loading: boolean) => void
-}
-
-export const useStatsStore = create<StatsStore>((set) => ({
-  stats: null,
-  setStats: (stats: Stats | null) => set({ stats }),
-  isLoading: false,
-  setIsLoading: (isLoading: boolean) => set({ isLoading }),
-}))
-
-// #endregion
-
-// #region 标签状态
-
-interface TagStore {
-  tags: Tag[]
-  setTags: (tags: Tag[]) => void
-  isLoading: boolean
-  setIsLoading: (loading: boolean) => void
-}
-
-export const useTagStore = create<TagStore>((set) => ({
-  tags: [],
-  setTags: (tags: Tag[]) => set({ tags }),
-  isLoading: false,
-  setIsLoading: (isLoading: boolean) => set({ isLoading }),
 }))
 
 // #endregion

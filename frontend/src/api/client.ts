@@ -113,22 +113,36 @@ export async function getContentDetail(
 export async function listVideos(
   limit = 20,
   offset = 0,
-  sort: 'recent' | 'oldest' | 'duration' = 'recent'
+  sort: 'recent' | 'oldest' | 'duration' = 'recent',
+  tags?: string[]
 ): Promise<ContentListResponse> {
-  const { data } = await apiClient.get<ContentListResponse>(
-    `/videos?limit=${limit}&offset=${offset}&sort=${sort}`
-  )
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+    sort,
+  })
+  if (tags && tags.length > 0) {
+    params.append('tags', tags.join(','))
+  }
+  const { data } = await apiClient.get<ContentListResponse>(`/videos?${params}`)
   return data
 }
 
 export async function listArchives(
   limit = 20,
   offset = 0,
-  sort: 'recent' | 'oldest' = 'recent'
+  sort: 'recent' | 'oldest' = 'recent',
+  tags?: string[]
 ): Promise<ContentListResponse> {
-  const { data } = await apiClient.get<ContentListResponse>(
-    `/archives?limit=${limit}&offset=${offset}&sort=${sort}`
-  )
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+    sort,
+  })
+  if (tags && tags.length > 0) {
+    params.append('tags', tags.join(','))
+  }
+  const { data } = await apiClient.get<ContentListResponse>(`/archives?${params}`)
   return data
 }
 

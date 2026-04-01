@@ -43,21 +43,21 @@ export default function ArchiveListPage() {
         let allItems: ContentListItem[] = []
         let totalCount = 0
 
+        const apiTags = selectedTags.length > 0 ? selectedTags : undefined
+
         if (activeTab === 'videos') {
-          const res = await listVideos(itemsPerPage, offset, sortBy as any)
+          const res = await listVideos(itemsPerPage, offset, sortBy as any, apiTags)
           allItems = res.items
           totalCount = res.total
         } else if (activeTab === 'archives') {
-          const res = await listArchives(itemsPerPage, offset, sortBy)
+          const res = await listArchives(itemsPerPage, offset, sortBy, apiTags)
           allItems = res.items
           totalCount = res.total
         } else {
-          const halfPage = Math.ceil(itemsPerPage / 2)
-          const halfOffset = Math.floor(offset / 2)
-
+          // 「全部」模式：各取一整页后合并排序
           const [videosRes, archivesRes] = await Promise.all([
-            listVideos(halfPage, halfOffset, sortBy as any),
-            listArchives(halfPage, halfOffset, sortBy),
+            listVideos(itemsPerPage, offset, sortBy as any, apiTags),
+            listArchives(itemsPerPage, offset, sortBy, apiTags),
           ])
 
           allItems = [...videosRes.items, ...archivesRes.items]
@@ -70,15 +70,8 @@ export default function ArchiveListPage() {
           totalCount = videosRes.total + archivesRes.total
         }
 
-        // 客户端标签过滤
-        if (selectedTags.length > 0) {
-          allItems = allItems.filter(item =>
-            selectedTags.some(tag => item.tags.includes(tag))
-          )
-        }
-
         setItems(allItems)
-        setTotal(selectedTags.length > 0 ? allItems.length : totalCount)
+        setTotal(totalCount)
       } catch (_err) {
         // 静默处理
       } finally {

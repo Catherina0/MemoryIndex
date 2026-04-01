@@ -95,8 +95,8 @@ def detect_platform(url: str) -> str:
     if 'twitter.com' in domain or 'x.com' in domain:
         return 'twitter'
     
-    # 默认使用WordPress/通用适配器
-    return 'wordpress'
+    # 默认使用通用适配器
+    return 'generic'
 
 
 def normalize_url(url: str) -> str:

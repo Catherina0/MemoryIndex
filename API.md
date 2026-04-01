@@ -14,8 +14,8 @@
 |------|------|------|---------|
 | `/` | GET | API 根路径检查 | - |
 | `/api/search` | GET | 全文搜索 | q, tags, source_type, limit, offset |
-| `/api/videos` | GET | 视频列表 | limit, offset, sort |
-| `/api/archives` | GET | 网页列表 | limit, offset, sort |
+| `/api/videos` | GET | 视频列表 | limit, offset, sort, tags（逗号分隔） |
+| `/api/archives` | GET | 网页列表 | limit, offset, sort, tags（逗号分隔） |
 | `/api/content/{id}` | GET | 内容详情 | content_type=video/archive |
 | `/api/content/{id}/media` | GET | 视频流媒体 | - |
 | `/api/tags` | GET | 标签列表（自动过滤噪声标签） | limit |
@@ -29,7 +29,7 @@
 | `/api/tasks/stats` | GET | 任务统计 | - |
 | `/api/health` | GET | 健康检查 | - |
 
-**CORS**：允许所有来源（`*`）
+**CORS**：允许 localhost:3000/5173 开发域名
 **依赖注入**：通过 Repository → Service 分层
 
 ---
@@ -41,7 +41,7 @@
 | 服务 | 关键方法 | 说明 |
 |------|---------|------|
 | `SearchService` | `search(query, tags, source_type, limit, offset)` | 全文搜索 |
-| `ContentService` | `list_videos()`, `list_archives()`, `get_video_detail()`, `get_archive_detail()` | 内容管理 |
+| `ContentService` | `list_videos(limit, offset, sort, tags)`, `list_archives(limit, offset, sort, tags)`, `get_video_detail()`, `get_archive_detail()` | 内容管理 |
 | `StatsService` | `get_statistics()`, `get_all_tags(limit)` | 统计与标签 |
 | `ImportService` | `import_content(url, content_type, use_ocr)`, `detect_url_type(url)` | 导入与类型检测 |
 

@@ -18,6 +18,12 @@ from .models import (
 )
 from .tag_filters import filter_display_tags, get_hidden_tag_sql, split_display_tags
 
+#region 常量定义
+
+# 所有网页归档类型的来源标识（新增平台时只需在此处维护）
+WEB_SOURCES = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
+
+#endregion
 
 
 class VideoRepository:
@@ -222,30 +228,6 @@ class VideoRepository:
             
             return True
     
-    def list_videos(self, status: Optional[ProcessingStatus] = None, 
-                   source_type: Optional[SourceType] = None,
-                   limit: int = 100, offset: int = 0) -> List[Video]:
-        """列出视频"""
-        with self._get_conn() as conn:
-            query = "SELECT * FROM videos WHERE 1=1"
-            params = []
-            
-            if status:
-                query += " AND status = ?"
-                params.append(status.value)
-            
-            if source_type:
-                query += " AND source_type = ?"
-                params.append(source_type.value)
-            
-            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-            
-            cursor = conn.execute(query, params)
-            rows = cursor.fetchall()
-            
-            return [self._row_to_video(row, conn) for row in rows]
-    
     def save_artifact(self, artifact: Artifact) -> int:
         """保存处理产物（转写/OCR/报告）"""
         with self._get_conn() as conn:
@@ -386,7 +368,7 @@ class VideoRepository:
             results = []
             for row in cursor.fetchall():
                 # 提取摘要（使用AI生成的摘要章节）
-                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
+                summary = row['explicit_summary'] if ('explicit_summary' in row.keys() and row['explicit_summary']) else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
@@ -524,23 +506,22 @@ class VideoRepository:
             row = cursor.fetchone()
             return row['avg_duration'] or 0.0
     
-    def list_videos(self, limit: int = 100, offset: int = 0, sort: str = "recent") -> tuple:
+    def list_videos(self, limit: int = 100, offset: int = 0, sort: str = "recent",
+                    tags: Optional[List[str]] = None) -> tuple:
         """
         列出视频，返回 (videos_list, total_count) 元组
         排除网页来源的视频
-        
+
         Args:
             limit: 数量限制
             offset: 分页偏移
             sort: 排序方式 (recent/oldest/duration)
-        
+            tags: 标签过滤列表（任意匹配）
+
         Returns:
             tuple: (视频字典列表, 总数)
         """
         with self._get_conn() as conn:
-            # 定义网页来源类型
-            web_sources = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
-            
             # 构建排序条件
             if sort == "oldest":
                 order_by = "ORDER BY v.created_at ASC"
@@ -548,15 +529,34 @@ class VideoRepository:
                 order_by = "ORDER BY v.duration_seconds DESC NULLS LAST"
             else:  # 默认 recent
                 order_by = "ORDER BY v.created_at DESC"
-            
+
+            # 构建标签过滤条件
+            tag_join = ""
+            tag_where = ""
+            tag_params: list = []
+            if tags:
+                tag_placeholders = ','.join(['?' for _ in tags])
+                tag_join = f"""
+                    INNER JOIN video_tags vt_filter ON vt_filter.video_id = v.id
+                    INNER JOIN tags t_filter ON t_filter.id = vt_filter.tag_id
+                        AND t_filter.name IN ({tag_placeholders})
+                """
+                tag_params = list(tags)
+
             # 统计总数（排除网页）
-            placeholders = ','.join(['?' for _ in web_sources])
-            cursor = conn.execute(f"SELECT COUNT(*) as count FROM videos WHERE source_type NOT IN ({placeholders})", web_sources)
+            placeholders = ','.join(['?' for _ in WEB_SOURCES])
+            count_query = f"""
+                SELECT COUNT(DISTINCT v.id) as count FROM videos v
+                {tag_join}
+                WHERE v.source_type NOT IN ({placeholders})
+                {tag_where}
+            """
+            cursor = conn.execute(count_query, tag_params + list(WEB_SOURCES))
             total = cursor.fetchone()['count']
-            
+
             # 获取视频列表及其摘要（排除网页）
             query = f"""
-                SELECT 
+                SELECT DISTINCT
                     v.id, v.title, v.source_type, v.duration_seconds, v.file_size_bytes, v.created_at,
                     (
                         SELECT GROUP_CONCAT(t.name, ', ')
@@ -570,27 +570,22 @@ class VideoRepository:
                         WHERE a.video_id = v.id AND a.artifact_type = 'summary'
                         ORDER BY a.created_at DESC
                         LIMIT 1
-                    ) as explicit_summary,
-                    (
-                        SELECT a.content_text
-                        FROM artifacts a
-                        WHERE a.video_id = v.id AND a.artifact_type = 'summary'
-                        ORDER BY a.created_at DESC
-                        LIMIT 1
                     ) as explicit_summary
                 FROM videos v
+                {tag_join}
                 WHERE v.source_type NOT IN ({placeholders})
+                {tag_where}
                 {order_by}
                 LIMIT ? OFFSET ?
             """
-            
-            params = list(web_sources) + [limit, offset]
+
+            params = tag_params + list(WEB_SOURCES) + [limit, offset]
             cursor = conn.execute(query, params)
             
             results = []
             for row in cursor.fetchall():
                 # 提取摘要
-                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
+                summary = row['explicit_summary'] if ('explicit_summary' in row.keys() and row['explicit_summary']) else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
@@ -628,9 +623,15 @@ class VideoRepository:
             updated_at=row['updated_at'] if isinstance(row['updated_at'], datetime) else (datetime.fromisoformat(row['updated_at']) if row['updated_at'] else None),
         )
         
-        # 加载标签
-        video.tags = self.get_video_tags(row['id'])
-        
+        # 加载标签（直接使用传入的 conn，避免嵌套连接导致 database is locked）
+        cursor = conn.execute("""
+            SELECT t.name FROM tags t
+            JOIN video_tags vt ON t.id = vt.tag_id
+            WHERE vt.video_id = ?
+            ORDER BY t.name
+        """, (row['id'],))
+        video.tags = filter_display_tags(r['name'] for r in cursor.fetchall())
+
         return video
     
     def _row_to_artifact(self, row: dict) -> Artifact:
@@ -689,10 +690,11 @@ class ArchiveRepository:
     def get_archive(self, archive_id: int) -> Optional[Dict[str, Any]]:
         """获取归档内容"""
         with self._get_conn() as conn:
-            cursor = conn.execute("""
-                SELECT * FROM videos 
-                WHERE id = ? AND source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
-            """, (archive_id,))
+            placeholders = ','.join(['?' for _ in WEB_SOURCES])
+            cursor = conn.execute(f"""
+                SELECT * FROM videos
+                WHERE id = ? AND source_type IN ({placeholders})
+            """, (archive_id, *WEB_SOURCES))
             row = cursor.fetchone()
             
             if not row:
@@ -747,39 +749,52 @@ class ArchiveRepository:
             
             return result
     
-    def list_archives(self, limit: int = 20, offset: int = 0, sort: str = "recent") -> tuple:
+    def list_archives(self, limit: int = 20, offset: int = 0, sort: str = "recent",
+                      tags: Optional[List[str]] = None) -> tuple:
         """
         列出网页归档
-        
+
         Args:
             limit: 数量限制
             offset: 分页偏移
             sort: 排序方式 (recent/oldest)
-        
+            tags: 标签过滤列表（任意匹配）
+
         Returns:
             tuple: (归档列表, 总数)
         """
         with self._get_conn() as conn:
-            # 定义网页来源
-            web_sources = ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
-            
             # 排序条件
             if sort == "oldest":
                 order_by = "ORDER BY v.created_at ASC"
             else:  # 默认 recent
                 order_by = "ORDER BY v.created_at DESC"
-            
+
+            # 构建标签过滤条件
+            tag_join = ""
+            tag_params: list = []
+            if tags:
+                tag_placeholders = ','.join(['?' for _ in tags])
+                tag_join = f"""
+                    INNER JOIN video_tags vt_filter ON vt_filter.video_id = v.id
+                    INNER JOIN tags t_filter ON t_filter.id = vt_filter.tag_id
+                        AND t_filter.name IN ({tag_placeholders})
+                """
+                tag_params = list(tags)
+
             # 统计网页归档总数
-            placeholders = ','.join(['?' for _ in web_sources])
-            cursor = conn.execute(f"""
-                SELECT COUNT(*) as count FROM videos 
-                WHERE source_type IN ({placeholders})
-            """, web_sources)
+            placeholders = ','.join(['?' for _ in WEB_SOURCES])
+            count_query = f"""
+                SELECT COUNT(DISTINCT v.id) as count FROM videos v
+                {tag_join}
+                WHERE v.source_type IN ({placeholders})
+            """
+            cursor = conn.execute(count_query, tag_params + list(WEB_SOURCES))
             total = cursor.fetchone()['count']
-            
+
             # 获取归档列表（包含摘要和元数据）
             query = f"""
-                SELECT 
+                SELECT DISTINCT
                     v.id, v.title, v.source_type, v.source_url, v.file_size_bytes, v.created_at,
                     (
                         SELECT GROUP_CONCAT(t.name, ', ')
@@ -802,18 +817,19 @@ class ArchiveRepository:
                         LIMIT 1
                     ) as content
                 FROM videos v
+                {tag_join}
                 WHERE v.source_type IN ({placeholders})
                 {order_by}
                 LIMIT ? OFFSET ?
             """
-            
-            params = list(web_sources) + [limit, offset]
+
+            params = tag_params + list(WEB_SOURCES) + [limit, offset]
             cursor = conn.execute(query, params)
             
             results = []
             for row in cursor.fetchall():
                 # 正确提取摘要
-                summary = row['explicit_summary'] if row.get('explicit_summary') else '暂无摘要'
+                summary = row['explicit_summary'] if ('explicit_summary' in row.keys() and row['explicit_summary']) else '暂无摘要'
                 
                 results.append({
                     'id': row['id'],
@@ -832,10 +848,8 @@ class ArchiveRepository:
     def count(self) -> int:
         """统计归档总数"""
         with self._get_conn() as conn:
-            cursor = conn.execute("""
-                SELECT COUNT(*) as count FROM videos 
-                WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')
-            """)
+            placeholders = ','.join(['?' for _ in WEB_SOURCES])
+            cursor = conn.execute(f"SELECT COUNT(*) as count FROM videos WHERE source_type IN ({placeholders})", WEB_SOURCES)
             return cursor.fetchone()['count']
 
 #endregion
@@ -1034,9 +1048,9 @@ class SearchRepository:
             for row in cursor.fetchall():
                 results.append({
                     'id': row['id'],
-                    'type': 'video' if row['source_type'] not in ('web_archive', 'zhihu', 'reddit') else 'archive',
+                    'type': 'archive' if row['source_type'] in WEB_SOURCES else 'video',
                     'title': row['title'],
-                    'summary': row['explicit_summary'] if 'explicit_summary' in row.keys() and row.get('explicit_summary') else '暂无摘要',
+                    'summary': row['explicit_summary'] if ('explicit_summary' in row.keys() and row['explicit_summary']) else '暂无摘要',
                     'source_type': row['source_type'],
                     'tags': split_display_tags(row['tags']),
                     'created_at': row['created_at']
@@ -1075,11 +1089,12 @@ class StatsRepository:
         """获取全站统计"""
         with self._get_conn() as conn:
             # 统计视频
-            cursor = conn.execute("SELECT COUNT(*) as count FROM videos WHERE source_type NOT IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')")
+            placeholders = ','.join(['?' for _ in WEB_SOURCES])
+            cursor = conn.execute(f"SELECT COUNT(*) as count FROM videos WHERE source_type NOT IN ({placeholders})", WEB_SOURCES)
             total_videos = cursor.fetchone()['count']
-            
+
             # 统计归档
-            cursor = conn.execute("SELECT COUNT(*) as count FROM videos WHERE source_type IN ('web_archive', 'zhihu', 'reddit', 'twitter', 'xiaohongshu')")
+            cursor = conn.execute(f"SELECT COUNT(*) as count FROM videos WHERE source_type IN ({placeholders})", WEB_SOURCES)
             total_archives = cursor.fetchone()['count']
             
             # 统计标签

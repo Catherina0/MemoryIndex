@@ -10,6 +10,7 @@
 """
 
 import logging
+import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -96,6 +97,7 @@ class TaskManager:
     def __init__(self, max_tasks: int = 1000):
         self.tasks: Dict[str, Task] = {}
         self.max_tasks = max_tasks
+        self._lock = threading.Lock()
 
     def create_task(self, task_type: str, url: str, use_ocr: bool = False) -> str:
         """创建并注册一个新任务"""
@@ -107,11 +109,12 @@ class TaskManager:
             use_ocr=use_ocr
         )
 
-        self.tasks[task_id] = task
-        logger.info(f"✨ [任务管理] 创建新任务: {task_id} ({task_type})")
+        with self._lock:
+            self.tasks[task_id] = task
+            logger.info(f"✨ [任务管理] 创建新任务: {task_id} ({task_type})")
 
-        if len(self.tasks) > self.max_tasks:
-            self._cleanup_old_tasks()
+            if len(self.tasks) > self.max_tasks:
+                self._cleanup_old_tasks()
 
         return task_id
 
@@ -134,7 +137,7 @@ class TaskManager:
             logger.warning(f"❌ 任务不存在: {task_id}")
             return
 
-        if status:
+        if status is not None:
             task.status = status
         if progress is not None:
             task.progress = min(100, max(0, progress))
@@ -190,12 +193,14 @@ class TaskManager:
 
     def get_statistics(self) -> dict:
         """获取任务统计"""
+        with self._lock:
+            tasks_snapshot = list(self.tasks.values())
         return {
-            "total": len(self.tasks),
-            "pending": sum(1 for task in self.tasks.values() if task.status == TaskStatus.PENDING),
-            "processing": sum(1 for task in self.tasks.values() if task.status == TaskStatus.PROCESSING),
-            "completed": sum(1 for task in self.tasks.values() if task.status == TaskStatus.COMPLETED),
-            "error": sum(1 for task in self.tasks.values() if task.status == TaskStatus.ERROR),
+            "total": len(tasks_snapshot),
+            "pending": sum(1 for task in tasks_snapshot if task.status == TaskStatus.PENDING),
+            "processing": sum(1 for task in tasks_snapshot if task.status == TaskStatus.PROCESSING),
+            "completed": sum(1 for task in tasks_snapshot if task.status == TaskStatus.COMPLETED),
+            "error": sum(1 for task in tasks_snapshot if task.status == TaskStatus.ERROR),
         }
 
     def get_stats(self) -> dict:

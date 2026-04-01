@@ -81,6 +81,8 @@ export default function HomePage() {
             }, 5000)
           } else {
             setImportError(`导入失败: ${data.error_message || data.error || '未知错误'}`)
+            setTaskId(null)
+            setTaskStatus(null)
           }
           setIsImporting(false)
         }
@@ -130,8 +132,8 @@ export default function HomePage() {
         setIsImporting(false)
         setTimeout(() => setImportSuccess(''), 3000)
       }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '导入失败，请稍后重试'
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || err.message || '导入失败，请稍后重试'
       setImportError(errorMsg)
       setIsImporting(false)
     }

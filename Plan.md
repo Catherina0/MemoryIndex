@@ -60,6 +60,7 @@
 - [x] 前端快速导入增加网页/视频单选按钮（2026-03-27）
 - [x] 小红书 Cookie 诊断（2026-03-27）
 - [x] API.md / README.md / Plan.md / Remember.md 全面审查与重写（2026-03-27）
+- [x] 修复 `/api/videos` 与 `/api/archives` 因 `sqlite3.Row.get` 导致的 500 错误（2026-03-27）
 
 ## 已知技术债务（超 1000 行文件）
 
@@ -72,21 +73,73 @@
 | `db/repository.py` | 1127 | video_repository / archive_repository / tag_repository / stats_repository |
 | `db/search.py` | 1010 | search_builder + 核心搜索 |
 
-## 已知代码问题
+## 代码审计发现（2026-03-27）
 
-- `db/repository.py` 中 `SearchRepository` 与 `db/search.py` 中 `SearchRepository` 类名冲突
-- `db/repository.py` 中 `list_videos()` 定义了两次（行 225 和 527）
-- `backend/background_worker.py` 任务处理为模拟实现，未集成真实逻辑
-- `cli/db_stats.py` 中 `show_stats()` 函数为死代码
-- `frontend/src/store/index.ts` 中 StatsStore 和 TagStore 未被使用
-- 根目录散落测试文件（已被 .gitignore 忽略）
+> 完整报告见 `Report/20260327_full_code_audit.md`
+
+### 高严重度
+
+- [x] **H-01** SearchRepository 导入源已替换为 search.py 的 Whoosh+FTS5 混合搜索（2026-03-27）
+- [x] **H-03** 搜索结果 type 判定已补全 twitter/xiaohongshu（使用 WEB_SOURCES 常量）（2026-03-27）
+- [x] **H-04** explicit_summary 重复子查询已删除（2026-03-30）
+- [x] **H-05** 资料库「全部」分页已优化，移除错误的 halfOffset 逻辑（2026-03-30）
+- [x] **H-06** 前端标签过滤改为服务端 SQL 过滤，修复分页后数据丢失（2026-03-30）
+- [x] **H-07** 搜索页标签切换已在 store 层自动重置页码（2026-03-27）
+- [x] **H-09** 前端任务 error 后已正确清理 taskId 停止轮询（2026-03-27）
+- [x] **H-10** 前端导入错误信息已改用 err.response?.data?.detail（2026-03-27）
+
+### 中严重度
+
+- [x] **M-01** `_row_to_video()` 已改为复用传入 conn 查标签，避免嵌套连接（2026-03-30）
+- [x] **M-02** `update_task()` 已修复为 `if status is not None:`（2026-03-27）
+- [x] **M-03** `detect_url_type()` 已补全抖音/TikTok/小红书（2026-03-27）
+- [x] **M-04** `web_sources` 已统一为 `WEB_SOURCES` 常量，全文件引用（2026-03-27）
+- [x] **M-10** CORS 已改为具体开发域名（localhost:3000/5173）（2026-03-27）
+- [x] **M-11** TaskManager 已添加 threading.Lock 保护（2026-03-30）
+- [x] **M-12** `_is_valid_url()` 裸 except 已改为 `except (ValueError, AttributeError)`（2026-03-27）
+
+### 已知技术债务（旧项保留）
+
+- `backend/background_worker.py` 全为模拟实现
+- `cli/db_stats.py` 中 `show_stats()` 死代码
+- ~~`archiver/utils/url_parser.py` 默认返回 `wordpress` 而非 `generic`~~（已修复，当前返回 `generic`）
+
+### 超 1000 行文件（拆分待定）
+
+| 文件 | 行数 | 建议拆分方向 |
+|------|------|------------|
+| `core/process_video.py` | 2173 | audio_processor / ocr_handler / llm_service / report_generator + 主协调器 |
+| `archiver/core/drission_crawler.py` | 1798 | ocr_processor / cookie_handler / content_extractor |
+| `core/archive_processor.py` | 1375 | archive_report_generator / archive_llm_service / archive_content_handler |
+| `core/video_downloader.py` | 1235 | downloader_ytdlp / downloader_bbdown / downloader_xhs / screenshot_handler |
+| `db/repository.py` | 1127 | video_repository / archive_repository / tag_repository / stats_repository |
+| `db/search.py` | 1010 | search_builder + 核心搜索 |
 
 ## 待办事项
 
-- [ ] 拆分超 1000 行文件（需求驱动，逐步进行）
+### 短期修复（~~已全部完成~~）
+
+- [x] 替换 SearchRepository 导入源（H-01）
+- [x] 补全搜索 type 判定遗漏平台（H-03）
+- [x] 修复前端任务轮询 + 错误信息（H-09 + H-10）
+- [x] 修复搜索页标签不重置页码（H-07）
+- [x] 统一 web_sources 常量定义（M-04）
+- [x] 补全 detect_url_type 平台列表（M-03）
+- [x] 删除重复 explicit_summary 子查询（H-04）
+- [x] 优化资料库「全部」分页逻辑（H-05）
+
+### 中期改进
+
+- [x] 后端新增标签过滤 API（彻底解决 H-06 客户端标签过滤问题，2026-03-30）
+- [x] `_row_to_video()` 嵌套连接优化（M-01，2026-03-30）
+- [x] TaskManager 加锁保护（M-11，2026-03-30）
 - [ ] 后台任务集成真实处理逻辑（替代 asyncio.sleep 模拟）
+- [x] 清理死代码：删除重复 list_videos()、未使用的 StatsStore/TagStore/StatCard（2026-03-30）
+
+### 长期规划
+
+- [ ] 拆分超 1000 行文件（需求驱动，逐步进行）
 - [ ] 新增数据源支持（需求驱动）
-- [ ] 性能优化（数据库查询、搜索速度）
 - [ ] 前端身份验证与权限管理
 - [ ] Docker 容器化部署
 - [ ] 单元测试覆盖

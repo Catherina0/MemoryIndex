@@ -19,9 +19,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.repository import (
-    VideoRepository, ArchiveRepository, TagRepository, 
-    SearchRepository, StatsRepository
+    VideoRepository, ArchiveRepository, TagRepository,
+    StatsRepository, WEB_SOURCES
 )
+from db.search import SearchRepository
 from db.models import Video, SourceType, ProcessingStatus
 from backend.models import (
     SearchResultResponse, VideoDetailResponse, StatsResponse,
@@ -79,7 +80,7 @@ app = FastAPI(
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应改为具体的域名
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -150,11 +151,13 @@ async def search(
 async def list_videos(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", pattern="^(recent|oldest|duration)$")
+    sort: str = Query("recent", pattern="^(recent|oldest|duration)$"),
+    tags: Optional[str] = Query(None, description="标签过滤，逗号分隔")
 ):
     """列出所有视频"""
     try:
-        return content_service.list_videos(limit, offset, sort)
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        return content_service.list_videos(limit, offset, sort, tags=tag_list)
     except Exception as e:
         logger.error(f"获取视频列表错误: {str(e)}")
         raise HTTPException(status_code=500, detail="获取视频列表失败")
@@ -163,11 +166,13 @@ async def list_videos(
 async def list_archives(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", pattern="^(recent|oldest)$")
+    sort: str = Query("recent", pattern="^(recent|oldest)$"),
+    tags: Optional[str] = Query(None, description="标签过滤，逗号分隔")
 ):
     """列出所有网页归档"""
     try:
-        return content_service.list_archives(limit, offset, sort)
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        return content_service.list_archives(limit, offset, sort, tags=tag_list)
     except Exception as e:
         logger.error(f"获取归档列表错误: {str(e)}")
         raise HTTPException(status_code=500, detail="获取归档列表失败")

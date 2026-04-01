@@ -14,7 +14,8 @@
       "Bash(wc -l /Users/catherina/Documents/GitHub/knowledge/core/*.py)",
       "Bash(wc -l /Users/catherina/Documents/GitHub/knowledge/archiver/core/markdown_converter.py /Users/catherina/Documents/GitHub/knowledge/archiver/platforms/*.py /Users/catherina/Documents/GitHub/knowledge/archiver/utils/*.py /Users/catherina/Documents/GitHub/knowledge/scripts/cookie_manager.py /Users/catherina/Documents/GitHub/knowledge/scripts/url_cleaner.py /Users/catherina/Documents/GitHub/knowledge/scripts/login_helper.py /Users/catherina/Documents/GitHub/knowledge/scripts/unified_archive_cli.py)",
       "Bash(grep -n \"TODO\\\\|FIXME\\\\|XXX\\\\|HACK\\\\|BUG\" /Users/catherina/Documents/GitHub/knowledge/core/*.py)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python -c \":*)"
     ]
   }
 }
