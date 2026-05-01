@@ -296,6 +296,7 @@ class UniversalArchiver:
             
             # 提取并下载图片
             image_urls = image_downloader.extract_image_urls(result.html, url)
+            url_mapping = {}
             if image_urls:
                 logger.info(f"发现 {len(image_urls)} 张图片")
                 url_mapping = image_downloader.download_all(image_urls, referer=url)

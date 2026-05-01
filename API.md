@@ -74,9 +74,17 @@
 
 ### backend/background_worker.py - 后台处理
 
-**职责**：异步执行归档/下载任务（259 行）
+**职责**：异步执行归档/下载任务（真实实现，约 200 行）
 
-> 注意：当前为模拟实现（含 asyncio.sleep），未集成真实处理逻辑
+| 方法 | 说明 |
+|------|------|
+| `process_archive_task(task_id, url, use_ocr)` | 调用 `archive_and_save()`（core/archive_processor.py），完整归档流程 |
+| `process_video_task(task_id, url, use_ocr)` | 先 `VideoDownloader.download_video()`，再 `process_video()`，均用 `run_in_executor` 包裹 |
+
+**进度节点**：
+
+- 归档：5% 初始化 → 10% 下载 → 98% 完成
+- 视频：5% 初始化 → 10% 下载 → 40% 下载完 → 45% 处理 → 98% 完成
 
 ---
 

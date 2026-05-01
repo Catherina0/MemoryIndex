@@ -8,10 +8,12 @@
 import asyncio
 import logging
 import threading
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+#region 后台任务处理器类
 
 class BackgroundTaskWorker:
     """后台任务执行器"""
@@ -23,7 +25,7 @@ class BackgroundTaskWorker:
         self.running = False
 
     async def process_archive_task(self, task_id: str, url: str, use_ocr: bool = False):
-        """处理网页归档任务"""
+        """处理网页归档任务（真实实现）"""
         task = self.task_manager.get_task(task_id)
         if not task:
             logger.error(f"❌ 任务不存在: {task_id}")
@@ -31,54 +33,43 @@ class BackgroundTaskWorker:
 
         try:
             task.start_processing()
+            task.add_log(f"🌐 开始归档: {url}")
+            self.task_manager.update_task(task_id, progress=5, current_step="🌐 初始化归档任务")
 
-            task.add_log("📥 正在下载网页...")
-            self.task_manager.update_task(task_id, progress=10, current_step="📥 正在下载网页")
-            await asyncio.sleep(2)
-            self.task_manager.update_task(task_id, progress=20, current_step="✅ 网页下载完成")
-            task.add_log("✅ 网页下载完成")
+            # 导入真实归档入口（延迟导入，避免启动时拖慢）
+            from core.archive_processor import archive_and_save
 
-            task.add_log("🔍 正在解析网页内容...")
-            self.task_manager.update_task(task_id, progress=30, current_step="🔍 正在解析网页内容")
-            await asyncio.sleep(1.5)
-            self.task_manager.update_task(task_id, progress=40, current_step="✅ 内容解析完成")
-            task.add_log("✅ 网页内容解析完成")
+            self.task_manager.update_task(task_id, progress=10, current_step="📥 正在下载并解析网页...")
+            task.add_log("📥 正在下载网页内容...")
 
-            if use_ocr:
-                task.add_log("🔤 启用 OCR 识别...")
-                self.task_manager.update_task(task_id, progress=50, current_step="🔤 正在进行 OCR 识别")
-                await asyncio.sleep(3)
-                self.task_manager.update_task(task_id, progress=60, current_step="✅ OCR 识别完成")
-                task.add_log("✅ OCR 识别完成")
-            else:
-                self.task_manager.update_task(task_id, progress=50, current_step="⏭️  跳过 OCR 识别")
-                task.add_log("⏭️  跳过 OCR 识别")
+            # archive_and_save 是 async def，直接 await
+            # 内部包含: 爬取 → LLM分析(3次) → DB存储 → 文件夹重命名
+            db_id = await archive_and_save(
+                url=url,
+                output_dir="output",
+                with_ocr=use_ocr,
+                headless=True
+            )
 
-            task.add_log("📝 正在生成内容报告...")
-            self.task_manager.update_task(task_id, progress=70, current_step="📝 正在生成内容报告")
-            await asyncio.sleep(2)
-            self.task_manager.update_task(task_id, progress=80, current_step="✅ 内容报告生成完成")
-            task.add_log("✅ 内容报告生成完成")
-
-            task.add_log("💾 正在保存到数据库...")
-            self.task_manager.update_task(task_id, progress=90, current_step="💾 正在保存到数据库")
-            await asyncio.sleep(1)
-            task.add_log("✅ 数据保存完成")
+            self.task_manager.update_task(task_id, progress=98, current_step="✅ 归档完成，已入库")
+            task.add_log(f"✅ 网页归档完成 (数据库 ID: {db_id})")
 
             self.task_manager.complete_task(task_id, result={
                 "url": url,
                 "type": "archive",
                 "status": "saved",
+                "db_id": db_id,
                 "ocr_enabled": use_ocr,
             })
-            logger.info(f"✅ [后台处理] 网页归档任务完成: {task_id}")
+            logger.info(f"✅ [后台处理] 网页归档任务完成: {task_id} (DB ID: {db_id})")
 
         except Exception as e:
-            logger.error(f"❌ [后台处理] 任务执行失败: {task_id} - {str(e)}")
-            self.task_manager.error_task(task_id, f"处理失败: {str(e)}")
+            logger.error(f"❌ [后台处理] 归档任务失败: {task_id} - {str(e)}")
+            task.add_log(f"❌ 归档失败: {str(e)}")
+            self.task_manager.error_task(task_id, f"归档失败: {str(e)}")
 
     async def process_video_task(self, task_id: str, url: str, use_ocr: bool = False):
-        """处理视频下载任务"""
+        """处理视频下载任务（真实实现）"""
         task = self.task_manager.get_task(task_id)
         if not task:
             logger.error(f"❌ 任务不存在: {task_id}")
@@ -86,62 +77,67 @@ class BackgroundTaskWorker:
 
         try:
             task.start_processing()
+            task.add_log(f"📹 开始处理视频: {url}")
+            self.task_manager.update_task(task_id, progress=5, current_step="📹 初始化视频任务")
 
-            task.add_log("📹 正在获取视频信息...")
-            self.task_manager.update_task(task_id, progress=10, current_step="📹 正在获取视频信息")
-            await asyncio.sleep(1)
-            self.task_manager.update_task(task_id, progress=15, current_step="✅ 视频信息获取完成")
-            task.add_log("✅ 视频信息获取完成")
+            # 延迟导入，避免启动时加载
+            from core.video_downloader import VideoDownloader
+            from core.process_video import process_video
 
-            task.add_log("⬇️  正在下载视频...")
-            self.task_manager.update_task(task_id, progress=20, current_step="⬇️  正在下载视频 (0%)")
-            await asyncio.sleep(1)
-            self.task_manager.update_task(task_id, progress=40, current_step="⬇️  正在下载视频 (50%)")
-            await asyncio.sleep(1.5)
-            self.task_manager.update_task(task_id, progress=60, current_step="✅ 视频下载完成")
-            task.add_log("✅ 视频下载完成")
+            # ── Step 1: 下载视频 ──────────────────────────
+            self.task_manager.update_task(task_id, progress=10, current_step="⬇️  正在下载视频...")
+            task.add_log("⬇️  开始下载视频...")
 
-            task.add_log("📝 正在生成转写...")
-            self.task_manager.update_task(task_id, progress=70, current_step="📝 正在生成转写")
-            await asyncio.sleep(2)
-            self.task_manager.update_task(task_id, progress=75, current_step="✅ 转写生成完成")
-            task.add_log("✅ 转写生成完成")
+            loop = asyncio.get_running_loop()
 
-            if use_ocr:
-                task.add_log("🔤 启用 OCR 识别...")
-                self.task_manager.update_task(task_id, progress=80, current_step="🔤 正在进行 OCR 识别")
-                await asyncio.sleep(2)
-                self.task_manager.update_task(task_id, progress=85, current_step="✅ OCR 识别完成")
-                task.add_log("✅ OCR 识别完成")
-            else:
-                self.task_manager.update_task(task_id, progress=80, current_step="⏭️  跳过 OCR 识别")
-                task.add_log("⏭️  跳过 OCR 识别")
+            def _download():
+                downloader = VideoDownloader(download_dir="videos")
+                return downloader.download_video(url)
 
-            task.add_log("📋 正在生成分析报告...")
-            self.task_manager.update_task(task_id, progress=90, current_step="📋 正在生成分析报告")
-            await asyncio.sleep(1.5)
-            self.task_manager.update_task(task_id, progress=95, current_step="✅ 报告生成完成")
-            task.add_log("✅ 报告生成完成")
+            local_info = await loop.run_in_executor(None, _download)
 
-            task.add_log("💾 正在保存到数据库...")
-            self.task_manager.update_task(task_id, progress=98, current_step="💾 正在保存到数据库")
-            await asyncio.sleep(1)
-            task.add_log("✅ 数据保存完成")
+            self.task_manager.update_task(task_id, progress=40, current_step="✅ 视频下载完成")
+            task.add_log(f"✅ 视频下载完成: {local_info.title}")
+
+            # ── Step 2: 处理视频（转写/OCR/LLM报告/入库） ──
+            self.task_manager.update_task(task_id, progress=45, current_step="🎬 正在处理视频（转写 + AI分析）...")
+            task.add_log("🎬 开始转写与 AI 分析...")
+
+            video_path = Path(local_info.file_path)
+            output_dir = Path("output")
+            source_url = url
+
+            def _process():
+                process_video(
+                    video_path=video_path,
+                    output_dir=output_dir,
+                    with_frames=use_ocr,
+                    source_url=source_url,
+                    platform_title=local_info.title,
+                    smart_ocr=True,
+                )
+
+            await loop.run_in_executor(None, _process)
+
+            self.task_manager.update_task(task_id, progress=98, current_step="✅ 视频处理完成，已入库")
+            task.add_log("✅ 视频处理完成，已保存到数据库")
 
             self.task_manager.complete_task(task_id, result={
                 "url": url,
                 "type": "video",
                 "status": "saved",
                 "ocr_enabled": use_ocr,
+                "title": local_info.title,
             })
-            logger.info(f"✅ [后台处理] 视频下载任务完成: {task_id}")
+            logger.info(f"✅ [后台处理] 视频任务完成: {task_id}")
 
         except Exception as e:
-            logger.error(f"❌ [后台处理] 视频下载任务执行失败: {task_id} - {str(e)}")
+            logger.error(f"❌ [后台处理] 视频任务失败: {task_id} - {str(e)}")
+            task.add_log(f"❌ 视频处理失败: {str(e)}")
             self.task_manager.error_task(task_id, f"视频处理失败: {str(e)}")
 
     async def process_task(self, task_id: str):
-        """处理单个任务"""
+        """处理单个任务（根据类型分发）"""
         task = self.task_manager.get_task(task_id)
         if not task:
             logger.warning(f"⚠️  任务不存在: {task_id}")
@@ -157,6 +153,9 @@ class BackgroundTaskWorker:
             logger.warning(f"⚠️  未知任务类型: {task.task_type}")
             self.task_manager.error_task(task_id, f"未知任务类型: {task.task_type}")
 
+#endregion
+
+#region 全局工作器管理
 
 _background_worker: Optional["BackgroundTaskWorker"] = None
 _background_worker_thread: Optional[threading.Thread] = None
@@ -180,7 +179,7 @@ def get_background_worker() -> BackgroundTaskWorker:
 async def start_background_worker_loop():
     """
     启动后台任务处理循环
-    持续监视任务队列，处理待处理的任务
+    持续监视任务队列，处理 pending 状态的任务
     """
     worker = get_background_worker()
     worker.running = True
@@ -254,5 +253,7 @@ def stop_background_worker():
 
     _background_worker_thread = None
     logger.info("🛑 [后台处理] 后台任务处理线程已停止")
+
+#endregion
 
 #endregion
