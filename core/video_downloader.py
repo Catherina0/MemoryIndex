@@ -737,6 +737,8 @@ downloaded_at: {safe_now}
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "cookiesfrombrowser": ("chrome",),
+            "remote_components": ["ejs:github"],
         }
         with yt_dlp.YoutubeDL(info_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -773,7 +775,10 @@ downloaded_at: {safe_now}
         download_opts = {
             "format": (
                 "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]"
+                "/bestvideo[height<=1080][ext=mp4]+bestaudio"
+                "/bestvideo[height<=1080]+bestaudio[ext=m4a]"
                 "/bestvideo[height<=1080]+bestaudio"
+                "/bestvideo+bestaudio"
                 "/best[height<=1080]/best"
             ),
             "merge_output_format": "mp4",
@@ -782,6 +787,8 @@ downloaded_at: {safe_now}
             "quiet": True,          # 关闭 yt-dlp 自带输出，改由 progress_hook 驱动
             "no_warnings": False,
             "progress_hooks": [progress_hook],
+            "cookiesfrombrowser": ("chrome",),
+            "remote_components": ["ejs:github"],
         }
         with yt_dlp.YoutubeDL(download_opts) as ydl:
             ydl.download([url])
