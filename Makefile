@@ -93,6 +93,7 @@ help:
 	@echo "  make ocr Path=路径                  音频转写 + OCR识别 + AI摘要"
 	@echo "  make download URL=链接               下载视频到 videos/"
 	@echo "  make download-run URL=链接           下载后立即处理（音频模式）"
+	@echo "  make import-video Path=视频路径      轻量入库：截图OCR+AI重命名（无音频分析）"
 	@echo "  make download-ocr URL=链接           下载后立即处理（完整模式）"
 	@echo ""
 	@echo "🌐 网页归档："
@@ -467,7 +468,7 @@ show-report:
 		echo "ℹ️  output/reports/ 目录不存在"; \
 	fi
 
-# 下载视频
+# 下载视频并轻量入库（截图OCR + AI重命名 + 入库，跳过音频/帧分析）
 download: ensure-venv
 	@if [ -z "$(URL)" ]; then \
 		echo "❌ 错误：请指定视频URL"; \
@@ -476,18 +477,40 @@ download: ensure-venv
 		exit 1; \
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📥 下载视频"
+	@echo "📥 下载视频并入库"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "🔗 URL: $(URL)"
-	@echo "📁 存储位置: videos/"
+	@echo "🔊 流程: 下载 → 截图OCR → AI摘要/重命名 → 入库"
 	@if [ "$(FORCE)" = "1" ]; then \
 		echo "⚠️  强制重新下载模式"; \
 	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@if [ "$(FORCE)" = "1" ]; then \
-		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)" --force; \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/import_video.py "$(URL)" --force; \
 	else \
-		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/video_downloader.py "$(URL)"; \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/import_video.py "$(URL)"; \
+	fi
+
+# 轻量入库：截图OCR + AI重命名 + 入库（跳过音频/帧分析）
+# 适合音乐MV、无对话视频等不需要内容分析的场景
+# 用法：make import-video Path=videos/xxx.mp4 [URL=来源链接]
+import-video: ensure-venv
+	@if [ -z "$(Path)" ]; then \
+		echo "❌ 错误：请指定视频文件路径"; \
+		echo "用法：make import-video Path=videos/xxx.mp4"; \
+		echo "可选：make import-video Path=videos/xxx.mp4 URL=https://youtube.com/watch?v=..."; \
+		exit 1; \
+	fi
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📥 轻量视频入库"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📹 视频: $(Path)"
+	@echo "🔊 流程: 截图OCR → AI摘要 → 重命名 → 入库"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@if [ -n "$(URL)" ]; then \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/import_video.py "$(Path)" --url "$(URL)"; \
+	else \
+		cd $(PWD) && PYTHONPATH=$(PWD) $(PYTHON) core/import_video.py "$(Path)"; \
 	fi
 	@echo ""
 	@echo "✅ 完成！"
