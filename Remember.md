@@ -34,7 +34,9 @@ make login                                  # 保存浏览器 Cookie
 
 ## 已知限制
 
-- macOS 优先：Vision OCR 原生支持；其他系统需 PaddleOCR
+- macOS 优先：Vision OCR 原生支持；其他系统需 PaddleOCR（可选，未安装不影响 Vision 路径）
+- Vision OCR 现支持多线程（`ocr_folder_vision_parallel`，ThreadPoolExecutor，子进程线程安全）
+- PaddleOCR 未安装时 `PARALLEL_OCR_AVAILABLE=True`（模块懒加载，不再顶层导入）
 - 6 个文件超 1000 行限制（详见 Plan.md 技术债务表）
 - 前端 `/api/*` 出现 500 → 优先检查 8000 端口后端是否启动
 - 后台任务进度跳跃式更新（下载/处理期间无中间进度），属设计限制

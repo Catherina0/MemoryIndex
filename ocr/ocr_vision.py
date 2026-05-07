@@ -13,6 +13,8 @@ Apple Vision Framework OCR Python 包装器
 import os
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -404,10 +406,102 @@ def ocr_folder_vision(
     return merged_text
 
 
+#region 多线程 Vision OCR
+
+def _vision_ocr_single(ocr: VisionOCR, image_path: Path, min_score: float) -> str:
+    """单张图片 Vision OCR 处理（线程安全，每次调用独立子进程）"""
+    return ocr_image_vision(ocr, str(image_path), min_score=min_score, debug=False)
+
+
+def ocr_folder_vision_parallel(
+    ocr: VisionOCR,
+    frames_dir: Path,
+    output_path: Path = None,
+    num_workers: int = None,
+    min_score: float = 0.3,
+    debug: bool = False,
+    **kwargs
+) -> str:
+    """
+    多线程批量处理文件夹中的图片（Vision OCR 子进程天然线程安全）
+    
+    Args:
+        ocr: VisionOCR 实例
+        frames_dir: 图片文件夹路径
+        output_path: 输出文件路径（可选）
+        num_workers: 工作线程数（None=自动：CPU核心数/2）
+        min_score: 最小置信度（Vision 不使用，保持接口一致）
+        debug: 是否显示调试信息
+        **kwargs: 其他兼容参数
+    
+    Returns:
+        合并后的 OCR 文本
+    """
+    from tqdm import tqdm
+
+    frames = sorted(frames_dir.glob("frame_*.png"))
+    if not frames:
+        print(f"⚠️  未找到图片: {frames_dir}")
+        return ""
+
+    # 确定线程数
+    if num_workers is None:
+        import os as _os
+        env_val = _os.environ.get('OCR_WORKERS', '').strip()
+        if env_val and env_val.lower() != 'auto':
+            try:
+                num_workers = max(1, int(env_val))
+            except ValueError:
+                num_workers = max(1, (_os.cpu_count() or 2) // 2)
+        else:
+            num_workers = max(1, (_os.cpu_count() or 2) // 2)
+
+    print(f"🍎 Vision OCR 多线程处理 ({len(frames)} 帧，{num_workers} 线程)")
+
+    results: list = [None] * len(frames)
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        future_to_idx = {
+            executor.submit(_vision_ocr_single, ocr, frame, min_score): i
+            for i, frame in enumerate(frames)
+        }
+        with tqdm(total=len(frames), desc="🍎 Vision OCR", unit="帧", ncols=80) as pbar:
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    if debug:
+                        print(f"⚠️  Vision OCR 线程失败 [{idx}]: {e}")
+                    results[idx] = ""
+                pbar.update(1)
+
+    # 去除空行，保留顺序，相邻去重
+    all_texts = [t for t in results if t and t.strip()]
+    unique_texts: list = []
+    prev = ""
+    for t in all_texts:
+        if t != prev:
+            unique_texts.append(t)
+            prev = t
+
+    merged_text = '\n'.join(unique_texts)
+
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(merged_text, encoding='utf-8')
+        print(f"✅ OCR 文本已保存: {output_path}")
+
+    return merged_text
+
+#endregion
+
+
 # ========== 便捷导出 ==========
 __all__ = [
     'VisionOCR',
     'init_vision_ocr',
     'ocr_image_vision',
     'ocr_folder_vision',
+    'ocr_folder_vision_parallel',
 ]

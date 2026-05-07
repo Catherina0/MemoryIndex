@@ -12,7 +12,7 @@ except ImportError:
 
 # 尝试导入 Vision OCR 模块（macOS）
 try:
-    from .ocr_vision import init_vision_ocr, ocr_image_vision, ocr_folder_vision
+    from .ocr_vision import init_vision_ocr, ocr_image_vision, ocr_folder_vision, ocr_folder_vision_parallel
     VISION_OCR_AVAILABLE = True
 except ImportError:
     VISION_OCR_AVAILABLE = False
@@ -31,7 +31,7 @@ if PADDLE_OCR_AVAILABLE:
     __all__.extend(['init_ocr', 'ocr_folder_to_text', 'check_gpu_available'])
 
 if VISION_OCR_AVAILABLE:
-    __all__.extend(['init_vision_ocr', 'ocr_image_vision', 'ocr_folder_vision'])
+    __all__.extend(['init_vision_ocr', 'ocr_image_vision', 'ocr_folder_vision', 'ocr_folder_vision_parallel'])
 
 if PARALLEL_OCR_AVAILABLE:
     __all__.append('ocr_folder_parallel')

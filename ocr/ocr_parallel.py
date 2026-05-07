@@ -25,7 +25,7 @@ logging.getLogger('ppocr').setLevel(logging.ERROR)
 logging.getLogger('paddle').setLevel(logging.ERROR)
 logging.getLogger('paddlex').setLevel(logging.ERROR)
 
-from paddleocr import PaddleOCR
+# PaddleOCR 懒加载：仅在实际使用时导入，避免未安装时模块级报错
 
 # 线程本地存储，每个线程维护自己的 OCR 实例
 _thread_local = threading.local()
@@ -53,6 +53,12 @@ def preprocess_image(image_path, enhance_contrast=True, roi_bottom_only=False, b
 def _get_ocr_instance():
     """获取线程本地的 OCR 实例（懒加载）"""
     if not hasattr(_thread_local, 'ocr'):
+        # 懒加载 PaddleOCR，仅在调用时导入
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError as e:
+            raise ImportError(f"PaddleOCR 未安装，无法使用并行 OCR: {e}") from e
+
         # 静默创建 OCR 实例
         from io import StringIO
         old_stdout, old_stderr = sys.stdout, sys.stderr

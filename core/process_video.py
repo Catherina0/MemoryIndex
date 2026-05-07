@@ -31,13 +31,14 @@ OCR_ENGINE = None  # 'vision' 或 'paddle'
 
 # 尝试导入 Vision OCR（macOS）
 try:
-    from ocr.ocr_vision import init_vision_ocr, ocr_folder_vision
+    from ocr.ocr_vision import init_vision_ocr, ocr_folder_vision, ocr_folder_vision_parallel
     if platform.system() == 'Darwin':  # macOS
         OCR_ENGINE = 'vision'
         print("✅ 使用 Apple Vision OCR（系统原生）")
 except ImportError:
     init_vision_ocr = None
     ocr_folder_vision = None
+    ocr_folder_vision_parallel = None
 
 # 如果 Vision OCR 不可用，尝试导入 PaddleOCR
 if not OCR_ENGINE:
@@ -67,7 +68,7 @@ try:
     PARALLEL_OCR_AVAILABLE = True
 except ImportError:
     PARALLEL_OCR_AVAILABLE = False
-    print("⚠️  多进程OCR模块不可用，将使用单进程模式")
+    # PaddleOCR 未安装时不报错，Vision OCR 有自己的多线程路径
 
 # 导入智能抽帧（新增）
 try:
@@ -1733,17 +1734,28 @@ def process_video(
         
         if selected_engine == 'vision':
             if init_vision_ocr:
-                print(f"   🍎 使用 Apple Vision OCR (lang={ocr_lang})")
+                # 确定线程数
+                import os as _os
+                ocr_workers_env = _os.environ.get('OCR_WORKERS', '').strip()
+                if ocr_workers_env and ocr_workers_env.lower() != 'auto':
+                    try:
+                        vision_workers = max(1, int(ocr_workers_env))
+                    except ValueError:
+                        vision_workers = max(1, (_os.cpu_count() or 2) // 2)
+                else:
+                    vision_workers = max(1, (_os.cpu_count() or 2) // 2)
+
+                print(f"   🍎 使用 Apple Vision OCR (lang={ocr_lang}, workers={vision_workers})")
                 try:
                     ocr = init_vision_ocr(
                         lang=ocr_lang,
-                        recognition_level='accurate',  # 'fast' 或 'accurate'
+                        recognition_level='accurate',
                     )
-                    ocr_text = ocr_folder_vision(
+                    ocr_text = ocr_folder_vision_parallel(
                         ocr,
                         frames_dir,
                         output_path=ocr_raw_path,
-                        debug=False,
+                        num_workers=vision_workers,
                     )
                 except Exception as e:
                     print(f"   ⚠️  Vision OCR 失败，尝试降级到 PaddleOCR: {e}")
