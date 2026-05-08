@@ -55,6 +55,7 @@ bash start-dev.sh
 # 处理视频
 make run Path=~/Downloads/video.mp4        # 音频转写 + AI 摘要
 make ocr Path=~/Downloads/video.mp4        # 完整模式（含 OCR）
+make download URL="分享文本或视频链接"       # 下载 + 轻量入库
 make download-run URL=https://youtube.com/...  # 下载 + 处理
 
 # 归档网页

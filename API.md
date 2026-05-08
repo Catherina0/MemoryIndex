@@ -147,12 +147,13 @@
 | `VideoDownloader._detect_platform()` | `url` | `str` | 平台检测 |
 | `VideoDownloader.check_already_downloaded()` | `url` | `dict\|None` | DB 去重检查 |
 | `extract_url_from_text()` | `text` | `str\|None` | 从文本提取 URL |
+| `import_video._extract_video_url_from_input()` | `input_text` | `str\|None` | 轻量入库入口复用下载器规则，从分享文本提取 URL |
 
 **支持平台**：YouTube, Bilibili, 小红书, 抖音, TikTok, Twitter
 **降级策略**：yt-dlp → BBDown(B站) / XHS-Downloader(小红书)
 **依赖**：yt-dlp, BBDown, DrissionPage
 
-**Makefile**：`make download URL=...`、`make download-run URL=...`、`make download-ocr URL=...`
+**Makefile**：`make download URL=...`（支持分享文本）、`make download-run URL=...`、`make download-ocr URL=...`
 
 ---
 

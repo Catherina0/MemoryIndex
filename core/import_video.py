@@ -382,6 +382,20 @@ def _download_from_url(url: str, download_dir: str = "videos", force: bool = Fal
     return file_info.file_path, video_info, url
 
 
+def _extract_video_url_from_input(input_text: str) -> str | None:
+    """
+    从 URL 或平台分享文本中提取可下载的视频 URL。
+
+    复用 video_downloader 的解析规则，保证 make download 与下载器 CLI 行为一致。
+    """
+    try:
+        from core.video_downloader import extract_url_from_text
+    except ImportError:
+        return None
+
+    return extract_url_from_text(input_text)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="轻量视频入库：截图OCR + AI摘要 + 重命名 + 入库（跳过音频/视频帧分析）\n支持 URL 直接下载后入库，也支持已下载文件路径输入。",
@@ -407,15 +421,18 @@ def main():
 
     # ── 判断输入是 URL 还是文件路径 ───────────────────────────────────────────
     input_str = args.video
-    is_url = input_str.startswith("http://") or input_str.startswith("https://")
+    extracted_url = _extract_video_url_from_input(input_str)
+    is_url = extracted_url is not None
 
     if is_url:
         # URL 模式：先下载再入库
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("📥 下载并轻量入库")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        if extracted_url != input_str:
+            print(f"🔗 已从输入文本提取 URL: {extracted_url}")
         video_path, video_info, source_url = _download_from_url(
-            url=input_str,
+            url=extracted_url,
             download_dir=args.download_dir,
             force=args.force,
         )

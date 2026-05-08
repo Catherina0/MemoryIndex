@@ -61,6 +61,7 @@
 - [x] 小红书 Cookie 诊断（2026-03-27）
 - [x] API.md / README.md / Plan.md / Remember.md 全面审查与重写（2026-03-27）
 - [x] 修复 `/api/videos` 与 `/api/archives` 因 `sqlite3.Row.get` 导致的 500 错误（2026-03-27）
+- [x] 修复 `make download URL="分享文本"` 被误判为本地路径的问题（2026-05-08）
 
 ## 已知技术债务（超 1000 行文件）
 
