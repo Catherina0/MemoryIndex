@@ -306,7 +306,8 @@ class DrissionArchiver:
             self.current_tab.wait.load_start()
             
             # 等待足够的时间确保内容渲染
-            wait_time = 5 if platform_name in ['twitter', 'bilibili', 'xiaohongshu'] else 3
+            # Twitter/X 需要更长时间让 JS bundle 和虚拟滚动内容完成渲染
+            wait_time = 8 if platform_name == 'twitter' else (5 if platform_name in ['bilibili', 'xiaohongshu'] else 3)
             time.sleep(wait_time)
             
             # 3. 滚动加载懒加载内容
@@ -315,22 +316,24 @@ class DrissionArchiver:
                 self.current_tab.scroll.to_bottom()
                 time.sleep(2)
                 self.current_tab.scroll.to_top()
+                time.sleep(1)
             except Exception as _e:
                 logger.debug(f"标准滚动失败，尝试备用滚动: {_e}")
                 try:
                     self.current_tab.run_js("window.scrollTo(0, document.body.scrollHeight || 10000);")
                     time.sleep(2)
                     self.current_tab.run_js("window.scrollTo(0, 0);")
+                    time.sleep(1)
                 except Exception as _e2:
                     logger.debug(f"备用滚动也失败（忽略）: {_e2}")
-            time.sleep(1)
             
-            # 4. 全页截图
-            logger.info(f"正在保存全页截图: {output_path.name}")
-            # 确保存储目录存在
+            # 4. 截图
+            # Twitter/X 使用虚拟滚动 + position:fixed 元素，full_page=True 在 headless 下会导致黑屏
+            # 对 Twitter 改用视口截图（viewport），其余平台仍用全页截图
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            self.current_tab.get_screenshot(path=str(output_path), full_page=True)
+            use_full_page = platform_name not in ('twitter',)
+            logger.info(f"正在保存截图 (full_page={use_full_page}): {output_path.name}")
+            self.current_tab.get_screenshot(path=str(output_path), full_page=use_full_page)
             logger.info("✅ 截图完成")
             
         except Exception as e:
